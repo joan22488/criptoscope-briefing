@@ -46,11 +46,21 @@ export async function ejecutarBriefing() {
 
   // Bloque Fear & Greed + dominancia BTC
   const fgEmoji = fg ? (fg.valor >= 75 ? "🟢" : fg.valor >= 55 ? "🟡" : fg.valor >= 35 ? "🟠" : "🔴") : "";
-  const bloqueSentimiento = (fg || gm)
+
+  let liqLinea = "";
+  if (liq && liq.total_usd > 0) {
+    const totalM = (liq.total_usd / 1e6).toFixed(1);
+    const longsM = (liq.longs_liq_usd / 1e6).toFixed(1);
+    const shortsM = (liq.shorts_liq_usd / 1e6).toFixed(1);
+    const liqEmoji = liq.sesgo === "caza de longs" ? "🔴" : liq.sesgo === "caza de shorts" ? "🟢" : "⚪";
+    liqLinea = `${liqEmoji} <b>Liquidaciones 24h:</b> $${totalM}M  ·  Longs $${longsM}M  ·  Shorts $${shortsM}M  <i>(${liq.sesgo})</i>\n`;
+  }
+
+  const bloqueSentimiento = (fg || gm || liq)
     ? `\n\n─────────────────\n` +
       (fg ? `${fgEmoji} <b>Fear & Greed:</b> ${fg.valor} — ${fg.clasificacion}` + (fg.ayer ? ` (ayer ${fg.ayer})` : "") + "\n" : "") +
       (gm ? `<b>Dominancia BTC:</b> ${gm.dominancia_btc}%  ·  ETH ${gm.dominancia_eth}%\n` : "") +
-      (liq ? `<b>Liquidaciones 24h:</b> $${(liq.total_usd / 1e6).toFixed(0)}M  ·  Longs $${(liq.longs_liq_usd / 1e6).toFixed(0)}M  ·  Shorts $${(liq.shorts_liq_usd / 1e6).toFixed(0)}M` : "")
+      liqLinea
     : "";
 
   const bloqueGainers = gl

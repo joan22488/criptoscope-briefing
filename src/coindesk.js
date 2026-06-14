@@ -168,35 +168,58 @@ export async function getGlobalMarket() {
 }
 
 /**
- * 8) LIQUIDACIONES 24h - Coinglass API pública (sin key, endpoint público)
+ * 8) LIQUIDACIONES recientes - OKX API pública (sin key)
+ * Devuelve las últimas liquidaciones de BTC, ETH y SOL en perpetuos
  */
 export async function getLiquidaciones() {
   try {
-    const res = await fetch("https://open-api.coinglass.com/public/v2/liquidation_history?symbol=BTC&time_type=h24", {
-      headers: { "Accept": "application/json", "coinglassSecret": "" },
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    if (!data.success) throw new Error("Coinglass error");
-    const total = data.data?.reduce((acc, x) => acc + (x.buyVolUsd || 0) + (x.sellVolUsd || 0), 0) || 0;
-    const longs = data.data?.reduce((acc, x) => acc + (x.sellVolUsd || 0), 0) || 0;
-    const shorts = data.data?.reduce((acc, x) => acc + (x.buyVolUsd || 0), 0) || 0;
-    return { total_usd: total, longs_liq_usd: longs, shorts_liq_usd: shorts };
+    const FAMILIAS = [
+      { familia: "BTC-USDT", nombre: "BTC" },
+      { familia: "ETH-USDT", nombre: "ETH" },
+      { familia: "SOL-USDT", nombre: "SOL" },
+    ];
+    const hace24h = Date.now() - 24 * 60 * 60 * 1000;
+
+    const resultados = await Promise.all(
+      FAMILIAS.map(async ({ familia, nombre }) => {
+        const url = `https://www.okx.com/api/v5/public/liquidation-orders?instType=SWAP&instFamily=${familia}&state=filled&limit=100`;
+        const res = await fetch(url, { headers: { Accept: "application/json" } });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+        if (json.code !== "0") throw new Error(`OKX: ${json.msg}`);
+
+        // OKX devuelve referencias $ref para datos repetidos — resolvemos el primero
+        const base = json.data?.[0];
+        if (!base?.details) return { nombre, longs: 0, shorts: 0, total: 0 };
+
+        let longs = 0, shorts = 0;
+        for (const d of base.details) {
+          const ts = parseInt(d.ts || d.time || 0);
+          if (ts < hace24h) continue;
+          const valor = parseFloat(d.sz) * parseFloat(d.bkPx);
+          // posSide "long" = posición larga liquidada, "short" = posición corta liquidada
+          if (d.posSide === "long") longs += valor;
+          else if (d.posSide === "short") shorts += valor;
+        }
+        return { nombre, longs, shorts, total: longs + shorts };
+      })
+    );
+
+    const totalLongs = resultados.reduce((a, r) => a + r.longs, 0);
+    const totalShorts = resultados.reduce((a, r) => a + r.shorts, 0);
+    const totalTotal = totalLongs + totalShorts;
+
+    const pctLongs = totalTotal > 0 ? (totalLongs / totalTotal) * 100 : 50;
+    const sesgo = pctLongs > 60 ? "caza de longs" : pctLongs < 40 ? "caza de shorts" : "equilibrado";
+
+    return {
+      total_usd: totalTotal,
+      longs_liq_usd: totalLongs,
+      shorts_liq_usd: totalShorts,
+      sesgo,
+      por_par: resultados,
+    };
   } catch (e) {
-    // Fallback: intenta endpoint alternativo
-    try {
-      const res2 = await fetch("https://open-api.coinglass.com/api/pro/v1/futures/liquidation/chart?symbol=BTC&interval=0", {
-        headers: { "Accept": "application/json" },
-      });
-      if (!res2.ok) throw new Error(`HTTP ${res2.status}`);
-      const d2 = await res2.json();
-      if (d2.data) {
-        const recent = d2.data.slice(-24);
-        const longs = recent.reduce((a, x) => a + (x[1] || 0), 0);
-        const shorts = recent.reduce((a, x) => a + (x[2] || 0), 0);
-        return { total_usd: longs + shorts, longs_liq_usd: longs, shorts_liq_usd: shorts };
-      }
-    } catch {}
     console.warn("⚠️  Liquidaciones no disponibles:", e.message);
     return null;
   }
