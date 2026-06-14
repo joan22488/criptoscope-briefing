@@ -27,6 +27,10 @@ const pendingPublish = new Map();
 const programadas = new Map(); // id → { descripcion, timer }
 let progContador = 1;
 
+// ── Portadas pendientes ────────────────────────
+const portadas = new Map();    // pid → fileId de la foto portada
+const waitingCover = new Map(); // chatId → pid (esperando foto de portada)
+
 // ── Alertas de precio (persistentes) ──────────
 const ALERTAS_FILE = "./data/alertas.json";
 function cargarAlertas() {
@@ -87,6 +91,36 @@ function trocear(texto, max) {
   return trozos.filter(Boolean);
 }
 
+// Muestra preview con botones de publicación (canal/X/portada)
+async function mostrarBotonesPublicacion(chatId, pid, previewTexto) {
+  const tienePortada = portadas.has(pid);
+  await fetch(`${API()}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text: previewTexto + `\n\n──────────────\n<i>¿Dónde publico esto?${tienePortada ? " 📸 Portada lista." : ""}</i>`,
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: "📢 Canal + X", callback_data: `pub_ambos:${pid}` },
+            { text: "📣 Solo canal", callback_data: `pub_canal:${pid}` },
+          ],
+          [
+            { text: "🐦 Solo X", callback_data: `pub_x:${pid}` },
+            { text: tienePortada ? "🖼 Cambiar portada" : "📸 Añadir portada", callback_data: `add_portada:${pid}` },
+          ],
+          [
+            { text: "❌ Descartar", callback_data: "nopub" },
+          ],
+        ],
+      },
+    }),
+  });
+}
+
 async function publicarCanal(texto, portadaFileId = null) {
   if (portadaFileId) {
     // Publicar foto como portada + texto como caption o mensaje separado
@@ -131,15 +165,12 @@ async function cmdFlash(chatId, tema, portadaFileId = null) {
   const cuerpo = response.content[0].text.trim();
   const msg = `🚨 <b>FLASH | CriptoScope</b>\n\n${cuerpo}\n\n<i>Análisis educativo · no es consejo financiero</i>`;
 
-  await publicarCanal(msg, portadaFileId);
+  const pid = Date.now().toString(36);
+  pendingPublish.set(pid, msg);
+  if (portadaFileId) portadas.set(pid, portadaFileId);
+  setTimeout(() => { pendingPublish.delete(pid); portadas.delete(pid); }, 30 * 60 * 1000);
 
-  // Publicar en X también
-  try {
-    const limpio = msg.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&");
-    await publicarThread([limpio.slice(0, 270)]);
-  } catch {}
-
-  await reply(chatId, "✅ Flash publicado en el canal y en X");
+  await mostrarBotonesPublicacion(chatId, pid, msg);
 }
 
 // /hilo <tema|URL> — thread educativo completo en canal + X
@@ -264,11 +295,13 @@ async function cmdOpinion(chatId, noticia, portadaFileId = null) {
 
   const cuerpo = response.content[0].text.trim();
   const msg = `🧠 <b>OPINIÓN | CriptoScope</b>\n\n<i>"${noticia}"</i>\n\n${cuerpo}\n\n<i>Análisis educativo · no es consejo financiero</i>`;
-  await publicarCanal(msg, portadaFileId);
-  try {
-    await publicarThread([msg.replace(/<[^>]+>/g, "").slice(0, 270)]);
-  } catch {}
-  await reply(chatId, "✅ Opinión publicada en el canal y en X");
+
+  const pid = Date.now().toString(36);
+  pendingPublish.set(pid, msg);
+  if (portadaFileId) portadas.set(pid, portadaFileId);
+  setTimeout(() => { pendingPublish.delete(pid); portadas.delete(pid); }, 30 * 60 * 1000);
+
+  await mostrarBotonesPublicacion(chatId, pid, msg);
 }
 
 // /precio <coin> — consulta privada de precio (no publica)
@@ -492,28 +525,7 @@ async function cmdFoto(chatId, photo, caption) {
       ? "\n\n⚠️ <i>Credibilidad dudosa — revisa la fuente antes de publicar.</i>"
       : "";
 
-    await fetch(`${API()}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: msgPreview + advertencia + "\n\n──────────────\n<i>¿Dónde publico este análisis?</i>",
-        parse_mode: "HTML",
-        disable_web_page_preview: true,
-        reply_markup: {
-          inline_keyboard: [
-            [
-              { text: "📢 Canal + X", callback_data: `pub_ambos:${pid}` },
-              { text: "📣 Solo canal", callback_data: `pub_canal:${pid}` },
-            ],
-            [
-              { text: "🐦 Solo X", callback_data: `pub_x:${pid}` },
-              { text: "❌ Solo para mí", callback_data: "nopub" },
-            ],
-          ],
-        },
-      }),
-    });
+    await mostrarBotonesPublicacion(chatId, pid, msgPreview + advertencia);
   } catch (e) {
     await reply(chatId, `❌ Error analizando la imagen: ${e.message}`);
   }
@@ -580,46 +592,49 @@ async function procesarCallback(callback) {
     body: JSON.stringify({ chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [] } }),
   });
 
-  // Publicar en canal + X
+  // Añadir portada → pedir foto al usuario
+  if (data.startsWith("add_portada:")) {
+    const pid = data.slice(12);
+    if (!pendingPublish.has(pid)) return reply(chatId, "❌ El contenido ya expiró. Vuelve a generarlo.");
+    await quitarBotones();
+    waitingCover.set(chatId, pid);
+    await reply(chatId, "📸 Mándame la foto que quieres usar como portada.");
+    return;
+  }
+
+  // Helper para publicar según destino
+  const publicarPorDestino = async (pid, destino) => {
+    const msg = pendingPublish.get(pid);
+    if (!msg) return reply(chatId, "❌ El contenido ya expiró (>30 min). Vuelve a generarlo.");
+    await quitarBotones();
+    const fileId = portadas.get(pid) || null;
+    const limpio = msg.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").slice(0, 270);
+
+    if (destino === "canal" || destino === "ambos") {
+      await publicarCanal(msg, fileId);
+    }
+    if (destino === "x" || destino === "ambos") {
+      try { await publicarThread([limpio]); } catch {}
+    }
+
+    pendingPublish.delete(pid);
+    portadas.delete(pid);
+
+    const donde = destino === "ambos" ? "en el canal y en X" : destino === "canal" ? "en el canal" : "en X";
+    await reply(chatId, `✅ Publicado ${donde}.`);
+  };
+
   if (data.startsWith("pub_ambos:") || data.startsWith("pub:")) {
     const pid = data.startsWith("pub:") ? data.slice(4) : data.slice(10);
-    const msg = pendingPublish.get(pid);
-    if (!msg) return reply(chatId, "❌ La opinión ya expiró (>30 min). Vuelve a enviar la foto.");
-    await quitarBotones();
-    await enviarTelegram(typeof msg === "string" ? msg : msg);
-    try {
-      const limpio = (typeof msg === "string" ? msg : "").replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").slice(0, 270);
-      await publicarThread([limpio]);
-    } catch {}
-    pendingPublish.delete(pid);
-    await reply(chatId, "✅ Publicado en el canal y en X.");
+    await publicarPorDestino(pid, "ambos");
   }
 
-  // Solo canal (sin X)
   if (data.startsWith("pub_canal:")) {
-    const pid = data.slice(10);
-    const msg = pendingPublish.get(pid);
-    if (!msg) return reply(chatId, "❌ La opinión ya expiró (>30 min). Vuelve a enviar la foto.");
-    await quitarBotones();
-    await enviarTelegram(msg);
-    pendingPublish.delete(pid);
-    await reply(chatId, "✅ Publicado en el canal.");
+    await publicarPorDestino(data.slice(10), "canal");
   }
 
-  // Solo X (sin canal)
   if (data.startsWith("pub_x:")) {
-    const pid = data.slice(6);
-    const msg = pendingPublish.get(pid);
-    if (!msg) return reply(chatId, "❌ La opinión ya expiró (>30 min). Vuelve a enviar la foto.");
-    await quitarBotones();
-    try {
-      const limpio = (typeof msg === "string" ? msg : "").replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").slice(0, 270);
-      await publicarThread([limpio]);
-      await reply(chatId, "✅ Publicado en X.");
-    } catch (e) {
-      await reply(chatId, `❌ Error publicando en X: ${e.message}`);
-    }
-    pendingPublish.delete(pid);
+    await publicarPorDestino(data.slice(6), "x");
   }
 
   if (data.startsWith("enc:")) {
@@ -1226,15 +1241,28 @@ Reglas:
 async function procesarMensaje(msg) {
   const chatId = msg.chat.id;
 
-  // Si manda una foto → ver si el pie es un comando (portada) o análisis normal
+  // Si manda una foto
   if (msg.photo) {
     const cap = (msg.caption || "").trim();
+    const fileId = msg.photo[msg.photo.length - 1].file_id;
+
+    // ¿Estamos esperando una portada para un contenido pendiente?
+    if (waitingCover.has(chatId)) {
+      const pid = waitingCover.get(chatId);
+      waitingCover.delete(chatId);
+      if (!pendingPublish.has(pid)) return reply(chatId, "❌ El contenido ya expiró. Vuelve a generarlo.");
+      portadas.set(pid, fileId);
+      const msg2 = pendingPublish.get(pid);
+      await reply(chatId, "📸 Portada guardada.");
+      await mostrarBotonesPublicacion(chatId, pid, msg2);
+      return;
+    }
+
+    // ¿Foto con comando en el pie → usar como portada del contenido generado?
     const cmdPortada = cap.match(/^\/?(flash|hilo|opinion|analiza)\s+(.+)/i);
     if (cmdPortada) {
-      // Foto con comando en el pie → usar como portada
       const tipo = cmdPortada[1].toLowerCase();
       const argPortada = cmdPortada[2].trim();
-      const fileId = msg.photo[msg.photo.length - 1].file_id;
       await reply(chatId, `📸 Portada recibida. Generando ${tipo}...`);
       try {
         if (tipo === "flash") await cmdFlash(chatId, argPortada, fileId);
@@ -1244,9 +1272,11 @@ async function procesarMensaje(msg) {
       } catch (e) {
         await reply(chatId, `❌ Error: ${e.message}`);
       }
-    } else {
-      await cmdFoto(chatId, msg.photo, cap);
+      return;
     }
+
+    // Foto sin comando → análisis de noticia
+    await cmdFoto(chatId, msg.photo, cap);
     return;
   }
 
