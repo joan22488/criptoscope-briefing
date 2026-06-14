@@ -1,132 +1,310 @@
-# ☕ CriptoScope Briefing Matinal
+# CriptoScope — Sistema de Inteligencia Cripto Automatizado
 
-Sistema automático que cada mañana:
-1. **Recopila** noticias cripto/macro + precios BTC/ETH + funding + open interest (CoinDesk Data API)
-2. **Relaciona** todo con Claude y genera el paquete del día en voz CriptoScope
-3. **Publica** el briefing en Telegram y **guarda** el guion de vídeo + thread listos para usar
+Sistema que monitoriza el mercado cripto 24/7, genera análisis con IA (Claude) y publica automáticamente en Telegram y X. Incluye bot de comandos bajo demanda con análisis de fotos.
+
+---
+
+## Qué hace
+
+| Cuándo | Qué publica |
+|--------|-------------|
+| 07:00 diario | ☕ Briefing matinal completo → Telegram + X |
+| 07:00, 11:00, 15:00, 19:00 | 📊 Señales técnicas BTC/ETH/SOL → Telegram |
+| Cada 30 min | 🚨 Monitor de alertas de alto impacto |
+| Cada 30 min | ✅ Verificación automática de resultados de señales |
+| Domingos 09:00 | 📅 Resumen semanal con estadísticas de señales |
+| Bajo demanda | 🤖 Bot de Telegram con comandos en cualquier momento |
+
+---
+
+## Arquitectura
 
 ```
-CoinDesk API ──→ Claude API ──→ Telegram (briefing + pregunta del día)
-                          └───→ output/AAAA-MM-DD/ (guion-video.md, thread.md)
+src/
+├── index.js          # Punto de entrada. Inicia crons + bot
+├── pipeline.js       # Orquesta el briefing matinal
+├── claude.js         # Genera el paquete diario con Claude
+├── signals.js        # Análisis técnico top-down 1D→4H→1H→15m
+├── weekly.js         # Resumen semanal
+├── alerts.js         # Monitor de eventos críticos
+├── bot.js            # Bot de Telegram con comandos bajo demanda
+├── coindesk.js       # Fuentes de datos (precios, noticias, derivados)
+├── twitter.js        # Tweets vía Nitter RSS (contexto para Claude)
+├── reddit.js         # HackerNews señales de comunidad
+├── calendar.js       # Calendario económico ForexFactory
+├── tracker.js        # Backtesting y estadísticas de señales
+├── notion.js         # Integración Notion (briefings + señales)
+├── telegram.js       # Envío a Telegram con chunking automático
+├── twitter-post.js   # Publicación de threads en X
+├── prompts.js        # Voz editorial CriptoScope + plantillas JSON
+└── output.js         # Guardado local de archivos
 ```
 
 ---
 
-## 1. Requisitos
+## Fuentes de datos
 
-- **Node.js 18 o superior** (comprueba con `node -v`)
-- Tres claves (las pones en el archivo `.env`):
-
-### 🔑 Claude API
-1. Entra en https://console.anthropic.com
-2. Settings → API Keys → Create Key
-3. Copia la clave (empieza por `sk-ant-`)
-
-### 🔑 CoinDesk Data API
-1. Entra en https://developers.coindesk.com
-2. Crea cuenta gratuita → genera API Key
-3. El plan gratuito da de sobra para 1 ejecución diaria
-
-### 🔑 Telegram Bot
-1. En Telegram, habla con **@BotFather** → `/newbot` → ponle nombre
-2. Copia el **token** que te da
-3. Añade el bot como **administrador** de tu canal de CriptoScope
-4. Para sacar el **chat_id** del canal: reenvía un mensaje del canal a **@userinfobot**, o publica algo en el canal y visita `https://api.telegram.org/bot<TU_TOKEN>/getUpdates` (el id de canales empieza por `-100`)
+| Dato | Fuente | Coste |
+|------|--------|-------|
+| Precios BTC/ETH/SOL | CoinGecko API (Demo) | Gratis |
+| Gainers/Losers 24h | CoinGecko API | Gratis |
+| Dominancia BTC + market cap global | CoinGecko API | Gratis |
+| Fear & Greed Index | alternative.me | Gratis |
+| Velas 1D/4H/1H/15m | OKX API pública | Gratis |
+| Funding rate + Open Interest | OKX API pública | Gratis |
+| Liquidaciones 24h BTC/ETH/SOL | OKX API pública | Gratis |
+| Noticias cripto | CoinDesk RSS | Gratis |
+| Tweets de cuentas clave | Nitter RSS (fallback múltiple) | Gratis |
+| Señales de comunidad | Hacker News API | Gratis |
+| Calendario económico | ForexFactory RSS | Gratis |
 
 ---
 
-## 2. Instalación (Windows)
+## Análisis técnico (signals.js)
 
-```powershell
-# 1. Entra en la carpeta del proyecto
-cd D:\JOAN\criptoscope-briefing
+**Metodología top-down:**
+1. **1D** — filtra la tendencia macro
+2. **4H** — confirma estructura
+3. **1H** — valida RSI/MACD
+4. **15m** — gatillo de entrada
 
-# 2. Instala dependencias
+**Indicadores calculados por timeframe:**
+- RSI 14 con zonas OB (>70) / OS (<30) / Reset (40-60)
+- MACD 12/26/9: cruce, posición respecto a cero, dirección del histograma
+- Divergencias RSI y MACD (ventana 10-20 velas)
+- EMA 20 y EMA 50
+- Niveles pivot (R1, R2, S1, S2) basados en últimas 20 velas 4H
+- Funding rate perpetuos
+
+**Pares:** BTCUSDT · ETHUSDT · SOLUSDT (ampliable con `/analiza`)
+
+**Salida:** LONG / SHORT / ESPERAR con entrada, TP1, TP2, SL, R:R y tamaño (NORMAL / REDUCIDO si hay divergencia)
+
+---
+
+## Bot de Telegram
+
+Escríbele directamente al bot (chat privado):
+
+### Publican en canal + X
+| Comando | Ejemplo | Resultado |
+|---------|---------|-----------|
+| `/flash <tema>` | `/flash BlackRock compra BTC` | Alerta urgente → canal + X |
+| `/hilo <tema>` | `/hilo qué es el halving` | Thread 5 tweets → canal + X |
+| `/analiza <coin>` | `/analiza AVAX` | Análisis técnico → canal |
+| `/opinion <noticia>` | `/opinion SEC aprueba ETF` | Opinión trader → canal + X |
+
+### Solo te responden a ti
+| Comando | Ejemplo | Resultado |
+|---------|---------|-----------|
+| `/precio <coin>` | `/precio BTC` | Precio + máx/mín/vol 24h |
+| `/quepasa` | `/quepasa` | Resumen mercado ahora |
+| `/senal <coin>` | `/senal ETH` | Señal técnica privada |
+| `/calendario` | `/calendario` | Eventos macro de la semana |
+
+### Fotos (sin comando)
+| Acción | Resultado |
+|--------|-----------|
+| Foto de noticia | Verificación credibilidad + análisis. Botones: publicar o privado |
+| Foto + pie "responde" | Redacta respuesta al comentario de la imagen (privado) |
+
+### Sistema
+| Comando | Acción |
+|---------|--------|
+| `/estado` | Estado del sistema y próximas ejecuciones |
+| `/pausa` | Pausar publicaciones automáticas |
+| `/activa` | Reanudar publicaciones |
+| `/ayuda` | Guía completa. `/ayuda <comando>` para detalle |
+
+---
+
+## Variables de entorno
+
+Copia `.env.example` a `.env` y rellena:
+
+```env
+# ─── OBLIGATORIAS ────────────────────────────────────────────
+ANTHROPIC_API_KEY=sk-ant-...          # console.anthropic.com
+TELEGRAM_BOT_TOKEN=123456:ABC...      # @BotFather en Telegram
+TELEGRAM_CHAT_ID=-100...              # ID del canal (con -100 delante)
+
+# ─── RECOMENDADAS ────────────────────────────────────────────
+COINGECKO_API_KEY=CG-...              # coingecko.com/en/developers → Demo gratis
+
+# ─── X / TWITTER (opcional) ──────────────────────────────────
+X_API_KEY=...                         # developer.twitter.com → OAuth 1.0a
+X_API_SECRET=...
+X_ACCESS_TOKEN=...
+X_ACCESS_SECRET=...
+
+# ─── NOTION (opcional) ───────────────────────────────────────
+NOTION_TOKEN=ntn_...                  # notion.so/my-integrations
+NOTION_BRIEFINGS_DB=...               # ID de la base de datos de briefings
+NOTION_SIGNALS_DB=...                 # ID de la base de datos de señales
+
+# ─── CONFIGURACIÓN ────────────────────────────────────────────
+CLAUDE_MODEL=claude-sonnet-4-6
+TIMEZONE=Europe/Madrid
+TELEGRAM_CANAL_URL=https://t.me/tucanalaqui
+CRON_SCHEDULE=0 7 * * *
+SIGNALS_SCHEDULE=0 7,11,15,19 * * *
+WEEKLY_SCHEDULE=0 9 * * 0
+ALERTS_SCHEDULE=*/30 * * * *
+```
+
+---
+
+## Instalación desde cero
+
+### 1. Clonar y preparar
+
+```bash
+git clone <url-del-repo>
+cd criptoscope-briefing
 npm install
-
-# 3. Crea tu archivo de configuración
-copy .env.example .env
-
-# 4. Abre .env con el bloc de notas y rellena tus 3 claves
-notepad .env
+cp .env.example .env
+# Rellenar .env con las credenciales
 ```
 
----
+### 2. Crear el bot de Telegram
 
-## 3. Probar antes de automatizar
+1. Habla con `@BotFather` en Telegram
+2. `/newbot` → elige nombre y username
+3. Copia el token → `TELEGRAM_BOT_TOKEN`
+4. Crea un canal, añade el bot como administrador con permisos de publicar
+5. Obtén el ID del canal: reenvía un mensaje del canal a `@userinfobot` → `TELEGRAM_CHAT_ID`
 
-**Paso 1 — Probar Telegram** (lo más rápido de verificar):
-```powershell
-npm run test-telegram
-```
-Debe llegar un mensaje a tu canal. Si falla, el problema está en el token o el chat_id.
+### 3. CoinGecko API key (gratuita)
 
-**Paso 2 — Ejecutar un briefing completo ahora mismo:**
-```powershell
+1. Regístrate en [coingecko.com/en/developers](https://www.coingecko.com/en/developers)
+2. Dashboard → API Keys → crear clave Demo
+3. Copia la clave → `COINGECKO_API_KEY`
+4. Plan Demo: 10.000 créditos/mes, 100 llamadas/min. El sistema usa ~64 créditos/mes.
+
+### 4. X / Twitter (opcional)
+
+1. [developer.twitter.com](https://developer.twitter.com) → crear proyecto + app
+2. Permisos: Read and Write
+3. Generar Consumer Key + Consumer Secret → `X_API_KEY` y `X_API_SECRET`
+4. En la MISMA sesión, generar Access Token + Secret → `X_ACCESS_TOKEN` y `X_ACCESS_SECRET`
+   ⚠️ Generar ambos pares en la misma sesión o devuelve error 401
+5. Activar Pay Per Use en el portal ($5 de créditos inicial)
+
+### 5. Notion (opcional)
+
+1. [notion.so/my-integrations](https://www.notion.so/my-integrations) → Nueva integración
+2. Copia el token → `NOTION_TOKEN`
+3. Crea una página en Notion, añade la integración (Compartir → buscar la integración)
+4. Crea dos bases de datos:
+
+**Briefings Diarios:**
+
+| Columna | Tipo |
+|---------|------|
+| Titular | Title |
+| Fecha | Date |
+| BTC Precio | Number |
+| ETH Precio | Number |
+| Fear & Greed | Number |
+| Narrativa | Text |
+| Pregunta Comunidad | Text |
+
+**Señales Técnicas:**
+
+| Columna | Tipo |
+|---------|------|
+| ID | Title |
+| Symbol | Select |
+| Operación | Select |
+| Entrada | Number |
+| TP1 | Number |
+| TP2 | Number |
+| SL | Number |
+| R:R | Text |
+| Precio Envío | Number |
+| Fecha | Date |
+| Resultado | Select (PENDIENTE / TP1 ✅ / TP2 ✅ / SL ❌ / EXPIRADO) |
+| Resultado Fecha | Date |
+
+5. Copia los IDs de las bases de datos desde la URL → `NOTION_BRIEFINGS_DB` y `NOTION_SIGNALS_DB`
+
+### 6. Probar en local
+
+```bash
+# Probar el briefing completo
 npm run once
-```
-Esto hace el ciclo entero: datos → Claude → Telegram → archivos en `output/`.
-Revisa el briefing en Telegram y los archivos `guion-video.md` y `thread.md` en `output/AAAA-MM-DD/`.
 
----
+# Probar solo señales técnicas
+npm run signals
 
-## 4. Automatizar cada mañana
+# Probar resumen semanal
+npm run weekly
 
-### Opción A — Dejar el proceso corriendo
-```powershell
+# Modo producción (crons activos + bot)
 npm start
 ```
-Queda esperando y publica cada día a las 7:00 (configurable en `.env` → `CRON_SCHEDULE`).
-Sirve si tienes el PC siempre encendido. Para que sobreviva a reinicios, usa `pm2`:
-```powershell
-npm install -g pm2
-pm2 start src/index.js --name criptoscope-briefing
-pm2 save
+
+---
+
+## Despliegue en Railway
+
+```bash
+# Instalar Railway CLI
+npm install -g @railway/cli
+
+# Login
+railway login
+
+# Vincular al proyecto (desde la carpeta del repo)
+railway link
+
+# Subir variables de entorno
+railway variables set ANTHROPIC_API_KEY=sk-ant-...
+railway variables set TELEGRAM_BOT_TOKEN=...
+railway variables set TELEGRAM_CHAT_ID=...
+railway variables set COINGECKO_API_KEY=...
+railway variables set CLAUDE_MODEL=claude-sonnet-4-6
+railway variables set TIMEZONE=Europe/Madrid
+railway variables set TELEGRAM_CANAL_URL=https://t.me/tucanalaqui
+# ... resto de opcionales
+
+# Desplegar
+railway up --service <nombre-servicio>
 ```
 
-### Opción B — Programador de tareas de Windows (recomendado si apagas el PC)
-1. Abre **Programador de tareas** → Crear tarea básica
-2. Desencadenador: Diariamente a las 7:00
-3. Acción: Iniciar un programa
-   - Programa: `node`
-   - Argumentos: `src/run-once.js`
-   - Iniciar en: `D:\JOAN\criptoscope-briefing`
+O conecta el repositorio de GitHub en el dashboard de Railway para despliegue automático en cada push.
 
-Así no necesitas proceso permanente: Windows lo lanza, se ejecuta y se cierra.
+**Configuración recomendada:**
+- Region: Europe West
+- Restart policy: On failure
+- No necesita ningún puerto expuesto
 
 ---
 
-## 5. Afinar la voz y el formato
+## Notas técnicas
 
-Todo el tono y la estructura viven en **`src/prompts.js`**:
-- `VOZ_CRIPTOSCOPE` → el carácter de la marca (el precio manda, anti-humo...)
-- `INSTRUCCIONES_BRIEFING` → estructura del briefing, del guion y del thread
+**Parser JSON robusto:** Claude a veces devuelve JSON con formato incorrecto. Todos los módulos usan dos capas: extrae desde el primer `{` hasta el último `}`, y si falla, extrae campo a campo con regex.
 
-Edita, ejecuta `npm run once`, y compara. Itera hasta que suene 100% a ti.
+**Chunking de Telegram:** Los mensajes se dividen automáticamente respetando párrafos (`\n\n`), luego líneas (`\n`), y por caracteres como último recurso. Límite: 4000 caracteres por mensaje.
 
-## 6. Configuración rápida (.env)
+**OKX para klines:** Binance devuelve HTTP 451 (restricción geográfica) desde Railway para el endpoint de velas. Todos los datos de klines y funding/OI usan OKX, que no tiene restricciones geográficas. Las velas de OKX vienen newest-first y se invierten para cronológico.
 
-| Variable | Qué hace |
-|---|---|
-| `CRON_SCHEDULE` | Hora de publicación (`0 7 * * *` = 7:00 diario) |
-| `MAIN_INSTRUMENT` | Perpetuo a vigilar (por defecto ETH-USDT) |
-| `FUTURES_MARKET` | Exchange de derivados (por defecto binance) |
-| `CLAUDE_MODEL` | Modelo de Claude (sonnet = buen coste para uso diario) |
+**Backtesting automático:** Cada señal con entrada definida se registra en Notion o en `./data/signals.json`. Cada 30 minutos se verifica si tocó TP1, TP2 o SL. Las señales expiran a las 48h.
+
+**Verificación de noticias:** Cuando se manda una foto al bot, Claude hace primero un análisis de credibilidad (VERIFICADA / PROBABLE / DUDOSA / FALSA). Las noticias FALSAS no se pueden publicar.
+
+**SDK Notion v5:** La versión 5 del SDK eliminó `databases.query`. Se usa `notion.request()` directamente contra la REST API para las consultas.
 
 ---
 
-## 7. Solución de problemas
+## Coste estimado mensual
 
-| Síntoma | Causa probable |
-|---|---|
-| `Telegram error: chat not found` | El bot no es admin del canal, o chat_id mal (recuerda el `-100`) |
-| `CoinDesk → HTTP 401` | API key incorrecta o sin activar |
-| `HTTP 404` en funding/OI | El nombre del instrumento no existe en ese exchange: comprueba el formato exacto en https://developers.coindesk.com (el código sigue funcionando sin ese dato) |
-| Claude devuelve texto sin JSON | Se guarda igualmente como briefing crudo; revisa `output/` |
-| No publica a la hora | Comprueba `TIMEZONE=Europe/Madrid` y que el proceso/tarea está activo |
-
-## 8. Próximas fases (hoja de ruta)
-
-- **Fase 2:** detector de narrativas (comparar briefings de días anteriores)
-- **Fase 3:** modo "desmiente" (detectar el claim viral dudoso del día)
-- **Fase 4:** dato on-chain del día + imagen para stories (reutilizando el Briefing Studio)
+| Servicio | Plan | Coste |
+|----------|------|-------|
+| Claude API | Pay per use | ~$3-8/mes |
+| Railway | Hobby | $5/mes |
+| CoinGecko | Demo (gratis) | $0 |
+| X API | Pay Per Use | ~$1-2/mes |
+| Notion | Free | $0 |
+| Resto de APIs | Gratis | $0 |
+| **Total** | | **~$9-15/mes** |

@@ -12,7 +12,6 @@ import { enviarTelegram } from "./telegram.js";
 
 const client = new Anthropic();
 const API = () => `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}`;
-const CANAL = process.env.TELEGRAM_CHAT_ID;
 
 // Estado global
 export let pausado = false;

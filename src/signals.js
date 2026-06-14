@@ -183,15 +183,6 @@ DATOS: ` + JSON.stringify(datos);
     return JSON.parse(limpio);
   } catch (e) {
     // Rescue: extract BTC and ETH blocks individually
-    const parseBloque = (sym) => {
-      const m = limpio.match(new RegExp(`"${sym}"\\s*:\\s*(\\{[\\s\\S]*?\\})(?=\\s*[,}])`));
-      if (!m) return null;
-      try { return JSON.parse(m[1]); } catch { return null; }
-    };
-    const exStr = (bloque, campo) => {
-      const m = bloque?.match(new RegExp(`"${campo}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`));
-      return m ? m[1] : null;
-    };
     const rescatar = (sym) => {
       const raw = limpio.match(new RegExp(`"${sym}"\\s*:(\\{[\\s\\S]*?)(?="BTC"|"ETH"|"SOL"|$)`))?.[1] || "";
       const str = (c) => { const m = raw.match(new RegExp(`"${c}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*?)"`)); return m?.[1] || null; };

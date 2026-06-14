@@ -57,15 +57,14 @@ export async function getEventosMacro() {
     manana.setDate(hoy.getDate() + 1);
     const fmtFF = (d) => d.toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }).replace(",", "");
 
-    const hoyStr = fmtFF(hoy);
-    const mananaStr = fmtFF(manana);
-
     return {
-      hoy: relevantes.filter((e) => e.fecha.includes(hoy.toLocaleDateString("en-US", { month: "short" }))),
+      hoy: relevantes.filter((e) => {
+        const d = new Date(e.fecha);
+        return d.toDateString() === hoy.toDateString();
+      }),
       manana: relevantes.filter((e) => {
         const d = new Date(e.fecha);
-        const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
-        return d.toDateString() === tomorrow.toDateString();
+        return d.toDateString() === manana.toDateString();
       }),
       semana: relevantes,
     };
