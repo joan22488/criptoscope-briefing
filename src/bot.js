@@ -610,15 +610,19 @@ async function procesarCallback(callback) {
     return;
   }
 
-  // Extrae el primer párrafo limpio para X (máx 250 chars, corte en palabra completa)
+  // Extrae contenido real para X: omite cabeceras y pies, máx 270 chars
   const resumirParaX = (texto) => {
     const limpio = texto
       .replace(/<[^>]+>/g, "")
       .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
-      .replace(/\n{2,}/g, "\n").trim();
-    const primerParrafo = limpio.split("\n")[0] || limpio;
-    if (primerParrafo.length <= 250) return primerParrafo;
-    const cortado = primerParrafo.slice(0, 247);
+      .trim();
+    const excluir = ["CriptoScope", "consejo financiero", "Análisis educativo", "Fuente:", "──────"];
+    const lineas = limpio.split("\n").map((l) => l.trim()).filter((l) =>
+      l.length > 15 && !excluir.some((e) => l.includes(e))
+    );
+    const contenido = lineas[0] || limpio;
+    if (contenido.length <= 270) return contenido;
+    const cortado = contenido.slice(0, 267);
     return cortado.slice(0, cortado.lastIndexOf(" ")) + "...";
   };
 
