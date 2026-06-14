@@ -123,19 +123,16 @@ async function mostrarBotonesPublicacion(chatId, pid, previewTexto) {
 
 async function publicarCanal(texto, portadaFileId = null) {
   if (portadaFileId) {
-    // Publicar foto como portada + texto como caption o mensaje separado
-    const caption = texto.replace(/<[^>]+>/g, "").slice(0, 950);
+    // Enviar foto primero (sin caption) y luego el texto completo con formato HTML
     await fetch(`${API()}/sendPhoto`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id: process.env.TELEGRAM_CHAT_ID,
         photo: portadaFileId,
-        caption,
       }),
     });
-    // Si el texto es largo, enviarlo también completo con formato HTML
-    if (texto.length > 950) await enviarTelegram(texto);
+    await enviarTelegram(texto);
   } else {
     await enviarTelegram(texto);
   }
@@ -510,20 +507,29 @@ async function cmdFoto(chatId, photo, caption) {
 
     const opinion = respuesta.content[0].text.trim();
 
-    // Mensaje limpio para publicar — SIN el bloque de verificación interna
-    const msgPublicar = `🧠 <b>ANÁLISIS | CriptoScope</b>\n\n${opinion}\n\n<i>Análisis educativo · no es consejo financiero</i>`;
+    // Fuente: usar la detectada por Claude, o "desconocida"
+    const fuenteConocida = check.fuente && check.fuente.toLowerCase() !== "desconocida";
+    const lineaFuente = fuenteConocida
+      ? `\n\n📌 <i>Fuente: ${check.fuente}</i>`
+      : "";
+
+    // Mensaje limpio para publicar — SIN el bloque de verificación interna, CON fuente
+    const msgPublicar = `🧠 <b>ANÁLISIS | CriptoScope</b>\n\n${opinion}${lineaFuente}\n\n<i>Análisis educativo · no es consejo financiero</i>`;
 
     // Mensaje completo para mostrarte a ti — CON verificación (solo para tu revisión)
-    const msgPreview = `🧠 <b>ANÁLISIS | CriptoScope</b>\n\n${bloqueCheck}\n\n──────────────\n${opinion}\n\n<i>Análisis educativo · no es consejo financiero</i>`;
+    const msgPreview = `🧠 <b>ANÁLISIS | CriptoScope</b>\n\n${bloqueCheck}\n\n──────────────\n${opinion}${lineaFuente}\n\n<i>Análisis educativo · no es consejo financiero</i>`;
 
     // Guardar solo el mensaje limpio para publicar
     const pid = Date.now().toString(36);
     pendingPublish.set(pid, msgPublicar);
     setTimeout(() => pendingPublish.delete(pid), 30 * 60 * 1000);
 
-    const advertencia = check.veredicto === "DUDOSA"
+    let advertencia = check.veredicto === "DUDOSA"
       ? "\n\n⚠️ <i>Credibilidad dudosa — revisa la fuente antes de publicar.</i>"
       : "";
+    if (!fuenteConocida) {
+      advertencia += "\n\n📌 <i>Fuente no detectada — se publicará sin atribución. Puedes añadirla respondiendo al mensaje si quieres.</i>";
+    }
 
     await mostrarBotonesPublicacion(chatId, pid, msgPreview + advertencia);
   } catch (e) {
