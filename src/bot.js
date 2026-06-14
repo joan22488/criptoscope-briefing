@@ -5,7 +5,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { getMarketContext, getPrices, getFearGreed, getGlobalMarket } from "./coindesk.js";
-import { analizarSymbol, generarSenal, formatear } from "./signals.js";
+import { analizarSymbol, generarSenal } from "./signals.js";
 import { getEventosMacro, formatearAlertaMacro } from "./calendar.js";
 import { publicarThread } from "./twitter-post.js";
 import { enviarTelegram } from "./telegram.js";
