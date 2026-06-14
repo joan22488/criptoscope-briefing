@@ -134,11 +134,10 @@ async function publicarCanal(texto, portadaFileId = null) {
     const json = await res.json();
     if (!json.ok) {
       console.warn("⚠️ sendPhoto falló:", JSON.stringify(json));
+      throw new Error(`sendPhoto falló: ${json.description || JSON.stringify(json)}`);
     }
-    await enviarTelegram(texto);
-  } else {
-    await enviarTelegram(texto);
   }
+  await enviarTelegram(texto);
 }
 
 // ──────────────────────────────────────────────
@@ -631,9 +630,17 @@ async function procesarCallback(callback) {
     const fileId = portadas.get(pid) || null;
 
     let errorX = null;
+    let errorCanal = null;
 
     if (destino === "canal" || destino === "ambos") {
-      await publicarCanal(msg, fileId);
+      try {
+        await publicarCanal(msg, fileId);
+      } catch (e) {
+        errorCanal = e.message;
+        console.warn("⚠️ Error publicando en canal:", e.message);
+        await reply(chatId, `⚠️ Error al publicar en canal: <code>${e.message}</code>`);
+        return;
+      }
     }
     if (destino === "x" || destino === "ambos") {
       const tweetTexto = resumirParaX(msg);
