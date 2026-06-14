@@ -1,0 +1,22 @@
+{
+  "name": "criptoscope-briefing",
+  "version": "1.0.0",
+  "description": "Briefing matinal automático de CriptoScope: noticias + datos de mercado + guion de vídeo + thread, enviado a Telegram",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "once": "node src/run-once.js",
+    "signals": "node src/run-signals.js",
+    "weekly": "node src/run-weekly.js",
+    "test-telegram": "node src/test-telegram.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "dotenv": "^16.4.5",
+    "node-cron": "^3.0.3"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,246 @@
+import Anthropic from "@anthropic-ai/sdk";
+
+const client = new Anthropic();
+const BINANCE = "https://api.binance.com/api/v3";
+const BINANCE_FUTURES = "https://fapi.binance.com/fapi/v1";
+const SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT"];
+
+async function getVelas(symbol, interval, limit = 120) {
+  const url = `${BINANCE}/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Binance ${symbol} ${interval}: HTTP ${res.status}`);
+  return (await res.json()).map((v) => ({
+    time: new Date(v[0]).toISOString(),
+    open: parseFloat(v[1]), high: parseFloat(v[2]),
+    low: parseFloat(v[3]), close: parseFloat(v[4]), volume: parseFloat(v[5]),
+  }));
+}
+
+async function getFunding(symbol) {
+  try {
+    const [fr, oi] = await Promise.all([
+      fetch(`${BINANCE_FUTURES}/premiumIndex?symbol=${symbol}`).then((r) => r.json()),
+      fetch(`${BINANCE_FUTURES}/openInterest?symbol=${symbol}`).then((r) => r.json()),
+    ]);
+    return {
+      funding_pct: (parseFloat(fr.lastFundingRate) * 100).toFixed(4) + "%",
+      open_interest: parseFloat(oi.openInterest),
+    };
+  } catch { return null; }
+}
+
+function calcEMA(velas, p) {
+  const k = 2 / (p + 1);
+  let ema = velas[0].close;
+  const s = [ema];
+  for (let i = 1; i < velas.length; i++) { ema = velas[i].close * k + ema * (1 - k); s.push(ema); }
+  return s;
+}
+
+function calcRSI(velas, p = 14) {
+  const c = velas.map((v) => v.close);
+  const ch = c.slice(1).map((x, i) => x - c[i]);
+  let g = ch.slice(0, p).filter((x) => x > 0).reduce((a, b) => a + b, 0) / p;
+  let l = ch.slice(0, p).filter((x) => x < 0).reduce((a, b) => a + Math.abs(b), 0) / p;
+  const s = [];
+  for (let i = p; i < ch.length; i++) {
+    g = (g * (p - 1) + Math.max(ch[i], 0)) / p;
+    l = (l * (p - 1) + Math.max(-ch[i], 0)) / p;
+    s.push(parseFloat((100 - 100 / (1 + (l === 0 ? 100 : g / l))).toFixed(2)));
+  }
+  return s;
+}
+
+function calcMACD(velas, r = 12, lp = 26, sig = 9) {
+  const eR = calcEMA(velas, r);
+  const eL = calcEMA(velas, lp);
+  const off = lp - r;
+  const macd = eR.slice(off).map((v, i) => v - eL[i]);
+  const sigVelas = velas.slice(off).map((v, i) => ({ ...v, close: macd[i] }));
+  const sigLine = calcEMA(sigVelas, sig);
+  const hist = macd.slice(sig - 1).map((v, i) => parseFloat((v - sigLine[i]).toFixed(4)));
+  return { macd: macd.slice(sig - 1).map((v) => parseFloat(v.toFixed(4))), senal: sigLine, hist };
+}
+
+function divRSI(velas, rsi, w = 20) {
+  const p = velas.slice(-w).map((v) => v.close);
+  const r = rsi.slice(-w);
+  const ps = p[p.length - 1] > p[0], rs = r[r.length - 1] > r[0];
+  if (ps && !rs) return "DIV_BAJISTA";
+  if (!ps && rs) return "DIV_ALCISTA";
+  return null;
+}
+
+function divMACD(velas, hist, w = 10) {
+  const p = velas.slice(-w).map((v) => v.close);
+  const h = hist.slice(-w);
+  const ps = p[p.length - 1] > p[0], hs = h[h.length - 1] > h[0];
+  if (ps && !hs) return "AGOTAMIENTO";
+  return null;
+}
+
+function analizarTF(velas, label) {
+  const rsi = calcRSI(velas);
+  const macd = calcMACD(velas);
+  const ema20 = calcEMA(velas, 20);
+  const ema50 = calcEMA(velas, 50);
+  const u = velas.slice(-30);
+  const rsiV = rsi[rsi.length - 1];
+  const macdV = macd.macd[macd.macd.length - 1];
+  const sigV = macd.senal[macd.senal.length - 1];
+  const hV = macd.hist[macd.hist.length - 1];
+  const hP = macd.hist[macd.hist.length - 2];
+  return {
+    tf: label,
+    precio: parseFloat(velas[velas.length - 1].close.toFixed(2)),
+    ema20: parseFloat(ema20[ema20.length - 1].toFixed(2)),
+    ema50: parseFloat(ema50[ema50.length - 1].toFixed(2)),
+    rsi: { v: rsiV, zona: rsiV > 70 ? "OB" : rsiV < 30 ? "OS" : (rsiV >= 40 && rsiV <= 60) ? "RESET" : "NEUTRO", div: divRSI(velas, rsi) },
+    macd: { v: macdV, sig: sigV, hist: hV, cruce: macdV > sigV ? "BUY" : "SELL", cero: macdV > 0 ? "+" : "-", hist_dir: hV > hP ? "^" : "v", div: divMACD(velas, macd.hist) },
+    res: parseFloat(Math.max(...u.map((v) => v.high)).toFixed(2)),
+    sop: parseFloat(Math.min(...u.map((v) => v.low)).toFixed(2)),
+  };
+}
+
+function calcPivots(velas) {
+  // Pivot points basados en las últimas 20 velas (soporte/resistencia clave)
+  const recientes = velas.slice(-20);
+  const highs = recientes.map((v) => v.high).sort((a, b) => b - a);
+  const lows = recientes.map((v) => v.low).sort((a, b) => a - b);
+  const pivot = (recientes[recientes.length - 1].high + recientes[recientes.length - 1].low + recientes[recientes.length - 1].close) / 3;
+  return {
+    pivot: parseFloat(pivot.toFixed(2)),
+    r1: parseFloat((2 * pivot - lows[0]).toFixed(2)),
+    r2: parseFloat(highs[1]?.toFixed(2) || highs[0].toFixed(2)),
+    s1: parseFloat((2 * pivot - highs[0]).toFixed(2)),
+    s2: parseFloat(lows[1]?.toFixed(2) || lows[0].toFixed(2)),
+  };
+}
+
+async function analizarSymbol(symbol) {
+  const nombre = symbol.replace("USDT", "");
+  const [v1d, v4h, v1h, v15m, funding] = await Promise.all([
+    getVelas(symbol, "1d", 60), getVelas(symbol, "4h", 120),
+    getVelas(symbol, "1h", 120), getVelas(symbol, "15m", 120),
+    getFunding(symbol),
+  ]);
+  return {
+    nombre, precio: v15m[v15m.length - 1].close, funding,
+    tf1d: analizarTF(v1d, "1D"),
+    tf4h: analizarTF(v4h, "4H"),
+    tf1h: analizarTF(v1h, "1H"),
+    tf15m: analizarTF(v15m, "15m"),
+    pivots: calcPivots(v4h),
+  };
+}
+
+async function generarSenal(datos) {
+  const sistema = `Eres el analista de CriptoScope. Voz directa de trader a trader — sin relleno, sin frases de IA. El precio manda.
+Metodologia: 4H estructura → 1H confirma RSI/MACD → 15m gatillo. RSI14 MACD 12/26/9.
+Divergencias en 1H/4H contra el setup = tamaño REDUCIDO o ESPERAR. RR minimo 1:1.5. Analisis educativo.`;
+
+  const syms = datos.map((d) => d.nombre);
+  const plantilla = syms.reduce((obj, s) => {
+    obj[s] = { sesgo: "frase corta directa", op: "LONG|SHORT|ESPERAR", por_que: "1 frase", entrada: null, tp1: null, tp2: null, sl: null, rr: null, tamano: "NORMAL|REDUCIDO", cuando: "condicion o nivel", alerta: null };
+    return obj;
+  }, {});
+
+  const instruccion = `Genera SOLO este JSON sin markdown:
+${JSON.stringify(plantilla)}
+
+REGLAS EXTRA:
+- Usa el 1D para filtrar: si el Daily está en tendencia clara, prioriza esa dirección.
+- Los pivots (pivot, r1, r2, s1, s2) son niveles clave para TP y SL — úsalos cuando sean relevantes.
+- SOL analízala igual que BTC y ETH con su propia estructura.
+- RR mínimo 1:1.5. Si no hay setup limpio, op=ESPERAR siempre.
+
+DATOS: ` + JSON.stringify(datos);
+
+  const response = await client.messages.create({
+    model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
+    max_tokens: 2000,
+    system: sistema,
+    messages: [{ role: "user", content: instruccion }],
+  });
+  const txt = response.content.filter((b) => b.type === "text").map((b) => b.text).join("");
+  const inicio = txt.indexOf("{");
+  const fin = txt.lastIndexOf("}");
+  const limpio = inicio !== -1 && fin !== -1 ? txt.slice(inicio, fin + 1) : txt.replace(/```json|```/g, "").trim();
+  try {
+    return JSON.parse(limpio);
+  } catch (e) {
+    // Rescue: extract BTC and ETH blocks individually
+    const parseBloque = (sym) => {
+      const m = limpio.match(new RegExp(`"${sym}"\\s*:\\s*(\\{[\\s\\S]*?\\})(?=\\s*[,}])`));
+      if (!m) return null;
+      try { return JSON.parse(m[1]); } catch { return null; }
+    };
+    const exStr = (bloque, campo) => {
+      const m = bloque?.match(new RegExp(`"${campo}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`));
+      return m ? m[1] : null;
+    };
+    const rescatar = (sym) => {
+      const raw = limpio.match(new RegExp(`"${sym}"\\s*:(\\{[\\s\\S]*?)(?="BTC"|"ETH"|$)`))?.[1] || "";
+      const str = (c) => { const m = raw.match(new RegExp(`"${c}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*?)"`)); return m?.[1] || null; };
+      const num = (c) => { const m = raw.match(new RegExp(`"${c}"\\s*:\\s*([0-9.]+)`)); return m ? parseFloat(m[1]) : null; };
+      return { sesgo: str("sesgo") || "sin datos", op: str("op") || "ESPERAR", por_que: str("por_que") || "", entrada: num("entrada"), tp1: num("tp1"), tp2: num("tp2"), sl: num("sl"), rr: str("rr"), tamano: str("tamano") || "REDUCIDO", cuando: str("cuando") || "", alerta: str("alerta") };
+    };
+    return { BTC: rescatar("BTC"), ETH: rescatar("ETH") };
+  }
+}
+
+function formatear(senales, datos, hora) {
+  const iconOp = { LONG: "🟢 LONG", SHORT: "🔴 SHORT", ESPERAR: "⏸ ESPERAR" };
+  const fecha = new Date().toLocaleDateString("es-ES", {
+    weekday: "long", day: "numeric", month: "long",
+    timeZone: process.env.TIMEZONE || "Europe/Madrid",
+  });
+
+  let msg = `<b>📊 CRIPTOSCOPE | Análisis Técnico</b>\n`;
+  msg += `<b>${fecha} · ${hora}</b>\n\n`;
+
+  for (const [sym, d] of Object.entries(senales)) {
+    const info = datos.find((x) => x.nombre === sym);
+    const precio = info ? `$${info.precio.toFixed(0)}` : "";
+    const funding = info?.funding ? `  ·  Funding ${info.funding.funding_pct}` : "";
+
+    msg += `──────────────\n`;
+    msg += `<b>${sym} ${precio}</b>${funding}\n\n`;
+    msg += `${d.sesgo}\n\n`;
+    msg += `${iconOp[d.op] || "⏸ ESPERAR"}\n`;
+    msg += `${d.por_que}\n`;
+
+    if (d.op !== "ESPERAR" && d.entrada) {
+      msg += `\nEntrada  <b>${d.entrada}</b>\n`;
+      msg += `TP1  ${d.tp1}  ·  TP2  ${d.tp2}\n`;
+      msg += `SL  ${d.sl}  ·  R:R  ${d.rr}\n`;
+      if (d.tamano === "REDUCIDO") msg += `⚠️ Posición reducida por divergencia\n`;
+      msg += `\n✅ Activar si: ${d.cuando}\n`;
+    } else {
+      msg += `\n🎯 Vigilar: ${d.cuando}\n`;
+    }
+
+    if (d.alerta) msg += `\n⚠️ ${d.alerta}\n`;
+    msg += "\n";
+  }
+
+  msg += `──────────────\n`;
+  msg += `<i>Análisis educativo · no es consejo financiero</i>`;
+  return msg;
+}
+
+export async function ejecutarAnalisisTecnico() {
+  console.log("📊 Analisis BTC + ETH (4H→1H→15m)...");
+  const datos = await Promise.all(SYMBOLS.map(analizarSymbol));
+  console.log(`   BTC $${datos[0].precio.toFixed(0)} | ETH $${datos[1].precio.toFixed(0)}`);
+  console.log("🧠 Generando con Claude...");
+  const senales = await generarSenal(datos);
+  const hora = new Date().toLocaleTimeString("es-ES", {
+    hour: "2-digit", minute: "2-digit",
+    timeZone: process.env.TIMEZONE || "Europe/Madrid",
+  });
+  const mensaje = formatear(senales, datos, hora);
+  const ops = datos.map((d) => `${d.nombre}: ${senales[d.nombre]?.op || "?"}`).join(" | ");
+  console.log(`   ${ops}`);
+  return { mensaje, senales };
+}
