@@ -193,12 +193,12 @@ DATOS: ` + JSON.stringify(datos);
       return m ? m[1] : null;
     };
     const rescatar = (sym) => {
-      const raw = limpio.match(new RegExp(`"${sym}"\\s*:(\\{[\\s\\S]*?)(?="BTC"|"ETH"|$)`))?.[1] || "";
+      const raw = limpio.match(new RegExp(`"${sym}"\\s*:(\\{[\\s\\S]*?)(?="BTC"|"ETH"|"SOL"|$)`))?.[1] || "";
       const str = (c) => { const m = raw.match(new RegExp(`"${c}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*?)"`)); return m?.[1] || null; };
       const num = (c) => { const m = raw.match(new RegExp(`"${c}"\\s*:\\s*([0-9.]+)`)); return m ? parseFloat(m[1]) : null; };
       return { sesgo: str("sesgo") || "sin datos", op: str("op") || "ESPERAR", por_que: str("por_que") || "", entrada: num("entrada"), tp1: num("tp1"), tp2: num("tp2"), sl: num("sl"), rr: str("rr"), tamano: str("tamano") || "REDUCIDO", cuando: str("cuando") || "", alerta: str("alerta") };
     };
-    return { BTC: rescatar("BTC"), ETH: rescatar("ETH") };
+    return { BTC: rescatar("BTC"), ETH: rescatar("ETH"), SOL: rescatar("SOL") };
   }
 }
 
