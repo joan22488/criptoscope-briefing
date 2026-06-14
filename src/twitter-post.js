@@ -27,36 +27,29 @@ export async function publicarThread(tweets) {
   }
   if (!tweets?.length) return null;
 
-  try {
-    const client = getClient();
-    const rwClient = client.readWrite;
+  const client = getClient();
+  const rwClient = client.readWrite;
 
-    // Limpiar HTML del briefing para X (texto plano)
-    const limpiar = (t) => t.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
+  // Limpiar HTML del briefing para X (texto plano)
+  const limpiar = (t) => t.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
 
-    // Primer tweet
-    const primerTweet = await rwClient.v2.tweet(limpiar(tweets[0]).slice(0, 270));
-    let ultimoId = primerTweet.data.id;
+  // Primer tweet
+  const primerTweet = await rwClient.v2.tweet(limpiar(tweets[0]).slice(0, 270));
+  let ultimoId = primerTweet.data.id;
 
-    // Resto como replies en cadena
-    for (let i = 1; i < tweets.length; i++) {
-      const texto = limpiar(tweets[i]).slice(0, 270);
-      const reply = await rwClient.v2.tweet(texto, { reply: { in_reply_to_tweet_id: ultimoId } });
-      ultimoId = reply.data.id;
-      await new Promise((r) => setTimeout(r, 1000));
-    }
-
-    // Último tweet: CTA con enlace al canal de Telegram
-    const canal = process.env.TELEGRAM_CANAL_URL || "https://t.me/criptoscopespain";
-    const cta = `📊 Análisis diario, señales técnicas y alertas en tiempo real en nuestro canal de Telegram 👇\n${canal}`;
-    const ctaTweet = await rwClient.v2.tweet(cta, { reply: { in_reply_to_tweet_id: ultimoId } });
-
-    console.log(`✅ Thread publicado en X — ${tweets.length + 1} tweets (+ CTA Telegram)`);
-    return primerTweet.data.id;
-  } catch (e) {
-    console.warn("⚠️  Error publicando en X:", e.message);
-    if (e.data) console.warn("   Detalle X:", JSON.stringify(e.data));
-    if (e.code) console.warn("   Código:", e.code);
-    return null;
+  // Resto como replies en cadena
+  for (let i = 1; i < tweets.length; i++) {
+    const texto = limpiar(tweets[i]).slice(0, 270);
+    const reply = await rwClient.v2.tweet(texto, { reply: { in_reply_to_tweet_id: ultimoId } });
+    ultimoId = reply.data.id;
+    await new Promise((r) => setTimeout(r, 1000));
   }
+
+  // Último tweet: CTA con enlace al canal de Telegram
+  const canal = process.env.TELEGRAM_CANAL_URL || "https://t.me/criptoscopespain";
+  const cta = `📊 Análisis diario, señales técnicas y alertas en tiempo real en nuestro canal de Telegram 👇\n${canal}`;
+  await rwClient.v2.tweet(cta, { reply: { in_reply_to_tweet_id: ultimoId } });
+
+  console.log(`✅ Thread publicado en X — ${tweets.length + 1} tweets (+ CTA Telegram)`);
+  return primerTweet.data.id;
 }

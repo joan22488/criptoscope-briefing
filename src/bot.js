@@ -634,8 +634,13 @@ async function procesarCallback(callback) {
     }
     if (destino === "x" || destino === "ambos") {
       const tweetTexto = resumirParaX(msg);
-      const resultado = await publicarThread([tweetTexto]);
-      if (resultado === null) errorX = true;
+      try {
+        await publicarThread([tweetTexto]);
+      } catch (e) {
+        const detalle = e?.data ? ` (${JSON.stringify(e.data)})` : "";
+        errorX = `${e.message}${detalle}`;
+        console.warn("⚠️ Error X desde bot:", errorX);
+      }
     }
 
     pendingPublish.delete(pid);
@@ -643,7 +648,8 @@ async function procesarCallback(callback) {
 
     const donde = destino === "ambos" ? "en el canal y en X" : destino === "canal" ? "en el canal" : "en X";
     if (errorX) {
-      await reply(chatId, `✅ Publicado en el canal.\n⚠️ X falló — revisa las credenciales o el plan de la API en developer.twitter.com`);
+      const canalParte = (destino === "ambos") ? "✅ Publicado en el canal.\n" : "";
+      await reply(chatId, `${canalParte}⚠️ X falló: <code>${errorX}</code>`);
     } else {
       await reply(chatId, `✅ Publicado ${donde}.`);
     }

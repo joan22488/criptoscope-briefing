@@ -53,7 +53,12 @@ export async function ejecutarBriefing() {
   // PASO 3c: Publicar thread en X (si configurado)
   if (process.env.X_API_KEY && paquete.thread?.length) {
     console.log("🐦 Publicando thread en X...");
-    await publicarThread(paquete.thread);
+    try {
+      await publicarThread(paquete.thread);
+    } catch (e) {
+      console.warn("⚠️ Error publicando thread en X:", e.message);
+      if (e.data) console.warn("   Detalle X:", JSON.stringify(e.data));
+    }
   }
 
   // PASO 3d: Publicar briefing en Telegram
