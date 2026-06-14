@@ -616,9 +616,10 @@ async function procesarCallback(callback) {
       .replace(/<[^>]+>/g, "")
       .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
       .trim();
-    const excluir = ["CriptoScope", "consejo financiero", "Análisis educativo", "Fuente:", "──────"];
+    const excluir = ["CriptoScope", "consejo financiero", "Análisis educativo", "Fuente:", "──────", "FLASH", "ALERTA", "HILO", "ANÁLISIS", "OPINIÓN"];
+    // Solo líneas con texto real: contienen minúsculas y tienen longitud suficiente
     const lineas = limpio.split("\n").map((l) => l.trim()).filter((l) =>
-      l.length > 15 && !excluir.some((e) => l.includes(e))
+      l.length > 30 && /[a-záéíóúñ]/.test(l) && !excluir.some((e) => l.toUpperCase().includes(e))
     );
     const contenido = lineas[0] || limpio;
     if (contenido.length <= 270) return contenido;
