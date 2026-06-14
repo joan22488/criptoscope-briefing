@@ -608,26 +608,45 @@ async function procesarCallback(callback) {
     return;
   }
 
+  // Extrae el primer párrafo limpio para X (máx 250 chars, corte en palabra completa)
+  const resumirParaX = (texto) => {
+    const limpio = texto
+      .replace(/<[^>]+>/g, "")
+      .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+      .replace(/\n{2,}/g, "\n").trim();
+    const primerParrafo = limpio.split("\n")[0] || limpio;
+    if (primerParrafo.length <= 250) return primerParrafo;
+    const cortado = primerParrafo.slice(0, 247);
+    return cortado.slice(0, cortado.lastIndexOf(" ")) + "...";
+  };
+
   // Helper para publicar según destino
   const publicarPorDestino = async (pid, destino) => {
     const msg = pendingPublish.get(pid);
     if (!msg) return reply(chatId, "❌ El contenido ya expiró (>30 min). Vuelve a generarlo.");
     await quitarBotones();
     const fileId = portadas.get(pid) || null;
-    const limpio = msg.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").slice(0, 270);
+
+    let errorX = null;
 
     if (destino === "canal" || destino === "ambos") {
       await publicarCanal(msg, fileId);
     }
     if (destino === "x" || destino === "ambos") {
-      try { await publicarThread([limpio]); } catch {}
+      const tweetTexto = resumirParaX(msg);
+      const resultado = await publicarThread([tweetTexto]);
+      if (resultado === null) errorX = true;
     }
 
     pendingPublish.delete(pid);
     portadas.delete(pid);
 
     const donde = destino === "ambos" ? "en el canal y en X" : destino === "canal" ? "en el canal" : "en X";
-    await reply(chatId, `✅ Publicado ${donde}.`);
+    if (errorX) {
+      await reply(chatId, `✅ Publicado en el canal.\n⚠️ X falló — revisa las credenciales o el plan de la API en developer.twitter.com`);
+    } else {
+      await reply(chatId, `✅ Publicado ${donde}.`);
+    }
   };
 
   if (data.startsWith("pub_ambos:") || data.startsWith("pub:")) {
