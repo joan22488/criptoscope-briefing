@@ -19,6 +19,9 @@ export let pausado = false;
 export const setPausado = (v) => { pausado = v; };
 export const isPausado = () => pausado;
 
+// Almacén temporal para mensajes pendientes de publicar (callback de botones)
+const pendingPublish = new Map();
+
 let offset = 0;
 
 // ──────────────────────────────────────────────
@@ -301,6 +304,125 @@ async function cmdActiva(chatId) {
   await reply(chatId, "▶️ Publicaciones automáticas <b>activadas</b>.");
 }
 
+// Foto con noticia → Claude la lee y genera opinión
+async function cmdFoto(chatId, photo, caption) {
+  await reply(chatId, "👁 Leyendo la imagen...");
+
+  try {
+    // Obtener URL de descarga de Telegram
+    const fileId = photo[photo.length - 1].file_id;
+    const fileInfo = await fetch(`${API()}/getFile?file_id=${fileId}`).then((r) => r.json());
+    const filePath = fileInfo.result?.file_path;
+    if (!filePath) throw new Error("No se pudo obtener el archivo de Telegram");
+
+    // Descargar imagen y convertir a base64
+    const fileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${filePath}`;
+    const imgRes = await fetch(fileUrl);
+    const imgBuffer = await imgRes.arrayBuffer();
+    const base64 = Buffer.from(imgBuffer).toString("base64");
+
+    await reply(chatId, "🧠 Analizando con Claude...");
+
+    // Obtener precio actual para contexto
+    const precios = await getPrices().catch(() => ({}));
+    const ctxPrecio = `BTC $${precios["BTC-USD"]?.precio?.toFixed(0) || "?"} · ETH $${precios["ETH-USD"]?.precio?.toFixed(0) || "?"}`;
+
+    // Enviar imagen a Claude con visión
+    const response = await client.messages.create({
+      model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
+      max_tokens: 900,
+      system: `Eres CriptoScope. Te llega una imagen con una noticia cripto o macro. Primero extrae el titular/contenido de la imagen, luego genera una opinión directa de trader: qué significa, cómo afecta al mercado, qué haría el precio a corto plazo y qué vigilarías. Voz directa, sin hype, sin frases de IA. 2-3 párrafos. HTML Telegram (<b>, <i>).`,
+      messages: [{
+        role: "user",
+        content: [
+          {
+            type: "image",
+            source: { type: "base64", media_type: "image/jpeg", data: base64 },
+          },
+          {
+            type: "text",
+            text: `Contexto mercado ahora: ${ctxPrecio}${caption ? `\nNota del usuario: ${caption}` : ""}`,
+          },
+        ],
+      }],
+    });
+
+    const opinion = response.content[0].text.trim();
+    const msg = `🧠 <b>ANÁLISIS | CriptoScope</b>\n\n${opinion}\n\n<i>Análisis educativo · no es consejo financiero</i>`;
+
+    // Guardar en memoria para el callback de publicar
+    const pid = Date.now().toString(36);
+    pendingPublish.set(pid, msg);
+    setTimeout(() => pendingPublish.delete(pid), 30 * 60 * 1000); // expira en 30 min
+
+    // Mostrar opinión con botones de acción
+    await fetch(`${API()}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: msg + "\n\n──────────────\n<i>¿Publico esto en el canal y en X?</i>",
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+        reply_markup: {
+          inline_keyboard: [[
+            { text: "✅ Publicar en canal + X", callback_data: `pub:${pid}` },
+            { text: "❌ Solo para mí", callback_data: "nopub" },
+          ]],
+        },
+      }),
+    });
+  } catch (e) {
+    await reply(chatId, `❌ Error analizando la imagen: ${e.message}`);
+  }
+}
+
+// Manejar respuesta de botones inline
+async function procesarCallback(callback) {
+  const chatId = callback.message.chat.id;
+  const messageId = callback.message.message_id;
+  const data = callback.data;
+
+  // Responder al callback para quitar el "reloj" de Telegram
+  await fetch(`${API()}/answerCallbackQuery`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ callback_query_id: callback.id }),
+  });
+
+  if (data === "nopub") {
+    await fetch(`${API()}/editMessageReplyMarkup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [] } }),
+    });
+    await reply(chatId, "✅ Guardado solo para ti.");
+    return;
+  }
+
+  if (data.startsWith("pub:")) {
+    const pid = data.slice(4);
+    const msg = pendingPublish.get(pid);
+    if (!msg) return reply(chatId, "❌ La opinión ya expiró (>30 min). Vuelve a enviar la foto.");
+
+    // Quitar botones
+    await fetch(`${API()}/editMessageReplyMarkup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [] } }),
+    });
+
+    await enviarTelegram(msg);
+    try {
+      const limpio = msg.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").slice(0, 270);
+      await publicarThread([limpio]);
+    } catch {}
+
+    pendingPublish.delete(pid);
+    await reply(chatId, "✅ Publicado en el canal y en X.");
+  }
+}
+
 // /ayuda — guía detallada de comandos
 async function cmdAyuda(chatId, cmd) {
   const ayudas = {
@@ -440,9 +562,16 @@ async function cmdAyuda(chatId, cmd) {
 
 async function procesarMensaje(msg) {
   const chatId = msg.chat.id;
+
+  // Si manda una foto → analizarla con visión
+  if (msg.photo) {
+    await cmdFoto(chatId, msg.photo, msg.caption || "");
+    return;
+  }
+
   const texto = msg.text || "";
   if (!texto.startsWith("/")) {
-    await reply(chatId, "👋 Hola. Escribe <code>/ayuda</code> para ver todos los comandos con explicación detallada.");
+    await reply(chatId, "👋 Hola. Escribe <code>/ayuda</code> para ver todos los comandos.\n\nTambién puedes <b>enviarme una foto</b> de cualquier noticia y la analizo al estilo CriptoScope.");
     return;
   }
 
@@ -507,13 +636,15 @@ export async function iniciarBot() {
 
   while (true) {
     try {
-      const res = await fetch(`${API()}/getUpdates?offset=${offset}&timeout=25&allowed_updates=["message"]`);
+      const res = await fetch(`${API()}/getUpdates?offset=${offset}&timeout=25&allowed_updates=["message","callback_query"]`);
       const data = await res.json();
       if (data.ok && data.result.length) {
         for (const update of data.result) {
           offset = update.update_id + 1;
           if (update.message) {
             procesarMensaje(update.message).catch((e) => console.error("❌ procesarMensaje:", e.message));
+          } else if (update.callback_query) {
+            procesarCallback(update.callback_query).catch((e) => console.error("❌ procesarCallback:", e.message));
           }
         }
       }
