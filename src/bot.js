@@ -8,7 +8,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
 import { getMarketContext, getPrices, getFearGreed, getGlobalMarket } from "./coindesk.js";
 import { analizarSymbol, generarSenal } from "./signals.js";
 import { getEventosMacro, formatearAlertaMacro } from "./calendar.js";
-import { publicarThread } from "./twitter-post.js";
+import { publicarThread, subirImagenX } from "./twitter-post.js";
 import { enviarTelegram } from "./telegram.js";
 
 const client = new Anthropic();
@@ -610,6 +610,47 @@ async function procesarCallback(callback) {
     return;
   }
 
+  // Detecta monedas en el texto y devuelve hashtags (máx 3)
+  const extraerHashtags = (texto) => {
+    const monedas = [
+      ["#BTC", ["BTC", "Bitcoin", "bitcoin"]],
+      ["#ETH", ["ETH", "Ethereum", "ethereum"]],
+      ["#SOL", ["SOL", "Solana", "solana"]],
+      ["#XRP", ["XRP", "Ripple", "ripple"]],
+      ["#BNB", ["BNB", "Binance"]],
+      ["#AVAX", ["AVAX", "Avalanche"]],
+      ["#DOGE", ["DOGE", "Dogecoin"]],
+      ["#ADA", ["ADA", "Cardano"]],
+      ["#DOT", ["DOT", "Polkadot"]],
+      ["#LINK", ["LINK", "Chainlink"]],
+      ["#SUI", ["SUI"]],
+      ["#TON", ["TON", "Toncoin"]],
+    ];
+    const tags = [];
+    for (const [tag, keywords] of monedas) {
+      if (keywords.some((k) => texto.includes(k))) tags.push(tag);
+      if (tags.length >= 3) break;
+    }
+    tags.push("#Crypto");
+    return tags.join(" ");
+  };
+
+  // Descarga portada de Telegram y la sube a X; devuelve mediaId o null
+  const subirPortadaAX = async (fileId) => {
+    try {
+      const fileRes = await fetch(`${API()}/getFile?file_id=${fileId}`);
+      const fileJson = await fileRes.json();
+      if (!fileJson.ok) return null;
+      const fileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${fileJson.result.file_path}`;
+      const imgRes = await fetch(fileUrl);
+      const buffer = Buffer.from(await imgRes.arrayBuffer());
+      return await subirImagenX(buffer, "image/jpeg");
+    } catch (e) {
+      console.warn("⚠️ No se pudo subir portada a X:", e.message);
+      return null;
+    }
+  };
+
   // Extrae contenido real para X: omite cabeceras y pies, máx 270 chars
   const resumirParaX = (texto) => {
     const limpio = texto
@@ -648,9 +689,12 @@ async function procesarCallback(callback) {
       }
     }
     if (destino === "x" || destino === "ambos") {
-      const tweetTexto = resumirParaX(msg);
+      const contenido = resumirParaX(msg);
+      const hashtags = extraerHashtags(msg);
+      const tweetTexto = `${contenido}\n\n${hashtags}`;
+      const mediaId = fileId ? await subirPortadaAX(fileId) : null;
       try {
-        await publicarThread([tweetTexto]);
+        await publicarThread([tweetTexto], { mediaId });
       } catch (e) {
         const detalle = e?.data ? ` (${JSON.stringify(e.data)})` : "";
         errorX = `${e.message}${detalle}`;

@@ -20,7 +20,15 @@ function getClient() {
   });
 }
 
-export async function publicarThread(tweets) {
+// Subir imagen a Twitter desde un buffer y devolver el media_id
+export async function subirImagenX(buffer, mimeType = "image/jpeg") {
+  if (!process.env.X_API_KEY) return null;
+  const client = getClient();
+  const mediaId = await client.v1.uploadMedia(buffer, { mimeType });
+  return mediaId;
+}
+
+export async function publicarThread(tweets, { mediaId } = {}) {
   if (!process.env.X_API_KEY) {
     console.log("ℹ️  X posting no configurado — saltando");
     return null;
@@ -33,8 +41,9 @@ export async function publicarThread(tweets) {
   // Limpiar HTML del briefing para X (texto plano)
   const limpiar = (t) => t.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
 
-  // Primer tweet
-  const primerTweet = await rwClient.v2.tweet(limpiar(tweets[0]).slice(0, 270));
+  // Primer tweet (con imagen si hay mediaId)
+  const primerPayload = mediaId ? { media: { media_ids: [mediaId] } } : undefined;
+  const primerTweet = await rwClient.v2.tweet(limpiar(tweets[0]).slice(0, 270), primerPayload);
   let ultimoId = primerTweet.data.id;
 
   // Resto como replies en cadena
