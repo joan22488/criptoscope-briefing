@@ -87,8 +87,24 @@ function trocear(texto, max) {
   return trozos.filter(Boolean);
 }
 
-async function publicarCanal(texto) {
-  await enviarTelegram(texto);
+async function publicarCanal(texto, portadaFileId = null) {
+  if (portadaFileId) {
+    // Publicar foto como portada + texto como caption o mensaje separado
+    const caption = texto.replace(/<[^>]+>/g, "").slice(0, 950);
+    await fetch(`${API()}/sendPhoto`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: process.env.TELEGRAM_CHAT_ID,
+        photo: portadaFileId,
+        caption,
+      }),
+    });
+    // Si el texto es largo, enviarlo también completo con formato HTML
+    if (texto.length > 950) await enviarTelegram(texto);
+  } else {
+    await enviarTelegram(texto);
+  }
 }
 
 // ──────────────────────────────────────────────
@@ -96,8 +112,8 @@ async function publicarCanal(texto) {
 // ──────────────────────────────────────────────
 
 // /flash <tema> — alerta urgente al canal + X
-async function cmdFlash(chatId, tema) {
-  if (!tema) return reply(chatId, "❓ Uso: /flash <tema o noticia>");
+async function cmdFlash(chatId, tema, portadaFileId = null) {
+  if (!tema) return reply(chatId, "❓ Uso: /flash <tema o noticia>\n\nTip: manda una foto con <code>/flash tema</code> en el pie para publicarla como portada.");
   await reply(chatId, "⚡ Generando flash...");
 
   const [precios, fearGreed] = await Promise.all([getPrices().catch(() => ({})), getFearGreed().catch(() => null)]);
@@ -105,7 +121,7 @@ async function cmdFlash(chatId, tema) {
   const response = await client.messages.create({
     model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
     max_tokens: 600,
-    system: `Eres CriptoScope. Voz directa de trader, sin hype ni promesas. Genera una alerta flash sobre el tema. Máx 3 párrafos cortos. Usa HTML de Telegram (<b>, <i>). Sin emojis excesivos — solo 1-2 relevantes.`,
+    system: `Eres CriptoScope. Voz directa de trader, sin hype ni promesas. Genera una alerta flash sobre el tema. Máx 3 párrafos cortos. Usa HTML de Telegram (<b>, <i>). Sin emojis excesivos, solo 1-2 relevantes. No uses guiones largos (—) para conectar frases; escribe frases completas y directas.`,
     messages: [{
       role: "user",
       content: `TEMA: ${tema}\nBTC: $${precios["BTC-USD"]?.precio?.toFixed(0) || "?"} · ETH: $${precios["ETH-USD"]?.precio?.toFixed(0) || "?"}\nFear&Greed: ${fearGreed?.valor || "?"} (${fearGreed?.clasificacion || "?"})`,
@@ -115,7 +131,7 @@ async function cmdFlash(chatId, tema) {
   const cuerpo = response.content[0].text.trim();
   const msg = `🚨 <b>FLASH | CriptoScope</b>\n\n${cuerpo}\n\n<i>Análisis educativo · no es consejo financiero</i>`;
 
-  await publicarCanal(msg);
+  await publicarCanal(msg, portadaFileId);
 
   // Publicar en X también
   try {
@@ -127,8 +143,8 @@ async function cmdFlash(chatId, tema) {
 }
 
 // /hilo <tema|URL> — thread educativo completo en canal + X
-async function cmdHilo(chatId, tema) {
-  if (!tema) return reply(chatId, "❓ Uso: /hilo <tema a explicar>\n\nTambién puedes pasar una URL de artículo:\n<code>/hilo https://coindesk.com/...</code>");
+async function cmdHilo(chatId, tema, portadaFileId = null) {
+  if (!tema) return reply(chatId, "❓ Uso: /hilo <tema a explicar>\n\nTambién puedes pasar una URL de artículo:\n<code>/hilo https://coindesk.com/...</code>\n\nO manda una foto con <code>/hilo tema</code> en el pie para publicarla como portada.");
 
   // Si el argumento es una URL, leer el artículo primero
   let contextoExtra = "";
@@ -158,7 +174,7 @@ async function cmdHilo(chatId, tema) {
   const response = await client.messages.create({
     model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
     max_tokens: 1500,
-    system: `Eres CriptoScope. Genera un hilo educativo de 5 tweets sobre el tema. Cada tweet máx 260 chars, numerado (1/5, 2/5...). Voz directa, sin hype. Devuelve SOLO JSON: {"tweets": ["tweet1", "tweet2", ...]}`,
+    system: `Eres CriptoScope. Genera un hilo educativo de 5 tweets sobre el tema. Cada tweet máx 260 chars, numerado (1/5, 2/5...). Voz directa, sin hype. No uses guiones largos (—) para conectar frases; escribe frases completas. Devuelve SOLO JSON: {"tweets": ["tweet1", "tweet2", ...]}`,
     messages: [{ role: "user", content: `TEMA: ${tema}${contextoExtra}` }],
   });
 
@@ -175,7 +191,7 @@ async function cmdHilo(chatId, tema) {
 
   // Publicar en canal como mensaje único
   const msgCanal = `📚 <b>HILO | ${tema}</b>\n\n` + tweets.map((t) => t.trim()).join("\n\n") + `\n\n<i>Análisis educativo · no es consejo financiero</i>`;
-  await publicarCanal(msgCanal);
+  await publicarCanal(msgCanal, portadaFileId);
 
   // Publicar en X como thread real
   try {
@@ -186,7 +202,7 @@ async function cmdHilo(chatId, tema) {
 }
 
 // /analiza <SYMBOL> — análisis técnico on-demand de cualquier par
-async function cmdAnaliza(chatId, symbolRaw) {
+async function cmdAnaliza(chatId, symbolRaw, portadaFileId = null) {
   if (!symbolRaw) return reply(chatId, "❓ Uso: /analiza BTC · /analiza ETH · /analiza SOL · /analiza AVAX");
   const symbol = symbolRaw.toUpperCase().replace("USDT", "").replace("/USDT", "").replace("/USD", "") + "USDT";
   await reply(chatId, `📊 Analizando ${symbol.replace("USDT", "")}...`);
@@ -198,7 +214,7 @@ async function cmdAnaliza(chatId, symbolRaw) {
 
     // Construir mensaje con el formateador existente
     const msg = buildMsgAnalisis(senales, [datos], hora);
-    await publicarCanal(msg);
+    await publicarCanal(msg, portadaFileId);
     await reply(chatId, `✅ Análisis de ${symbol.replace("USDT", "")} publicado en el canal`);
   } catch (e) {
     await reply(chatId, `❌ No pude analizar ${symbol.replace("USDT", "")}: ${e.message}`);
@@ -230,7 +246,7 @@ function buildMsgAnalisis(senales, datos, hora) {
 }
 
 // /opinion <noticia> — CriptoScope opina sobre algo
-async function cmdOpinion(chatId, noticia) {
+async function cmdOpinion(chatId, noticia, portadaFileId = null) {
   if (!noticia) return reply(chatId, "❓ Uso: /opinion <noticia o hecho concreto>");
   await reply(chatId, "🧠 Procesando...");
 
@@ -239,7 +255,7 @@ async function cmdOpinion(chatId, noticia) {
   const response = await client.messages.create({
     model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
     max_tokens: 700,
-    system: `Eres CriptoScope. Opina sobre la noticia con perspectiva de trader — qué significa para el mercado, qué haría el precio, qué vigilarías. Directo, sin rodeos. 2-3 párrafos. HTML Telegram.`,
+    system: `Eres CriptoScope. Opina sobre la noticia con perspectiva de trader: qué significa para el mercado, qué haría el precio, qué vigilarías. Directo, sin rodeos. 2-3 párrafos. HTML Telegram. No uses guiones largos (—) para conectar frases; escribe frases completas y directas.`,
     messages: [{
       role: "user",
       content: `NOTICIA: ${noticia}\nContexto mercado: BTC $${precios["BTC-USD"]?.precio?.toFixed(0) || "?"} (${precios["BTC-USD"]?.cambio24h_pct?.toFixed(2) || "?"}%)`,
@@ -248,7 +264,7 @@ async function cmdOpinion(chatId, noticia) {
 
   const cuerpo = response.content[0].text.trim();
   const msg = `🧠 <b>OPINIÓN | CriptoScope</b>\n\n<i>"${noticia}"</i>\n\n${cuerpo}\n\n<i>Análisis educativo · no es consejo financiero</i>`;
-  await publicarCanal(msg);
+  await publicarCanal(msg, portadaFileId);
   try {
     await publicarThread([msg.replace(/<[^>]+>/g, "").slice(0, 270)]);
   } catch {}
@@ -286,7 +302,7 @@ async function cmdQuePasa(chatId) {
   const response = await client.messages.create({
     model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
     max_tokens: 500,
-    system: `Eres CriptoScope. Resume el estado del mercado ahora mismo en 3-4 frases directas. Qué domina, qué vigilar, si hay oportunidad o no. Sin rodeos.`,
+    system: `Eres CriptoScope. Resume el estado del mercado ahora mismo en 3-4 frases directas. Qué domina, qué vigilar, si hay oportunidad o no. Sin rodeos. No uses guiones largos (—) para conectar frases.`,
     messages: [{
       role: "user",
       content: `BTC: $${precios["BTC-USD"]?.precio?.toFixed(0)} (${precios["BTC-USD"]?.cambio24h_pct?.toFixed(2)}%)\nETH: $${precios["ETH-USD"]?.precio?.toFixed(0)} (${precios["ETH-USD"]?.cambio24h_pct?.toFixed(2)}%)\nSOL: $${precios["SOL-USD"]?.precio?.toFixed(0)} (${precios["SOL-USD"]?.cambio24h_pct?.toFixed(2)}%)\nFear&Greed: ${fearGreed?.valor} (${fearGreed?.clasificacion})\nDominancia BTC: ${globalMarket?.dominancia_btc}%`,
@@ -449,7 +465,7 @@ async function cmdFoto(chatId, photo, caption) {
     const respuesta = await client.messages.create({
       model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
       max_tokens: 900,
-      system: `Eres CriptoScope. Genera una opinión directa de trader sobre la noticia de la imagen: qué significa para el mercado, cómo afecta al precio, qué vigilarías. Voz directa, sin hype. 2-3 párrafos. HTML Telegram (<b>, <i>).`,
+      system: `Eres CriptoScope. Genera una opinión directa de trader sobre la noticia de la imagen: qué significa para el mercado, cómo afecta al precio, qué vigilarías. Voz directa, sin hype. 2-3 párrafos. HTML Telegram (<b>, <i>). No uses guiones largos (—) para conectar frases; escribe frases completas y directas.`,
       messages: [{
         role: "user",
         content: [
@@ -1210,9 +1226,27 @@ Reglas:
 async function procesarMensaje(msg) {
   const chatId = msg.chat.id;
 
-  // Si manda una foto → analizarla con visión
+  // Si manda una foto → ver si el pie es un comando (portada) o análisis normal
   if (msg.photo) {
-    await cmdFoto(chatId, msg.photo, msg.caption || "");
+    const cap = (msg.caption || "").trim();
+    const cmdPortada = cap.match(/^\/?(flash|hilo|opinion|analiza)\s+(.+)/i);
+    if (cmdPortada) {
+      // Foto con comando en el pie → usar como portada
+      const tipo = cmdPortada[1].toLowerCase();
+      const argPortada = cmdPortada[2].trim();
+      const fileId = msg.photo[msg.photo.length - 1].file_id;
+      await reply(chatId, `📸 Portada recibida. Generando ${tipo}...`);
+      try {
+        if (tipo === "flash") await cmdFlash(chatId, argPortada, fileId);
+        else if (tipo === "hilo") await cmdHilo(chatId, argPortada, fileId);
+        else if (tipo === "opinion") await cmdOpinion(chatId, argPortada, fileId);
+        else if (tipo === "analiza") await cmdAnaliza(chatId, argPortada, fileId);
+      } catch (e) {
+        await reply(chatId, `❌ Error: ${e.message}`);
+      }
+    } else {
+      await cmdFoto(chatId, msg.photo, cap);
+    }
     return;
   }
 
