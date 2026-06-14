@@ -4,6 +4,7 @@
 // ============================================================
 
 import Anthropic from "@anthropic-ai/sdk";
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
 import { getMarketContext, getPrices, getFearGreed, getGlobalMarket } from "./coindesk.js";
 import { analizarSymbol, generarSenal } from "./signals.js";
 import { getEventosMacro, formatearAlertaMacro } from "./calendar.js";
@@ -12,6 +13,7 @@ import { enviarTelegram } from "./telegram.js";
 
 const client = new Anthropic();
 const API = () => `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}`;
+const OWNER = () => process.env.TELEGRAM_OWNER_ID;
 
 // Estado global
 export let pausado = false;
@@ -20,6 +22,31 @@ export const isPausado = () => pausado;
 
 // Almacén temporal para mensajes pendientes de publicar (callback de botones)
 const pendingPublish = new Map();
+
+// ── Publicaciones programadas ──────────────────
+const programadas = new Map(); // id → { descripcion, timer }
+let progContador = 1;
+
+// ── Alertas de precio (persistentes) ──────────
+const ALERTAS_FILE = "./data/alertas.json";
+function cargarAlertas() {
+  try {
+    if (!existsSync("./data")) mkdirSync("./data", { recursive: true });
+    if (existsSync(ALERTAS_FILE)) return JSON.parse(readFileSync(ALERTAS_FILE, "utf8"));
+  } catch {}
+  return [];
+}
+function guardarAlertas(arr) {
+  try {
+    if (!existsSync("./data")) mkdirSync("./data", { recursive: true });
+    writeFileSync(ALERTAS_FILE, JSON.stringify(arr, null, 2));
+  } catch {}
+}
+// [{coin, precio, direccion, chatId}]  direccion: "sube"|"baja"
+let alertasPrecios = cargarAlertas();
+
+// ── Monitor de noticias (IDs vistos en memoria) ──
+const noticiasVistas = new Set();
 
 let offset = 0;
 
@@ -99,16 +126,40 @@ async function cmdFlash(chatId, tema) {
   await reply(chatId, "✅ Flash publicado en el canal y en X");
 }
 
-// /hilo <tema> — thread educativo completo en canal + X
+// /hilo <tema|URL> — thread educativo completo en canal + X
 async function cmdHilo(chatId, tema) {
-  if (!tema) return reply(chatId, "❓ Uso: /hilo <tema a explicar>");
+  if (!tema) return reply(chatId, "❓ Uso: /hilo <tema a explicar>\n\nTambién puedes pasar una URL de artículo:\n<code>/hilo https://coindesk.com/...</code>");
+
+  // Si el argumento es una URL, leer el artículo primero
+  let contextoExtra = "";
+  if (/^https?:\/\//i.test(tema)) {
+    await reply(chatId, "🔗 Leyendo el artículo...");
+    try {
+      const htmlRes = await fetch(tema, { headers: { "User-Agent": "Mozilla/5.0" }, redirect: "follow" });
+      if (!htmlRes.ok) throw new Error(`HTTP ${htmlRes.status}`);
+      const html = await htmlRes.text();
+      // Extraer texto: quitar scripts, estilos y tags HTML
+      const texto = html
+        .replace(/<script[\s\S]*?<\/script>/gi, "")
+        .replace(/<style[\s\S]*?<\/style>/gi, "")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\s{2,}/g, " ")
+        .trim()
+        .slice(0, 4000);
+      contextoExtra = `\n\nCONTENIDO DEL ARTÍCULO:\n${texto}`;
+      tema = `artículo de ${new URL(tema).hostname}`;
+    } catch (e) {
+      await reply(chatId, `⚠️ No pude leer la URL (${e.message}). Generando hilo solo con el título...`);
+    }
+  }
+
   await reply(chatId, "📝 Generando hilo educativo...");
 
   const response = await client.messages.create({
     model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
     max_tokens: 1500,
     system: `Eres CriptoScope. Genera un hilo educativo de 5 tweets sobre el tema. Cada tweet máx 260 chars, numerado (1/5, 2/5...). Voz directa, sin hype. Devuelve SOLO JSON: {"tweets": ["tweet1", "tweet2", ...]}`,
-    messages: [{ role: "user", content: `TEMA: ${tema}` }],
+    messages: [{ role: "user", content: `TEMA: ${tema}${contextoExtra}` }],
   });
 
   const txt = response.content[0].text;
@@ -505,6 +556,67 @@ async function procesarCallback(callback) {
     pendingPublish.delete(pid);
     await reply(chatId, "✅ Publicado en el canal y en X.");
   }
+
+  if (data.startsWith("enc:")) {
+    const pid = data.slice(4);
+    const enc = pendingPublish.get(pid);
+    if (!enc) return reply(chatId, "❌ La encuesta ya expiró (>30 min). Vuelve a ejecutar /encuesta.");
+
+    await fetch(`${API()}/editMessageReplyMarkup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [] } }),
+    });
+
+    const pollRes = await fetch(`${API()}/sendPoll`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: process.env.TELEGRAM_CHAT_ID,
+        question: enc.pregunta,
+        options: enc.opciones.map((text) => ({ text })),
+        is_anonymous: true,
+      }),
+    });
+    const pollData = await pollRes.json();
+    pendingPublish.delete(pid);
+
+    if (pollData.ok) {
+      await reply(chatId, "✅ Encuesta enviada al canal.");
+    } else {
+      await reply(chatId, `❌ Error al enviar encuesta: ${pollData.description}`);
+    }
+  }
+
+  if (data.startsWith("news_flash:")) {
+    const titulo = decodeURIComponent(data.slice(11));
+    await fetch(`${API()}/editMessageReplyMarkup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [] } }),
+    });
+    await cmdFlash(chatId, titulo);
+  }
+
+  if (data.startsWith("news_hilo:")) {
+    const titulo = decodeURIComponent(data.slice(10));
+    await fetch(`${API()}/editMessageReplyMarkup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [] } }),
+    });
+    await cmdHilo(chatId, titulo);
+  }
+
+  if (data.startsWith("enc_re:")) {
+    const tema = data.slice(7);
+    await fetch(`${API()}/editMessageReplyMarkup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [] } }),
+    });
+    await cmdEncuesta(chatId, tema || "");
+  }
 }
 
 // /ayuda — guía detallada de comandos
@@ -590,6 +702,45 @@ async function cmdAyuda(chatId, cmd) {
         "Con /pausa detienes todas las publicaciones automáticas del canal: briefing matinal, señales técnicas, resumen semanal y alertas de evento. El bot sigue respondiendo tus comandos privados con normalidad.\n\n" +
         "Con /activa las reanudas. Útil si vas a publicar contenido manual durante un evento especial y no quieres que el bot interfiera, o si estás de vacaciones.",
     },
+    alerta: {
+      titulo: "🔔 /alerta — Alerta de precio",
+      uso: "/alerta <coin> <precio>",
+      ejemplo: "/alerta BTC 70000 · /alerta ETH <1800 · /alerta SOL >200",
+      detalle:
+        "Te avisa en privado cuando una coin llega a un nivel de precio.\n\n" +
+        "Sin símbolo de dirección: el bot detecta si el precio está por encima o por debajo y pone la alerta en el sentido correcto.\n" +
+        "Con <code>&lt;</code>: avisa cuando baje de ese nivel. Con <code>&gt;</code>: avisa cuando suba.\n\n" +
+        "Las alertas se guardan en disco — sobreviven reinicios del servidor. Solo suenan una vez y se eliminan automáticamente.\n\n" +
+        "Comandos relacionados:\n" +
+        "<code>/alertas</code> — ver tus alertas activas\n" +
+        "<code>/borralalerta 1</code> — eliminar la alerta número 1",
+    },
+    programar: {
+      titulo: "⏰ /programar — Programar publicación",
+      uso: "/programar <tipo> <HH:MM> <contenido>",
+      ejemplo: "/programar flash 18:00 BlackRock compra BTC · /programar hilo 09:30 qué es el halving",
+      detalle:
+        "Programa un flash, hilo u opinión para que se publique automáticamente a una hora concreta (horario Madrid).\n\n" +
+        "Si la hora ya pasó hoy, se programa para mañana a esa misma hora.\n\n" +
+        "Tipos válidos: <code>flash</code> · <code>hilo</code> · <code>opinion</code>\n\n" +
+        "Comandos relacionados:\n" +
+        "<code>/programadas</code> — lista de publicaciones pendientes\n" +
+        "<code>/cancelar 1</code> — cancela la publicación con ID 1\n\n" +
+        "⚠️ Las programadas viven en memoria — si el servidor se reinicia se pierden.",
+    },
+    encuesta: {
+      titulo: "🗳 /encuesta — Encuesta para el canal",
+      uso: "/encuesta [tema opcional]",
+      ejemplo: "/encuesta · /encuesta ¿Dónde estará BTC el viernes? · /encuesta altcoins",
+      detalle:
+        "Claude revisa el precio actual, el Fear&Greed Index y el contexto del mercado, y genera una encuesta relevante para publicar en el canal.\n\n" +
+        "Puedes usarlo sin argumentos para que elija el tema del día, o pasarle un tema concreto: '/encuesta ETH merge aniversario', '/encuesta próximo halving'.\n\n" +
+        "El bot te muestra una preview con la pregunta y las opciones. Tienes tres botones:\n" +
+        "✅ <b>Enviar al canal</b> — publica la encuesta nativa de Telegram\n" +
+        "🔄 <b>Regenerar</b> — genera otra diferente sobre el mismo tema\n" +
+        "❌ <b>Cancelar</b> — descártala sin publicar\n\n" +
+        "Las encuestas son anónimas por defecto. La comunidad vota directamente en el canal.",
+    },
     foto: {
       titulo: "📸 Foto de noticia — Análisis con verificación",
       uso: "Manda una foto directamente al bot (sin comando)",
@@ -639,6 +790,8 @@ async function cmdAyuda(chatId, cmd) {
     `Análisis técnico completo de cualquier coin. Con entrada, TP, SL y R:R.\n\n` +
     `<code>/opinion</code> &lt;noticia&gt;\n` +
     `CriptoScope opina sobre un hecho con perspectiva de trader.\n\n` +
+    `<code>/encuesta</code> [tema]\n` +
+    `Genera una encuesta nativa de Telegram para el canal. Preview + botones para aprobar.\n\n` +
     `──────────────\n` +
     `<b>🔒 Solo te responden a ti</b>\n\n` +
     `<code>/precio</code> &lt;coin&gt;\n` +
@@ -649,6 +802,13 @@ async function cmdAyuda(chatId, cmd) {
     `Señal técnica privada sin publicar en el canal.\n\n` +
     `<code>/calendario</code>\n` +
     `Eventos macro de la semana con hora exacta.\n\n` +
+    `<code>/alerta</code> &lt;coin&gt; &lt;precio&gt;\n` +
+    `Avisa cuando una coin llegue a ese nivel. <code>/alertas</code> · <code>/borralalerta</code>\n\n` +
+    `──────────────\n` +
+    `<b>⏰ Programadas</b>\n\n` +
+    `<code>/programar</code> &lt;tipo&gt; &lt;HH:MM&gt; &lt;tema&gt;\n` +
+    `Publica un flash/hilo/opinion a una hora concreta.\n` +
+    `<code>/programadas</code> · <code>/cancelar &lt;id&gt;</code>\n\n` +
     `──────────────\n` +
     `<b>⚙️ Sistema</b>\n\n` +
     `<code>/estado</code> — Estado y próximas ejecuciones\n` +
@@ -664,6 +824,334 @@ async function cmdAyuda(chatId, cmd) {
     `<i>Escribe /ayuda foto o /ayuda responde para más detalle.</i>`;
 
   await reply(chatId, menu);
+}
+
+// ──────────────────────────────────────────────
+// ALERTAS DE PRECIO
+// ──────────────────────────────────────────────
+
+// /alerta BTC 70000  →  avisa cuando BTC supere 70000
+// /alerta ETH <30000  →  avisa cuando ETH baje de 30000
+async function cmdAlerta(chatId, argStr) {
+  if (!argStr) return reply(chatId,
+    "❓ <b>Uso:</b>\n" +
+    "<code>/alerta BTC 70000</code> — avisa si sube a 70000\n" +
+    "<code>/alerta ETH &lt;30000</code> — avisa si baja de ese nivel\n" +
+    "<code>/alerta SOL &gt;150</code> — avisa si supera ese nivel\n\n" +
+    "Sin &lt; ni &gt; se interpreta como 'si llega a ese precio desde donde está ahora'."
+  );
+
+  const partes = argStr.trim().split(/\s+/);
+  if (partes.length < 2) return reply(chatId, "❓ Uso: /alerta BTC 70000 · /alerta ETH <1800");
+
+  const coin = partes[0].toUpperCase();
+  const rawPrecio = partes[1];
+
+  let direccion = null;
+  let precio = null;
+
+  if (rawPrecio.startsWith("<")) {
+    direccion = "baja";
+    precio = parseFloat(rawPrecio.slice(1));
+  } else if (rawPrecio.startsWith(">")) {
+    direccion = "sube";
+    precio = parseFloat(rawPrecio.slice(1));
+  } else {
+    precio = parseFloat(rawPrecio);
+    // Determinar dirección según precio actual
+    try {
+      const ps = await getPrices();
+      const key = `${coin}-USD`;
+      const actual = ps[key]?.precio;
+      if (!actual) return reply(chatId, `❌ No encontré precio para ${coin}. Prueba BTC, ETH o SOL.`);
+      direccion = precio > actual ? "sube" : "baja";
+    } catch {
+      direccion = "sube"; // fallback
+    }
+  }
+
+  if (!precio || isNaN(precio)) return reply(chatId, "❌ Precio no válido.");
+
+  alertasPrecios.push({ coin, precio, direccion, chatId });
+  guardarAlertas(alertasPrecios);
+
+  const dir = direccion === "sube" ? "suba a" : "baje a";
+  await reply(chatId, `✅ Alerta guardada: te aviso cuando <b>${coin}</b> ${dir} <b>$${precio.toLocaleString()}</b>`);
+}
+
+// /alertas — lista las alertas activas
+async function cmdAlertas(chatId) {
+  const mias = alertasPrecios.filter((a) => a.chatId === chatId);
+  if (!mias.length) return reply(chatId, "No tienes alertas activas.\n\nUsa <code>/alerta BTC 70000</code> para crear una.");
+
+  const lista = mias.map((a, i) => {
+    const dir = a.direccion === "sube" ? "↑ sube a" : "↓ baja a";
+    return `${i + 1}. <b>${a.coin}</b> ${dir} <b>$${a.precio.toLocaleString()}</b>`;
+  }).join("\n");
+  await reply(chatId, `🔔 <b>Tus alertas activas</b>\n\n${lista}\n\nUsa <code>/borralalerta 1</code> para eliminar por número.`);
+}
+
+// /borralalerta <número> — elimina una alerta
+async function cmdBorrarAlerta(chatId, argStr) {
+  const mias = alertasPrecios.filter((a) => a.chatId === chatId);
+  const idx = parseInt(argStr) - 1;
+  if (isNaN(idx) || idx < 0 || idx >= mias.length)
+    return reply(chatId, `❓ Uso: /borralalerta <número>\n\nEscribe /alertas para ver tus alertas con su número.`);
+
+  const alerta = mias[idx];
+  alertasPrecios = alertasPrecios.filter((a) => a !== alerta);
+  guardarAlertas(alertasPrecios);
+  await reply(chatId, `🗑 Alerta eliminada: ${alerta.coin} $${alerta.precio.toLocaleString()}`);
+}
+
+// Verifica alertas contra precios actuales — llamada desde index.js cada 5 min
+export async function verificarAlertasPrecios() {
+  if (!alertasPrecios.length) return;
+  let precios;
+  try { precios = await getPrices(); } catch { return; }
+
+  const disparadas = [];
+  alertasPrecios = alertasPrecios.filter((a) => {
+    const key = `${a.coin}-USD`;
+    const actual = precios[key]?.precio;
+    if (!actual) return true; // no hay dato, mantener
+
+    const tocada =
+      (a.direccion === "sube" && actual >= a.precio) ||
+      (a.direccion === "baja" && actual <= a.precio);
+
+    if (tocada) { disparadas.push({ ...a, actual }); return false; }
+    return true;
+  });
+
+  if (disparadas.length) guardarAlertas(alertasPrecios);
+
+  for (const a of disparadas) {
+    const dir = a.direccion === "sube" ? "🚀 HA SUBIDO A" : "📉 HA BAJADO A";
+    await fetch(`${API()}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: a.chatId,
+        text: `🔔 <b>ALERTA DE PRECIO</b>\n\n<b>${a.coin}</b> ${dir} <b>$${a.actual.toLocaleString()}</b>\nNivel vigilado: $${a.precio.toLocaleString()}`,
+        parse_mode: "HTML",
+      }),
+    }).catch(() => {});
+  }
+}
+
+// ──────────────────────────────────────────────
+// MONITOR DE NOTICIAS
+// ──────────────────────────────────────────────
+
+const KEYWORDS_NOTICIAS = (process.env.MONITOR_KEYWORDS || "ETF,BlackRock,SEC,Fed,FOMC,Bitcoin,halving,Ethereum,crash,pump,liquidaciones,Binance,Coinbase")
+  .split(",").map((k) => k.trim().toLowerCase());
+
+export async function monitorNoticias() {
+  if (!OWNER()) return; // sin TELEGRAM_OWNER_ID no hay a quién avisar
+  try {
+    const res = await fetch("https://www.coindesk.com/arc/outboundfeeds/rss/", {
+      headers: { "User-Agent": "Mozilla/5.0" },
+    });
+    if (!res.ok) return;
+    const xml = await res.text();
+
+    const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].map((m) => {
+      const get = (tag) => m[1].match(new RegExp(`<${tag}[^>]*>(?:<!\\[CDATA\\[)?(.*?)(?:\\]\\]>)?<\\/${tag}>`, "s"))?.[1]?.trim() || "";
+      return { guid: get("guid"), titulo: get("title"), link: get("link"), fecha: get("pubDate") };
+    });
+
+    for (const item of items) {
+      if (noticiasVistas.has(item.guid)) continue;
+      noticiasVistas.add(item.guid);
+
+      const coincide = KEYWORDS_NOTICIAS.some((k) => item.titulo.toLowerCase().includes(k));
+      if (!coincide) continue;
+
+      // Guardar para callback
+      const pid = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+      pendingPublish.set(pid, null); // se rellena con el texto generado al aprobar
+      setTimeout(() => pendingPublish.delete(pid), 60 * 60 * 1000); // 1h
+
+      await fetch(`${API()}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: OWNER(),
+          text: `📰 <b>Nueva noticia detectada</b>\n\n<b>${item.titulo}</b>\n\n<a href="${item.link}">Ver artículo</a>`,
+          parse_mode: "HTML",
+          disable_web_page_preview: false,
+          reply_markup: {
+            inline_keyboard: [[
+              { text: "⚡ Publicar flash", callback_data: `news_flash:${encodeURIComponent(item.titulo)}` },
+              { text: "📝 Hacer hilo", callback_data: `news_hilo:${encodeURIComponent(item.titulo)}` },
+              { text: "🙈 Ignorar", callback_data: "nopub" },
+            ]],
+          },
+        }),
+      });
+
+      // Pausa para no inundar si hay varias noticias nuevas de golpe
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  } catch (e) {
+    console.warn("⚠️  Monitor noticias:", e.message);
+  }
+}
+
+// ──────────────────────────────────────────────
+// PUBLICACIONES PROGRAMADAS
+// ──────────────────────────────────────────────
+
+// /programar flash 18:00 BlackRock compra más BTC
+// /programar hilo 09:30 qué son los ETFs de Bitcoin
+async function cmdProgramar(chatId, argStr) {
+  if (!argStr) return reply(chatId,
+    "❓ <b>Uso:</b>\n" +
+    "<code>/programar flash 18:00 &lt;tema&gt;</code>\n" +
+    "<code>/programar hilo 09:30 &lt;tema&gt;</code>\n" +
+    "<code>/programar opinion 15:00 &lt;noticia&gt;</code>\n\n" +
+    "La hora es en horario de Madrid. Si ya pasó hoy, se programa para mañana."
+  );
+
+  const partes = argStr.trim().split(/\s+/);
+  if (partes.length < 3) return reply(chatId, "❓ Faltan argumentos. Ejemplo: /programar flash 18:00 BlackRock compra BTC");
+
+  const tipo = partes[0].toLowerCase();
+  const horaStr = partes[1];
+  const contenido = partes.slice(2).join(" ");
+
+  if (!["flash", "hilo", "opinion"].includes(tipo))
+    return reply(chatId, "❌ Tipo no válido. Usa: flash, hilo, u opinion");
+
+  const [hh, mm] = horaStr.split(":").map(Number);
+  if (isNaN(hh) || isNaN(mm) || hh > 23 || mm > 59)
+    return reply(chatId, "❌ Hora no válida. Formato: HH:MM (ej. 18:00)");
+
+  // Calcular ms hasta la hora objetivo (Madrid)
+  const ahora = new Date(new Date().toLocaleString("en-US", { timeZone: process.env.TIMEZONE || "Europe/Madrid" }));
+  const objetivo = new Date(ahora);
+  objetivo.setHours(hh, mm, 0, 0);
+  if (objetivo <= ahora) objetivo.setDate(objetivo.getDate() + 1);
+  const msHasta = objetivo.getTime() - ahora.getTime();
+
+  const id = progContador++;
+  const descripcion = `/${tipo} a las ${horaStr} → "${contenido.slice(0, 50)}"`;
+
+  const timer = setTimeout(async () => {
+    programadas.delete(id);
+    console.log(`⏰ Ejecutando programada #${id}: ${descripcion}`);
+    try {
+      if (tipo === "flash") await cmdFlash(chatId, contenido);
+      else if (tipo === "hilo") await cmdHilo(chatId, contenido);
+      else if (tipo === "opinion") await cmdOpinion(chatId, contenido);
+    } catch (e) {
+      await reply(chatId, `❌ Error en publicación programada #${id}: ${e.message}`).catch(() => {});
+    }
+  }, msHasta);
+
+  programadas.set(id, { descripcion, timer, horaStr, tipo, contenido, chatId });
+
+  const esMañana = objetivo.getDate() !== ahora.getDate();
+  await reply(chatId,
+    `✅ Publicación programada (#${id})\n\n` +
+    `<b>Tipo:</b> /${tipo}\n` +
+    `<b>Hora:</b> ${horaStr} Madrid${esMañana ? " (mañana)" : ""}\n` +
+    `<b>Contenido:</b> ${contenido.slice(0, 80)}\n\n` +
+    `Usa <code>/programadas</code> para ver todas · <code>/cancelar ${id}</code> para borrar`
+  );
+}
+
+// /programadas — lista las publicaciones programadas pendientes
+async function cmdProgramadas(chatId) {
+  if (!programadas.size) return reply(chatId, "No hay publicaciones programadas.\n\nUsa <code>/programar flash 18:00 tema</code> para crear una.");
+
+  const lista = [...programadas.entries()].map(([id, p]) =>
+    `<b>#${id}</b> · /${p.tipo} · ${p.horaStr} · "${p.contenido.slice(0, 40)}..."`
+  ).join("\n");
+  await reply(chatId, `⏰ <b>Publicaciones programadas</b>\n\n${lista}\n\nUsa <code>/cancelar &lt;id&gt;</code> para eliminar una.`);
+}
+
+// /cancelar <id> — cancela una publicación programada
+async function cmdCancelar(chatId, argStr) {
+  const id = parseInt(argStr);
+  if (isNaN(id) || !programadas.has(id))
+    return reply(chatId, `❓ ID no encontrado. Usa /programadas para ver los IDs activos.`);
+
+  const p = programadas.get(id);
+  clearTimeout(p.timer);
+  programadas.delete(id);
+  await reply(chatId, `🗑 Publicación #${id} cancelada: ${p.descripcion}`);
+}
+
+// /encuesta — genera encuesta para el canal basada en el mercado actual
+async function cmdEncuesta(chatId, temaManual) {
+  await reply(chatId, "🗳 Generando encuesta...");
+
+  const [precios, fearGreed] = await Promise.all([
+    getPrices().catch(() => ({})),
+    getFearGreed().catch(() => null),
+  ]);
+
+  const ctxMercado =
+    `BTC $${precios["BTC-USD"]?.precio?.toFixed(0) || "?"} (${precios["BTC-USD"]?.cambio24h_pct?.toFixed(1) || "?"}%) · ` +
+    `ETH $${precios["ETH-USD"]?.precio?.toFixed(0) || "?"} (${precios["ETH-USD"]?.cambio24h_pct?.toFixed(1) || "?"}%) · ` +
+    `Fear&Greed ${fearGreed?.valor || "?"} ${fearGreed?.clasificacion || ""}`;
+
+  const response = await client.messages.create({
+    model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
+    max_tokens: 400,
+    system: `Eres CriptoScope. Genera encuestas para la comunidad cripto en Telegram. Directas, relevantes para lo que pasa hoy. Sin preguntas obvias ni condescendientes. La gente que sigue el canal sabe de mercados.`,
+    messages: [{
+      role: "user",
+      content: `Mercado ahora: ${ctxMercado}\n${temaManual ? `Tema sugerido: ${temaManual}\n` : ""}
+Devuelve SOLO este JSON sin markdown:
+{"pregunta":"La pregunta (máx 100 chars)","opciones":["Opción A","Opción B","Opción C","Opción D"],"tipo":"opinion|prediccion|educativa"}
+
+Reglas:
+- Entre 2 y 4 opciones. Máx 100 chars cada una.
+- Si es predicción: opciones con niveles de precio o % concretos, no "sí/no"
+- Si es opinión: opciones que reflejen posturas reales de traders
+- Si es educativa: conectada a un concepto que esté en el mercado hoy`,
+    }],
+  });
+
+  let encuesta;
+  try {
+    const txt = response.content[0].text;
+    encuesta = JSON.parse(txt.slice(txt.indexOf("{"), txt.lastIndexOf("}") + 1));
+  } catch {
+    return reply(chatId, "❌ No pude generar la encuesta. Inténtalo de nuevo.");
+  }
+
+  // Guardar para el callback
+  const pid = Date.now().toString(36);
+  pendingPublish.set(pid, { tipo: "encuesta", pregunta: encuesta.pregunta, opciones: encuesta.opciones });
+  setTimeout(() => pendingPublish.delete(pid), 30 * 60 * 1000);
+
+  // Mostrar preview con botones
+  const preview =
+    `🗳 <b>Preview de la encuesta</b>\n\n` +
+    `<b>${encuesta.pregunta}</b>\n\n` +
+    encuesta.opciones.map((o, i) => `${["🔵","🟡","🟢","🔴"][i]} ${o}`).join("\n") +
+    `\n\n<i>Tipo: ${encuesta.tipo}</i>`;
+
+  await fetch(`${API()}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text: preview,
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [[
+          { text: "✅ Enviar al canal", callback_data: `enc:${pid}` },
+          { text: "🔄 Regenerar", callback_data: `enc_re:${temaManual || ""}` },
+          { text: "❌ Cancelar", callback_data: "nopub" },
+        ]],
+      },
+    }),
+  });
 }
 
 // ──────────────────────────────────────────────
@@ -704,8 +1192,15 @@ async function procesarMensaje(msg) {
       case "/estado":     await cmdEstado(chatId); break;
       case "/pausa":      await cmdPausa(chatId); break;
       case "/activa":     await cmdActiva(chatId); break;
+      case "/alerta":       await cmdAlerta(chatId, argStr); break;
+      case "/alertas":      await cmdAlertas(chatId); break;
+      case "/borralalerta": await cmdBorrarAlerta(chatId, argStr); break;
+      case "/programar":    await cmdProgramar(chatId, argStr); break;
+      case "/programadas":  await cmdProgramadas(chatId); break;
+      case "/cancelar":     await cmdCancelar(chatId, argStr); break;
+      case "/encuesta":     await cmdEncuesta(chatId, argStr); break;
       case "/ayuda":
-      case "/help":       await cmdAyuda(chatId, argStr); break;
+      case "/help":         await cmdAyuda(chatId, argStr); break;
       default:
         await reply(chatId, `❓ Comando no reconocido: ${cmd}\n\nEscribe /estado para ver todos los comandos.`);
     }
@@ -739,7 +1234,14 @@ export async function iniciarBot() {
         { command: "estado",     description: "Estado del sistema" },
         { command: "pausa",      description: "Pausar publicaciones automáticas" },
         { command: "activa",     description: "Reanudar publicaciones automáticas" },
-        { command: "ayuda",      description: "Guía detallada de todos los comandos" },
+        { command: "alerta",       description: "Alerta cuando una coin llegue a un precio" },
+        { command: "alertas",      description: "Ver tus alertas de precio activas" },
+        { command: "borralalerta", description: "Eliminar una alerta de precio" },
+        { command: "programar",    description: "Programar flash/hilo/opinion a una hora" },
+        { command: "programadas",  description: "Ver publicaciones programadas pendientes" },
+        { command: "cancelar",     description: "Cancelar una publicación programada" },
+        { command: "encuesta",     description: "Generar encuesta para el canal basada en el mercado" },
+        { command: "ayuda",        description: "Guía detallada de todos los comandos" },
       ],
     }),
   }).catch(() => {});

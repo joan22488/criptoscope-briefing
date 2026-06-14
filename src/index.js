@@ -12,7 +12,7 @@ import { verificarAlertas } from "./alerts.js";
 import { enviarTelegram } from "./telegram.js";
 import { verificarResultados } from "./tracker.js";
 import { getPrices } from "./coindesk.js";
-import { iniciarBot, isPausado } from "./bot.js";
+import { iniciarBot, isPausado, verificarAlertasPrecios, monitorNoticias } from "./bot.js";
 
 const horario = process.env.CRON_SCHEDULE || "0 7 * * *";
 const horarioSenales = process.env.SIGNALS_SCHEDULE || "0 7,11,15,19 * * *";
@@ -114,6 +114,16 @@ cron.schedule(
     }
   }
 );
+
+// Alertas de precio — cada 5 minutos
+cron.schedule("*/5 * * * *", async () => {
+  await verificarAlertasPrecios().catch(() => {});
+}, { timezone: zona });
+
+// Monitor de noticias — cada 15 minutos
+cron.schedule("*/15 * * * *", async () => {
+  await monitorNoticias().catch((e) => console.warn("⚠️  Monitor noticias:", e.message));
+}, { timezone: zona });
 
 // Bot de comandos bajo demanda (long-polling — no bloquea los crons)
 iniciarBot().catch((e) => console.error("❌ Bot error fatal:", e.message));
