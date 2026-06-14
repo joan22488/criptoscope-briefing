@@ -47,24 +47,50 @@ export async function getNews(limit = 25) {
 }
 
 /**
- * 2) PRECIOS SPOT - CoinGecko (gratis, sin key)
+ * 2) PRECIOS SPOT - Binance 24h ticker (sin key, sin restricciones de rate)
+ * Fallback a CoinGecko si Binance falla
  */
 export async function getPrices() {
-  const data = await apiFetch(
-    "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=bitcoin,ethereum&order=market_cap_desc&sparkline=false&price_change_percentage=24h"
-  );
-  const out = {};
-  for (const coin of data) {
-    const key = coin.id === "bitcoin" ? "BTC-USD" : "ETH-USD";
-    out[key] = {
-      precio: coin.current_price,
-      cambio24h_pct: coin.price_change_percentage_24h,
-      maximo24h: coin.high_24h,
-      minimo24h: coin.low_24h,
-      volumen24h: coin.total_volume,
-    };
+  try {
+    const data = await apiFetch(
+      'https://api.binance.com/api/v3/ticker/24hr?symbols=["BTCUSDT","ETHUSDT","SOLUSDT"]'
+    );
+    const MAP = { BTCUSDT: "BTC-USD", ETHUSDT: "ETH-USD", SOLUSDT: "SOL-USD" };
+    const out = {};
+    for (const c of data) {
+      const key = MAP[c.symbol];
+      if (!key) continue;
+      out[key] = {
+        precio: parseFloat(c.lastPrice),
+        cambio24h_pct: parseFloat(c.priceChangePercent),
+        maximo24h: parseFloat(c.highPrice),
+        minimo24h: parseFloat(c.lowPrice),
+        volumen24h: parseFloat(c.quoteVolume),
+      };
+    }
+    return out;
+  } catch (e) {
+    console.warn("⚠️  Binance ticker falló, usando CoinGecko:", e.message);
+    // Pequeña pausa antes de CoinGecko para no acumular con otras llamadas
+    await new Promise((r) => setTimeout(r, 2000));
+    const data = await apiFetch(
+      "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=bitcoin,ethereum,solana&order=market_cap_desc&sparkline=false&price_change_percentage=24h"
+    );
+    const ID_MAP = { bitcoin: "BTC-USD", ethereum: "ETH-USD", solana: "SOL-USD" };
+    const out = {};
+    for (const coin of data) {
+      const key = ID_MAP[coin.id];
+      if (!key) continue;
+      out[key] = {
+        precio: coin.current_price,
+        cambio24h_pct: coin.price_change_percentage_24h,
+        maximo24h: coin.high_24h,
+        minimo24h: coin.low_24h,
+        volumen24h: coin.total_volume,
+      };
+    }
+    return out;
   }
-  return out;
 }
 
 /**
@@ -229,16 +255,20 @@ export async function getLiquidaciones() {
  * Recopila TODO el contexto de mercado en un solo objeto.
  */
 export async function getMarketContext() {
-  const [noticias, precios, funding, openInterest, gainersLosers, fearGreed, globalMarket, liquidaciones] = await Promise.all([
+  // Precios (Binance ticker) + noticias + funding/OI en paralelo — sin CoinGecko
+  const [noticias, precios, funding, openInterest, fearGreed, liquidaciones] = await Promise.all([
     getNews(),
     getPrices(),
     getFunding(),
     getOpenInterest(),
-    getGainersLosers(),
     getFearGreed(),
-    getGlobalMarket(),
     getLiquidaciones(),
   ]);
+  // CoinGecko gainers y global en serie con pausa para respetar rate limit
+  await new Promise((r) => setTimeout(r, 1500));
+  const gainersLosers = await getGainersLosers().catch(() => null);
+  await new Promise((r) => setTimeout(r, 1500));
+  const globalMarket = await getGlobalMarket().catch(() => null);
 
   return {
     generado: new Date().toISOString(),

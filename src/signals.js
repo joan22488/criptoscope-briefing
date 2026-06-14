@@ -2,16 +2,25 @@ import Anthropic from "@anthropic-ai/sdk";
 import { registrarSenal, verificarResultados, calcularCorrelacion } from "./tracker.js";
 
 const client = new Anthropic();
-const BINANCE = "https://api.binance.com/api/v3";
-const BINANCE_FUTURES = "https://fapi.binance.com/fapi/v1";
+const OKX = "https://www.okx.com/api/v5/market";
+const OKX_PUBLIC = "https://www.okx.com/api/v5/public";
 const SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT"];
 
+// Convierte "BTCUSDT" → "BTC-USDT", mapea intervalos Binance → OKX
+const toOKXId = (sym) => sym.replace("USDT", "-USDT");
+const toOKXBar = (iv) => ({ "1d": "1D", "4h": "4H", "1h": "1H", "15m": "15m" }[iv] || iv);
+
 async function getVelas(symbol, interval, limit = 120) {
-  const url = `${BINANCE}/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Binance ${symbol} ${interval}: HTTP ${res.status}`);
-  return (await res.json()).map((v) => ({
-    time: new Date(v[0]).toISOString(),
+  const instId = toOKXId(symbol);
+  const bar = toOKXBar(interval);
+  const url = `${OKX}/candles?instId=${instId}&bar=${bar}&limit=${limit}`;
+  const res = await fetch(url, { headers: { Accept: "application/json" } });
+  if (!res.ok) throw new Error(`OKX ${symbol} ${interval}: HTTP ${res.status}`);
+  const json = await res.json();
+  if (json.code !== "0") throw new Error(`OKX ${symbol} ${interval}: ${json.msg}`);
+  // OKX devuelve newest-first → invertir para tener cronológico
+  return json.data.reverse().map((v) => ({
+    time: new Date(parseInt(v[0])).toISOString(),
     open: parseFloat(v[1]), high: parseFloat(v[2]),
     low: parseFloat(v[3]), close: parseFloat(v[4]), volume: parseFloat(v[5]),
   }));
@@ -19,13 +28,16 @@ async function getVelas(symbol, interval, limit = 120) {
 
 async function getFunding(symbol) {
   try {
+    const instId = toOKXId(symbol) + "-SWAP";
     const [fr, oi] = await Promise.all([
-      fetch(`${BINANCE_FUTURES}/premiumIndex?symbol=${symbol}`).then((r) => r.json()),
-      fetch(`${BINANCE_FUTURES}/openInterest?symbol=${symbol}`).then((r) => r.json()),
+      fetch(`${OKX_PUBLIC}/funding-rate?instId=${instId}`).then((r) => r.json()),
+      fetch(`${OKX_PUBLIC}/open-interest?instType=SWAP&instId=${instId}`).then((r) => r.json()),
     ]);
+    const frVal = parseFloat(fr.data?.[0]?.fundingRate || 0);
+    const oiVal = parseFloat(oi.data?.[0]?.oi || 0);
     return {
-      funding_pct: (parseFloat(fr.lastFundingRate) * 100).toFixed(4) + "%",
-      open_interest: parseFloat(oi.openInterest),
+      funding_pct: (frVal * 100).toFixed(4) + "%",
+      open_interest: oiVal,
     };
   } catch { return null; }
 }
