@@ -51,6 +51,8 @@ export async function publicarThread(tweets) {
     return primerTweet.data.id;
   } catch (e) {
     console.warn("⚠️  Error publicando en X:", e.message);
+    if (e.data) console.warn("   Detalle X:", JSON.stringify(e.data));
+    if (e.code) console.warn("   Código:", e.code);
     return null;
   }
 }
