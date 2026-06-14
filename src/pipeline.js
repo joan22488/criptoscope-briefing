@@ -1,6 +1,5 @@
 // ============================================================
 // pipeline.js - El flujo completo del briefing matinal
-// 1) Datos CoinDesk → 2) Claude genera → 3) Telegram + archivos
 // ============================================================
 
 import { getMarketContext } from "./coindesk.js";
@@ -9,6 +8,9 @@ import { getRedditSignals } from "./reddit.js";
 import { generarPaqueteDiario } from "./claude.js";
 import { enviarTelegram } from "./telegram.js";
 import { guardarPaquete } from "./output.js";
+import { getEventosMacro } from "./calendar.js";
+import { guardarBriefingEnNotion } from "./notion.js";
+import { publicarThread } from "./twitter-post.js";
 
 export async function ejecutarBriefing() {
   const inicio = Date.now();
@@ -16,26 +18,45 @@ export async function ejecutarBriefing() {
 
   // PASO 1: Recopilar todo en paralelo
   console.log("📡 Obteniendo datos de mercado, tweets y Reddit...");
-  const [contexto, tweets, reddit] = await Promise.all([
+  const [contexto, tweets, reddit, eventosMacro] = await Promise.all([
     getMarketContext(),
     getTweetsRelevantes(),
     getRedditSignals(),
+    getEventosMacro(),
   ]);
   console.log(`   ✓ ${contexto.noticias.length} noticias | BTC/ETH + derivados OK`);
   console.log(`   ✓ ${tweets.length} tweets de alto impacto`);
   console.log(`   ✓ ${reddit.length} posts de Reddit`);
+  console.log(`   ✓ ${eventosMacro.semana.length} eventos macro esta semana`);
   contexto.tweets = tweets;
   contexto.reddit = reddit;
+  contexto.eventosMacro = eventosMacro;
 
-  // PASO 2: Claude relaciona todo y genera el paquete del día
+  // PASO 2: Claude genera el paquete del día
   console.log("🧠 Generando briefing + guion + thread con Claude...");
   const paquete = await generarPaqueteDiario(contexto);
   console.log(`   ✓ Titular: ${paquete.titular}`);
 
-  // PASO 3a: Guardar archivos locales (tu material de trabajo del día)
+  // PASO 3a: Guardar archivos locales
   await guardarPaquete(paquete);
 
-  // PASO 3b: Publicar briefing en Telegram
+  // PASO 3b: Guardar en Notion (si configurado)
+  if (process.env.NOTION_TOKEN) {
+    try {
+      await guardarBriefingEnNotion(paquete, contexto);
+      console.log("   ✓ Guardado en Notion");
+    } catch (e) {
+      console.warn("   ⚠️ Notion falló:", e.message);
+    }
+  }
+
+  // PASO 3c: Publicar thread en X (si configurado)
+  if (process.env.X_API_KEY && paquete.thread?.length) {
+    console.log("🐦 Publicando thread en X...");
+    await publicarThread(paquete.thread);
+  }
+
+  // PASO 3d: Publicar briefing en Telegram
   console.log("📤 Enviando a Telegram...");
   const cabecera = `<b>☕ CRIPTOSCOPE | Briefing Matinal</b>\n<b>${paquete.titular}</b>\n\n`;
 
@@ -44,7 +65,6 @@ export async function ejecutarBriefing() {
   const gm = contexto.mercadoGlobal;
   const liq = contexto.sentimiento?.liquidaciones;
 
-  // Bloque Fear & Greed + dominancia BTC
   const fgEmoji = fg ? (fg.valor >= 75 ? "🟢" : fg.valor >= 55 ? "🟡" : fg.valor >= 35 ? "🟠" : "🔴") : "";
 
   let liqLinea = "";
@@ -71,6 +91,16 @@ export async function ejecutarBriefing() {
       `${gl.perdedores.map((p) => `$${p.simbolo} <b>${p.cambio}%</b>`).join("  ·  ")}`
     : "";
 
+  // Bloque macro: alertar si hay eventos hoy o mañana
+  let bloqueMacro = "";
+  if (eventosMacro.hoy?.length || eventosMacro.manana?.length) {
+    bloqueMacro = `\n\n─────────────────\n⚠️ <b>Macro a vigilar</b>\n`;
+    for (const e of [...(eventosMacro.hoy || []), ...(eventosMacro.manana || [])]) {
+      const cuando = eventosMacro.hoy?.includes(e) ? "HOY" : "MAÑANA";
+      bloqueMacro += `• <b>${e.titulo}</b> — ${cuando} ${e.hora} ET\n`;
+    }
+  }
+
   const bloquePalabra = paquete.palabra_del_dia
     ? `\n\n─────────────────\n📚 <b>Concepto del día</b>\n${paquete.palabra_del_dia}`
     : "";
@@ -79,7 +109,7 @@ export async function ejecutarBriefing() {
     ? `\n\n💬 <b>Pregunta del día:</b> ${paquete.pregunta_comunidad}`
     : "";
 
-  await enviarTelegram(cabecera + paquete.briefing + bloqueSentimiento + bloqueGainers + bloquePalabra + pie);
+  await enviarTelegram(cabecera + paquete.briefing + bloqueSentimiento + bloqueGainers + bloqueMacro + bloquePalabra + pie);
 
   const seg = ((Date.now() - inicio) / 1000).toFixed(1);
   console.log(`✅ Briefing completado en ${seg}s`);

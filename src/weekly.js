@@ -5,6 +5,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getPrices, getFearGreed, getGlobalMarket, getNews, getGainersLosers } from "./coindesk.js";
 import { INSTRUCCIONES_RESUMEN_SEMANAL, VOZ_CRIPTOSCOPE } from "./prompts.js";
+import { generarEstadisticasSemana, formatearEstadisticas } from "./tracker.js";
 
 const client = new Anthropic();
 
@@ -64,6 +65,10 @@ ${INSTRUCCIONES_RESUMEN_SEMANAL}`,
       `${gl.perdedores.map((p) => `$${p.simbolo} <b>${p.cambio}%</b>`).join("  ·  ")}`
     : "";
 
+  // Añadir estadísticas de señales de la semana
+  const statsSignals = await generarEstadisticasSemana().catch(() => null);
+  const bloqueStats = statsSignals ? formatearEstadisticas(statsSignals) : "";
+
   const pie = paquete.pregunta_comunidad
     ? `\n\n💬 <b>Reflexión de la semana:</b> ${paquete.pregunta_comunidad}`
     : "";
@@ -72,6 +77,7 @@ ${INSTRUCCIONES_RESUMEN_SEMANAL}`,
     `<b>📊 CRIPTOSCOPE | Resumen Semanal</b>\n<b>${paquete.titular}</b>\n\n` +
     paquete.resumen +
     bloqueGainers +
+    bloqueStats +
     pie;
 
   console.log(`   ✓ Resumen semanal generado: ${paquete.titular}`);

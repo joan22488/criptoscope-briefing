@@ -10,6 +10,8 @@ import { ejecutarAnalisisTecnico } from "./signals.js";
 import { ejecutarResumenSemanal } from "./weekly.js";
 import { verificarAlertas } from "./alerts.js";
 import { enviarTelegram } from "./telegram.js";
+import { verificarResultados } from "./tracker.js";
+import { getPrices } from "./coindesk.js";
 
 const horario = process.env.CRON_SCHEDULE || "0 7 * * *";
 const horarioSenales = process.env.SIGNALS_SCHEDULE || "0 7,11,15,19 * * *";
@@ -81,6 +83,26 @@ cron.schedule(
       }
     } catch (e) {
       console.warn("⚠️  Monitor de alertas falló:", e.message);
+    }
+
+    // Verificar resultados de señales pendientes (cada 30min junto con alertas)
+    try {
+      const precios = await getPrices();
+      const preciosMap = {
+        BTC: precios["BTC-USD"]?.precio,
+        ETH: precios["ETH-USD"]?.precio,
+      };
+      const actualizadas = await verificarResultados(preciosMap);
+      for (const s of actualizadas) {
+        const emoji = s.resultado.includes("TP") ? "✅" : "❌";
+        await enviarTelegram(
+          `${emoji} <b>Señal ${s.resultado}</b>\n` +
+          `${s.symbol} ${s.op} · Entrada ${s.entrada}\n` +
+          `<i>Enviada el ${new Date(s.fecha).toLocaleDateString("es-ES")}</i>`
+        );
+      }
+    } catch (e) {
+      // silencioso — no crítico
     }
   }
 );

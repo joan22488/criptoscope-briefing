@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { registrarSenal, verificarResultados, calcularCorrelacion } from "./tracker.js";
 
 const client = new Anthropic();
 const BINANCE = "https://api.binance.com/api/v3";
@@ -189,7 +190,7 @@ DATOS: ` + JSON.stringify(datos);
   }
 }
 
-function formatear(senales, datos, hora) {
+function formatear(senales, datos, hora, correlacion) {
   const iconOp = { LONG: "🟢 LONG", SHORT: "🔴 SHORT", ESPERAR: "⏸ ESPERAR" };
   const fecha = new Date().toLocaleDateString("es-ES", {
     weekday: "long", day: "numeric", month: "long",
@@ -224,6 +225,7 @@ function formatear(senales, datos, hora) {
     msg += "\n";
   }
 
+  if (correlacion) msg += `──────────────\n🔗 ${correlacion}\n\n`;
   msg += `──────────────\n`;
   msg += `<i>Análisis educativo · no es consejo financiero</i>`;
   return msg;
@@ -239,7 +241,25 @@ export async function ejecutarAnalisisTecnico() {
     hour: "2-digit", minute: "2-digit",
     timeZone: process.env.TIMEZONE || "Europe/Madrid",
   });
-  const mensaje = formatear(senales, datos, hora);
+  // Registrar señales con entrada real en tracker (backtesting)
+  for (const d of datos) {
+    const s = senales[d.nombre];
+    if (s && s.op !== "ESPERAR" && s.entrada) {
+      await registrarSenal(d.nombre, s, d.precio).catch(() => {});
+    }
+  }
+
+  // Verificar resultados de señales anteriores
+  const precios = Object.fromEntries(datos.map((d) => [d.nombre, d.precio]));
+  const actualizadas = await verificarResultados(precios).catch(() => []);
+  if (actualizadas.length) {
+    console.log(`   📊 ${actualizadas.length} señal(es) con resultado actualizado`);
+  }
+
+  // Calcular correlación BTC/ETH/SOL
+  const correlacion = calcularCorrelacion(datos);
+
+  const mensaje = formatear(senales, datos, hora, correlacion);
   const ops = datos.map((d) => `${d.nombre}: ${senales[d.nombre]?.op || "?"}`).join(" | ");
   console.log(`   ${ops}`);
   return { mensaje, senales };
