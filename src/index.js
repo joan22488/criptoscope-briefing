@@ -12,6 +12,7 @@ import { verificarAlertas } from "./alerts.js";
 import { enviarTelegram } from "./telegram.js";
 import { verificarResultados } from "./tracker.js";
 import { getPrices } from "./coindesk.js";
+import { iniciarBot, isPausado } from "./bot.js";
 
 const horario = process.env.CRON_SCHEDULE || "0 7 * * *";
 const horarioSenales = process.env.SIGNALS_SCHEDULE || "0 7,11,15,19 * * *";
@@ -25,12 +26,14 @@ console.log(`  Briefing:  ${horario} (${zona})`);
 console.log(`  Señales:   ${horarioSenales} (${zona})`);
 console.log(`  Semanal:   ${horarioSemanal} (${zona})`);
 console.log(`  Alertas:   ${horarioAlertas}`);
+console.log(`  Bot:       activo (long-polling)`);
 console.log("═══════════════════════════════════════");
 
 // Briefing matinal diario
 cron.schedule(
   horario,
   async () => {
+    if (isPausado()) return console.log("⏸ Briefing omitido (pausado)");
     try {
       await ejecutarBriefing();
     } catch (e) {
@@ -45,6 +48,7 @@ cron.schedule(
 cron.schedule(
   horarioSenales,
   async () => {
+    if (isPausado()) return console.log("⏸ Señales omitidas (pausado)");
     try {
       const { mensaje } = await ejecutarAnalisisTecnico();
       await enviarTelegram(mensaje);
@@ -60,6 +64,7 @@ cron.schedule(
 cron.schedule(
   horarioSemanal,
   async () => {
+    if (isPausado()) return console.log("⏸ Semanal omitido (pausado)");
     try {
       const { mensaje } = await ejecutarResumenSemanal();
       await enviarTelegram(mensaje);
@@ -76,10 +81,12 @@ cron.schedule(
   horarioAlertas,
   async () => {
     try {
-      const alerta = await verificarAlertas();
-      if (alerta) {
-        console.log("🚨 Alerta de evento detectada — enviando a Telegram");
-        await enviarTelegram(alerta);
+      if (!isPausado()) {
+        const alerta = await verificarAlertas();
+        if (alerta) {
+          console.log("🚨 Alerta de evento detectada — enviando a Telegram");
+          await enviarTelegram(alerta);
+        }
       }
     } catch (e) {
       console.warn("⚠️  Monitor de alertas falló:", e.message);
@@ -91,6 +98,7 @@ cron.schedule(
       const preciosMap = {
         BTC: precios["BTC-USD"]?.precio,
         ETH: precios["ETH-USD"]?.precio,
+        SOL: precios["SOL-USD"]?.precio,
       };
       const actualizadas = await verificarResultados(preciosMap);
       for (const s of actualizadas) {
@@ -106,5 +114,8 @@ cron.schedule(
     }
   }
 );
+
+// Bot de comandos bajo demanda (long-polling — no bloquea los crons)
+iniciarBot().catch((e) => console.error("❌ Bot error fatal:", e.message));
 
 console.log("⏳ Esperando ejecuciones programadas... (Ctrl+C para salir)");

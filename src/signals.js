@@ -130,7 +130,7 @@ function calcPivots(velas) {
   };
 }
 
-async function analizarSymbol(symbol) {
+export async function analizarSymbol(symbol) {
   const nombre = symbol.replace("USDT", "");
   const [v1d, v4h, v1h, v15m, funding] = await Promise.all([
     getVelas(symbol, "1d", 60), getVelas(symbol, "4h", 120),
@@ -147,7 +147,7 @@ async function analizarSymbol(symbol) {
   };
 }
 
-async function generarSenal(datos) {
+export async function generarSenal(datos) {
   const sistema = `Eres el analista de CriptoScope. Voz directa de trader a trader — sin relleno, sin frases de IA. El precio manda.
 Metodologia: 4H estructura → 1H confirma RSI/MACD → 15m gatillo. RSI14 MACD 12/26/9.
 Divergencias en 1H/4H contra el setup = tamaño REDUCIDO o ESPERAR. RR minimo 1:1.5. Analisis educativo.`;
