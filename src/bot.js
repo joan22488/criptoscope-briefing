@@ -123,8 +123,7 @@ async function mostrarBotonesPublicacion(chatId, pid, previewTexto) {
 
 async function publicarCanal(texto, portadaFileId = null) {
   if (portadaFileId) {
-    // Enviar foto primero (sin caption) y luego el texto completo con formato HTML
-    await fetch(`${API()}/sendPhoto`, {
+    const res = await fetch(`${API()}/sendPhoto`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -132,6 +131,10 @@ async function publicarCanal(texto, portadaFileId = null) {
         photo: portadaFileId,
       }),
     });
+    const json = await res.json();
+    if (!json.ok) {
+      console.warn("⚠️ sendPhoto falló:", JSON.stringify(json));
+    }
     await enviarTelegram(texto);
   } else {
     await enviarTelegram(texto);
@@ -649,7 +652,15 @@ async function procesarCallback(callback) {
     const donde = destino === "ambos" ? "en el canal y en X" : destino === "canal" ? "en el canal" : "en X";
     if (errorX) {
       const canalParte = (destino === "ambos") ? "✅ Publicado en el canal.\n" : "";
-      await reply(chatId, `${canalParte}⚠️ X falló: <code>${errorX}</code>`);
+      let consejo = "";
+      if (/401|unauthorized|credentials/i.test(errorX)) {
+        consejo = "\n\n<b>Solución:</b> En developer.twitter.com → tu app → permisos deben ser <b>Read and Write</b>. Luego regenera Access Token + Secret y actualiza las variables en Railway.";
+      } else if (/403|forbidden/i.test(errorX)) {
+        consejo = "\n\n<b>Solución:</b> La app no tiene permiso de escritura. Ve a developer.twitter.com → tu app → User authentication settings → activa Read and Write.";
+      } else if (/429|rate/i.test(errorX)) {
+        consejo = "\n\n<b>Solución:</b> Límite de la API alcanzado. Espera unos minutos antes de intentarlo.";
+      }
+      await reply(chatId, `${canalParte}⚠️ X falló: <code>${errorX}</code>${consejo}`);
     } else {
       await reply(chatId, `✅ Publicado ${donde}.`);
     }
