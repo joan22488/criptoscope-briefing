@@ -460,14 +460,18 @@ async function cmdFoto(chatId, photo, caption) {
     });
 
     const opinion = respuesta.content[0].text.trim();
-    const msg = `🧠 <b>ANÁLISIS | CriptoScope</b>\n\n${bloqueCheck}\n\n──────────────\n${opinion}\n\n<i>Análisis educativo · no es consejo financiero</i>`;
 
-    // Guardar para callback
+    // Mensaje limpio para publicar — SIN el bloque de verificación interna
+    const msgPublicar = `🧠 <b>ANÁLISIS | CriptoScope</b>\n\n${opinion}\n\n<i>Análisis educativo · no es consejo financiero</i>`;
+
+    // Mensaje completo para mostrarte a ti — CON verificación (solo para tu revisión)
+    const msgPreview = `🧠 <b>ANÁLISIS | CriptoScope</b>\n\n${bloqueCheck}\n\n──────────────\n${opinion}\n\n<i>Análisis educativo · no es consejo financiero</i>`;
+
+    // Guardar solo el mensaje limpio para publicar
     const pid = Date.now().toString(36);
-    pendingPublish.set(pid, msg);
+    pendingPublish.set(pid, msgPublicar);
     setTimeout(() => pendingPublish.delete(pid), 30 * 60 * 1000);
 
-    // Si es DUDOSA, advertir antes de ofrecer publicar
     const advertencia = check.veredicto === "DUDOSA"
       ? "\n\n⚠️ <i>Credibilidad dudosa — revisa la fuente antes de publicar.</i>"
       : "";
@@ -477,14 +481,20 @@ async function cmdFoto(chatId, photo, caption) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id: chatId,
-        text: msg + advertencia + "\n\n──────────────\n<i>¿Publico esto en el canal y en X?</i>",
+        text: msgPreview + advertencia + "\n\n──────────────\n<i>¿Dónde publico este análisis?</i>",
         parse_mode: "HTML",
         disable_web_page_preview: true,
         reply_markup: {
-          inline_keyboard: [[
-            { text: "✅ Publicar en canal + X", callback_data: `pub:${pid}` },
-            { text: "❌ Solo para mí", callback_data: "nopub" },
-          ]],
+          inline_keyboard: [
+            [
+              { text: "📢 Canal + X", callback_data: `pub_ambos:${pid}` },
+              { text: "📣 Solo canal", callback_data: `pub_canal:${pid}` },
+            ],
+            [
+              { text: "🐦 Solo X", callback_data: `pub_x:${pid}` },
+              { text: "❌ Solo para mí", callback_data: "nopub" },
+            ],
+          ],
         },
       }),
     });
@@ -547,26 +557,53 @@ async function procesarCallback(callback) {
     return;
   }
 
-  if (data.startsWith("pub:")) {
-    const pid = data.slice(4);
+  // Helper para quitar botones del mensaje
+  const quitarBotones = () => fetch(`${API()}/editMessageReplyMarkup`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [] } }),
+  });
+
+  // Publicar en canal + X
+  if (data.startsWith("pub_ambos:") || data.startsWith("pub:")) {
+    const pid = data.startsWith("pub:") ? data.slice(4) : data.slice(10);
     const msg = pendingPublish.get(pid);
     if (!msg) return reply(chatId, "❌ La opinión ya expiró (>30 min). Vuelve a enviar la foto.");
-
-    // Quitar botones
-    await fetch(`${API()}/editMessageReplyMarkup`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [] } }),
-    });
-
-    await enviarTelegram(msg);
+    await quitarBotones();
+    await enviarTelegram(typeof msg === "string" ? msg : msg);
     try {
-      const limpio = msg.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").slice(0, 270);
+      const limpio = (typeof msg === "string" ? msg : "").replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").slice(0, 270);
       await publicarThread([limpio]);
     } catch {}
-
     pendingPublish.delete(pid);
     await reply(chatId, "✅ Publicado en el canal y en X.");
+  }
+
+  // Solo canal (sin X)
+  if (data.startsWith("pub_canal:")) {
+    const pid = data.slice(10);
+    const msg = pendingPublish.get(pid);
+    if (!msg) return reply(chatId, "❌ La opinión ya expiró (>30 min). Vuelve a enviar la foto.");
+    await quitarBotones();
+    await enviarTelegram(msg);
+    pendingPublish.delete(pid);
+    await reply(chatId, "✅ Publicado en el canal.");
+  }
+
+  // Solo X (sin canal)
+  if (data.startsWith("pub_x:")) {
+    const pid = data.slice(6);
+    const msg = pendingPublish.get(pid);
+    if (!msg) return reply(chatId, "❌ La opinión ya expiró (>30 min). Vuelve a enviar la foto.");
+    await quitarBotones();
+    try {
+      const limpio = (typeof msg === "string" ? msg : "").replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").slice(0, 270);
+      await publicarThread([limpio]);
+      await reply(chatId, "✅ Publicado en X.");
+    } catch (e) {
+      await reply(chatId, `❌ Error publicando en X: ${e.message}`);
+    }
+    pendingPublish.delete(pid);
   }
 
   if (data.startsWith("enc:")) {
