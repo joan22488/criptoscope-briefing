@@ -327,19 +327,31 @@ async function cmdCalendario(chatId) {
 async function cmdEstado(chatId) {
   const ahora = new Date();
   const madridHora = ahora.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Madrid" });
+
+  const nAlertas = alertasPrecios.filter((a) => a.chatId === chatId).length;
+  const nProgramadas = [...programadas.values()].filter((p) => p.chatId === chatId).length;
+
   const msg =
     `⚙️ <b>Estado CriptoScope</b>\n\n` +
-    `🕐 Hora Madrid: ${madridHora}\n` +
-    `${pausado ? "⏸ Publicaciones: <b>PAUSADAS</b>" : "▶️ Publicaciones: <b>ACTIVAS</b>"}\n\n` +
-    `<b>Próximas ejecuciones:</b>\n` +
-    `☕ Briefing: mañana 07:00\n` +
-    `📊 Señales: próxima hora en punto (7/11/15/19h)\n` +
-    `🚨 Alertas: cada 30 min\n` +
-    `📅 Semanal: domingo 09:00\n\n` +
-    `<b>Comandos disponibles:</b>\n` +
-    `/flash · /hilo · /analiza · /opinion\n` +
-    `/precio · /quepasa · /senal · /calendario\n` +
-    `/pausa · /activa · /estado`;
+    `🕐 Hora Madrid: <b>${madridHora}</b>\n` +
+    `${pausado ? "⏸ Publicaciones: <b>PAUSADAS</b>" : "▶️ Publicaciones: <b>ACTIVAS</b>"}\n` +
+    `🔔 Alertas de precio activas: <b>${nAlertas}</b>\n` +
+    `⏰ Publicaciones programadas: <b>${nProgramadas}</b>\n\n` +
+    `<b>Automático:</b>\n` +
+    `☕ Briefing: 07:00 diario\n` +
+    `📊 Señales BTC/ETH/SOL: 07:00 · 11:00 · 15:00 · 19:00\n` +
+    `📅 Resumen semanal: domingos 09:00\n` +
+    `🚨 Monitor eventos: cada 30 min\n` +
+    `🔔 Check alertas precio: cada 5 min\n` +
+    `📰 Monitor noticias RSS: cada 15 min\n\n` +
+    `<b>Bajo demanda — canal + X:</b>\n` +
+    `<code>/flash</code> · <code>/hilo</code> · <code>/analiza</code> · <code>/opinion</code> · <code>/encuesta</code>\n\n` +
+    `<b>Bajo demanda — privado:</b>\n` +
+    `<code>/precio</code> · <code>/quepasa</code> · <code>/senal</code> · <code>/calendario</code>\n` +
+    `<code>/alerta</code> · <code>/alertas</code> · <code>/borralalerta</code>\n` +
+    `<code>/programar</code> · <code>/programadas</code> · <code>/cancelar</code>\n\n` +
+    `<b>Sistema:</b>\n` +
+    `<code>/pausa</code> · <code>/activa</code> · <code>/estado</code> · <code>/ayuda</code>`;
   await reply(chatId, msg);
 }
 

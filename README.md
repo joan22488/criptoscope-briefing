@@ -91,8 +91,10 @@ Escríbele directamente al bot (chat privado):
 |---------|---------|-----------|
 | `/flash <tema>` | `/flash BlackRock compra BTC` | Alerta urgente → canal + X |
 | `/hilo <tema>` | `/hilo qué es el halving` | Thread 5 tweets → canal + X |
+| `/hilo <URL>` | `/hilo https://coindesk.com/...` | Hilo basado en el artículo real |
 | `/analiza <coin>` | `/analiza AVAX` | Análisis técnico → canal |
 | `/opinion <noticia>` | `/opinion SEC aprueba ETF` | Opinión trader → canal + X |
+| `/encuesta [tema]` | `/encuesta` · `/encuesta BTC esta semana` | Poll nativo → canal |
 
 ### Solo te responden a ti
 | Comando | Ejemplo | Resultado |
@@ -101,6 +103,16 @@ Escríbele directamente al bot (chat privado):
 | `/quepasa` | `/quepasa` | Resumen mercado ahora |
 | `/senal <coin>` | `/senal ETH` | Señal técnica privada |
 | `/calendario` | `/calendario` | Eventos macro de la semana |
+| `/alerta <coin> <precio>` | `/alerta BTC 70000` · `/alerta ETH <1800` | Aviso cuando llegue al nivel |
+| `/alertas` | `/alertas` | Lista tus alertas activas |
+| `/borralalerta <n>` | `/borralalerta 1` | Elimina la alerta número 1 |
+
+### Publicaciones programadas
+| Comando | Ejemplo | Resultado |
+|---------|---------|-----------|
+| `/programar <tipo> <HH:MM> <tema>` | `/programar flash 18:00 BlackRock` | Publica a esa hora (Madrid) |
+| `/programadas` | `/programadas` | Lista de pendientes |
+| `/cancelar <id>` | `/cancelar 3` | Cancela la publicación |
 
 ### Fotos (sin comando)
 | Acción | Resultado |
@@ -108,13 +120,16 @@ Escríbele directamente al bot (chat privado):
 | Foto de noticia | Verificación credibilidad + análisis. Botones: publicar o privado |
 | Foto + pie "responde" | Redacta respuesta al comentario de la imagen (privado) |
 
+### Monitor automático de noticias
+Cada 15 min el sistema revisa CoinDesk RSS. Si detecta una noticia con tus keywords (`MONITOR_KEYWORDS`) te la manda en privado con botones: **⚡ Publicar flash** · **📝 Hacer hilo** · **🙈 Ignorar**.
+
 ### Sistema
 | Comando | Acción |
 |---------|--------|
-| `/estado` | Estado del sistema y próximas ejecuciones |
+| `/estado` | Estado completo: hora, alertas activas, programadas y próximas ejecuciones |
 | `/pausa` | Pausar publicaciones automáticas |
 | `/activa` | Reanudar publicaciones |
-| `/ayuda` | Guía completa. `/ayuda <comando>` para detalle |
+| `/ayuda` | Guía completa. `/ayuda <comando>` para detalle de cada uno |
 
 ---
 
@@ -130,6 +145,8 @@ TELEGRAM_CHAT_ID=-100...              # ID del canal (con -100 delante)
 
 # ─── RECOMENDADAS ────────────────────────────────────────────
 COINGECKO_API_KEY=CG-...              # coingecko.com/en/developers → Demo gratis
+TELEGRAM_OWNER_ID=...                 # Tu chat ID personal → escríbele a @userinfobot
+MONITOR_KEYWORDS=ETF,BlackRock,SEC,Fed,Bitcoin,halving,Ethereum,crash,Binance  # Keywords del monitor RSS
 
 # ─── X / TWITTER (opcional) ──────────────────────────────────
 X_API_KEY=...                         # developer.twitter.com → OAuth 1.0a
