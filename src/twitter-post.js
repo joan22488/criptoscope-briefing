@@ -43,11 +43,15 @@ export async function publicarThread(tweets) {
       const texto = limpiar(tweets[i]).slice(0, 270);
       const reply = await rwClient.v2.tweet(texto, { reply: { in_reply_to_tweet_id: ultimoId } });
       ultimoId = reply.data.id;
-      // Pequeña pausa para no saturar la API
       await new Promise((r) => setTimeout(r, 1000));
     }
 
-    console.log(`✅ Thread publicado en X — ${tweets.length} tweets`);
+    // Último tweet: CTA con enlace al canal de Telegram
+    const canal = process.env.TELEGRAM_CANAL_URL || "https://t.me/criptoscopespain";
+    const cta = `📊 Análisis diario, señales técnicas y alertas en tiempo real en nuestro canal de Telegram 👇\n${canal}`;
+    const ctaTweet = await rwClient.v2.tweet(cta, { reply: { in_reply_to_tweet_id: ultimoId } });
+
+    console.log(`✅ Thread publicado en X — ${tweets.length + 1} tweets (+ CTA Telegram)`);
     return primerTweet.data.id;
   } catch (e) {
     console.warn("⚠️  Error publicando en X:", e.message);

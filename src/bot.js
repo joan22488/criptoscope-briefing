@@ -591,6 +591,25 @@ async function cmdAyuda(chatId, cmd) {
         "Con /pausa detienes todas las publicaciones automáticas del canal: briefing matinal, señales técnicas, resumen semanal y alertas de evento. El bot sigue respondiendo tus comandos privados con normalidad.\n\n" +
         "Con /activa las reanudas. Útil si vas a publicar contenido manual durante un evento especial y no quieres que el bot interfiera, o si estás de vacaciones.",
     },
+    foto: {
+      titulo: "📸 Foto de noticia — Análisis con verificación",
+      uso: "Manda una foto directamente al bot (sin comando)",
+      ejemplo: "Captura de pantalla de CoinDesk, Twitter, Telegram... cualquier noticia",
+      detalle:
+        "Manda una captura de pantalla de una noticia al bot sin ningún comando. Claude hace dos cosas:\n\n" +
+        "1. Verifica la credibilidad: analiza la fuente, el titular y el contenido. Te devuelve un veredicto: ✅ VERIFICADA · 🟡 PROBABLE · ⚠️ DUDOSA · 🚫 FALSA. Si es falsa, para ahí y no ofrece publicar.\n\n" +
+        "2. Genera la opinión al estilo CriptoScope: qué significa para el mercado, cómo afectaría al precio, qué vigilarías.\n\n" +
+        "Al final te aparecen dos botones: publicar en canal + X, o quedártela privada. Si era dudosa, te avisa antes de que decidas.",
+    },
+    responde: {
+      titulo: "💬 Foto de comentario — Redactar respuesta",
+      uso: "Manda una foto con el pie de foto: 'responde'",
+      ejemplo: "Foto del comentario + escribe 'responde' o 'replica' o 'contesta'",
+      detalle:
+        "Manda una captura de pantalla de un comentario (de X, Telegram, YouTube, donde sea) y escribe en el pie de foto: responde, replica, contesta o reply.\n\n" +
+        "Claude lee el comentario de la imagen y te redacta una respuesta en la voz de CriptoScope: directa, educada pero firme, bien argumentada. Solo para ti — no publica nada.\n\n" +
+        "Cópiala y pégala donde quieras. Útil para responder críticas, preguntas técnicas o debate en redes sin perder tiempo.",
+    },
   };
 
   // Si pide ayuda de un comando concreto
@@ -636,7 +655,14 @@ async function cmdAyuda(chatId, cmd) {
     `<code>/estado</code> — Estado y próximas ejecuciones\n` +
     `<code>/pausa</code> — Parar publicaciones automáticas\n` +
     `<code>/activa</code> — Reanudar publicaciones\n` +
-    `<code>/ayuda</code> — Esta guía`;
+    `<code>/ayuda</code> — Esta guía\n\n` +
+    `──────────────\n` +
+    `<b>📸 Con fotos (sin comando)</b>\n\n` +
+    `Foto de noticia → verifica credibilidad + genera análisis\n` +
+    `<i>Veredicto: ✅ VERIFICADA · 🟡 PROBABLE · ⚠️ DUDOSA · 🚫 FALSA</i>\n` +
+    `Al final decides si publicas en canal + X o te la quedas.\n\n` +
+    `Foto + <code>responde</code> → redacta una respuesta al comentario de la imagen (solo para ti)\n\n` +
+    `<i>Escribe /ayuda foto o /ayuda responde para más detalle.</i>`;
 
   await reply(chatId, menu);
 }
