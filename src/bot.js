@@ -814,16 +814,23 @@ async function cmdAyuda(chatId, cmd) {
       uso: "/flash <tema o noticia>",
       ejemplo: "/flash BlackRock compra 10.000 BTC · /flash SEC demanda a Coinbase",
       detalle:
-        "Genera una alerta de alto impacto sobre lo que le indiques. Claude analiza el tema, lo cruza con el precio actual de BTC/ETH y el Fear&Greed Index, y redacta un mensaje de alerta en la voz de CriptoScope.\n\n" +
-        "Se publica inmediatamente en el canal de Telegram y en X como tweet. Ideal para noticias que rompen mientras estás fuera o que quieres comentar en caliente.",
+        "Genera una alerta de alto impacto sobre lo que le indiques. Claude analiza el tema, lo cruza con el precio actual de BTC/ETH y el Fear&Greed Index, y redacta un mensaje en la voz de CriptoScope.\n\n" +
+        "Antes de publicar, te muestra una preview con cuatro botones:\n" +
+        "📢 <b>Canal + X</b> — publica en Telegram y en X con hashtags automáticos\n" +
+        "📣 <b>Solo canal</b> — solo Telegram\n" +
+        "🐦 <b>Solo X</b> — solo Twitter/X\n" +
+        "📸 <b>Añadir portada</b> — manda una foto y se adjunta integrada en la publicación\n" +
+        "❌ <b>Descartar</b> — lo borra sin publicar\n\n" +
+        "También puedes mandar la foto junto con el comando como adjunto: la foto queda guardada automáticamente como portada.",
     },
     hilo: {
       titulo: "📝 /hilo — Thread educativo",
-      uso: "/hilo <tema a explicar>",
-      ejemplo: "/hilo qué es el halving · /hilo cómo funciona el funding rate · /hilo qué son las liquidaciones",
+      uso: "/hilo <tema o URL>",
+      ejemplo: "/hilo qué es el halving · /hilo cómo funciona el funding rate · /hilo https://coindesk.com/...",
       detalle:
-        "Genera un hilo educativo de 5 tweets sobre el tema que indiques. Claude lo estructura de forma didáctica: gancho en el primer tweet, desarrollo en los siguientes, conclusión en el último.\n\n" +
-        "Se publica en el canal de Telegram como mensaje único y en X como thread real encadenado. Perfecto para explicar conceptos a tu comunidad de forma clara y con tu voz.",
+        "Genera un hilo educativo de 5 tweets sobre el tema que indiques. Si le pasas una URL, descarga el artículo real y basa el hilo en su contenido.\n\n" +
+        "Claude lo estructura de forma didáctica: gancho en el primer tweet, desarrollo en los siguientes, conclusión en el último.\n\n" +
+        "Se publica en el canal de Telegram como mensaje único y en X como thread encadenado, con un CTA final al canal. Puedes añadir portada igual que en /flash.",
     },
     analiza: {
       titulo: "📊 /analiza — Análisis técnico on-demand",
@@ -839,7 +846,7 @@ async function cmdAyuda(chatId, cmd) {
       ejemplo: "/opinion Ethereum ETF aprobado en Europa · /opinion China legaliza Bitcoin",
       detalle:
         "Le das una noticia y CriptoScope la analiza como trader: qué significa para el mercado, qué haría el precio a corto y medio plazo, y qué vigilarías. Sin hype, sin titulares vacíos.\n\n" +
-        "Se publica en el canal y en X. Útil cuando pasa algo importante y quieres dar una lectura rápida pero fundamentada a tu comunidad.",
+        "Igual que /flash, te muestra una preview con botones para elegir dónde publicar (canal, X o ambos) y añadir portada antes de confirmar.",
     },
     precio: {
       titulo: "💰 /precio — Precio actual",
@@ -934,9 +941,10 @@ async function cmdAyuda(chatId, cmd) {
       ejemplo: "Captura de pantalla de CoinDesk, Twitter, Telegram... cualquier noticia",
       detalle:
         "Manda una captura de pantalla de una noticia al bot sin ningún comando. Claude hace dos cosas:\n\n" +
-        "1. Verifica la credibilidad: analiza la fuente, el titular y el contenido. Te devuelve un veredicto: ✅ VERIFICADA · 🟡 PROBABLE · ⚠️ DUDOSA · 🚫 FALSA. Si es falsa, para ahí y no ofrece publicar.\n\n" +
-        "2. Genera la opinión al estilo CriptoScope: qué significa para el mercado, cómo afectaría al precio, qué vigilarías.\n\n" +
-        "Al final te aparecen dos botones: publicar en canal + X, o quedártela privada. Si era dudosa, te avisa antes de que decidas.",
+        "1. Verifica la credibilidad: analiza la fuente, el titular y el contenido. Te devuelve un veredicto: ✅ VERIFICADA · 🟡 PROBABLE · ⚠️ DUDOSA · 🚫 FALSA. Si es falsa, para ahí.\n\n" +
+        "2. Genera la opinión al estilo CriptoScope: qué significa para el mercado, cómo afectaría al precio, qué vigilarías. Añade la fuente si la detecta.\n\n" +
+        "Te aparecen botones para publicar en canal, en X, en ambos, añadir portada o descartar. Si publicas con la propia foto como portada, se adjunta integrada en el mensaje del canal.\n\n" +
+        "También puedes mandar una foto con pie de foto como comando: <code>/flash tema</code>, <code>/opinion tema</code>, etc. La foto se convierte automáticamente en portada.",
     },
     responde: {
       titulo: "💬 Foto de comentario — Redactar respuesta",
@@ -965,50 +973,43 @@ async function cmdAyuda(chatId, cmd) {
   // Menú general
   const menu =
     `<b>🤖 CriptoScope Bot — Guía de comandos</b>\n\n` +
-    `Escribe <code>/ayuda [comando]</code> para explicación detallada de cualquiera.\n` +
+    `Escribe <code>/ayuda [comando]</code> para detalle de cualquiera.\n` +
     `Ejemplo: <code>/ayuda flash</code>\n\n` +
     `──────────────\n` +
-    `<b>📢 Publican en canal + X</b>\n\n` +
+    `<b>📢 Contenido manual (con preview + botones)</b>\n\n` +
     `<code>/flash</code> &lt;tema&gt;\n` +
-    `Alerta urgente sobre una noticia. La genera y publica al instante.\n\n` +
-    `<code>/hilo</code> &lt;tema&gt;\n` +
-    `Thread educativo de 5 tweets. Publica en canal y en X encadenado.\n\n` +
-    `<code>/analiza</code> &lt;coin&gt;\n` +
-    `Análisis técnico completo de cualquier coin. Con entrada, TP, SL y R:R.\n\n` +
+    `Alerta urgente. Preview → elige canal / X / ambos / portada / descartar.\n\n` +
+    `<code>/hilo</code> &lt;tema o URL&gt;\n` +
+    `Thread de 5 tweets. Puede basarse en un artículo real si le pasas la URL.\n\n` +
     `<code>/opinion</code> &lt;noticia&gt;\n` +
-    `CriptoScope opina sobre un hecho con perspectiva de trader.\n\n` +
+    `Análisis de mercado al estilo CriptoScope. Preview con botones.\n\n` +
+    `<code>/analiza</code> &lt;coin&gt;\n` +
+    `Análisis técnico completo: entrada, TP1, TP2, SL y R:R.\n\n` +
     `<code>/encuesta</code> [tema]\n` +
-    `Genera una encuesta nativa de Telegram para el canal. Preview + botones para aprobar.\n\n` +
+    `Encuesta nativa para el canal. Preview con botones para aprobar o regenerar.\n\n` +
+    `<i>📸 Todos admiten portada: manda foto + comando como adjunto, o usa el botón "Añadir portada". La foto se integra en el mismo mensaje del canal.</i>\n\n` +
     `──────────────\n` +
     `<b>🔒 Solo te responden a ti</b>\n\n` +
-    `<code>/precio</code> &lt;coin&gt;\n` +
-    `Precio actual con máx/mín 24h y volumen.\n\n` +
-    `<code>/quepasa</code>\n` +
-    `Resumen del mercado ahora mismo en 3-4 frases.\n\n` +
-    `<code>/senal</code> &lt;coin&gt;\n` +
-    `Señal técnica privada sin publicar en el canal.\n\n` +
-    `<code>/calendario</code>\n` +
-    `Eventos macro de la semana con hora exacta.\n\n` +
-    `<code>/alerta</code> &lt;coin&gt; &lt;precio&gt;\n` +
-    `Avisa cuando una coin llegue a ese nivel. <code>/alertas</code> · <code>/borralalerta</code>\n\n` +
+    `<code>/precio</code> &lt;coin&gt; — Precio actual con máx/mín y volumen\n` +
+    `<code>/quepasa</code> — Resumen del mercado ahora mismo\n` +
+    `<code>/senal</code> &lt;coin&gt; — Señal técnica privada sin publicar\n` +
+    `<code>/calendario</code> — Eventos macro de la semana\n` +
+    `<code>/alerta</code> &lt;coin&gt; &lt;precio&gt; — Aviso cuando llegue al nivel\n` +
+    `<code>/alertas</code> · <code>/borralalerta &lt;n&gt;</code>\n\n` +
     `──────────────\n` +
     `<b>⏰ Programadas</b>\n\n` +
     `<code>/programar</code> &lt;tipo&gt; &lt;HH:MM&gt; &lt;tema&gt;\n` +
-    `Publica un flash/hilo/opinion a una hora concreta.\n` +
+    `Publica un flash/hilo/opinion a una hora concreta (horario Madrid).\n` +
     `<code>/programadas</code> · <code>/cancelar &lt;id&gt;</code>\n\n` +
     `──────────────\n` +
-    `<b>⚙️ Sistema</b>\n\n` +
-    `<code>/estado</code> — Estado y próximas ejecuciones\n` +
-    `<code>/pausa</code> — Parar publicaciones automáticas\n` +
-    `<code>/activa</code> — Reanudar publicaciones\n` +
-    `<code>/ayuda</code> — Esta guía\n\n` +
+    `<b>📸 Fotos sin comando</b>\n\n` +
+    `Foto de noticia → verificación + análisis + botones para publicar\n` +
+    `Foto + <code>responde</code> → redacta una respuesta al comentario (privado)\n\n` +
     `──────────────\n` +
-    `<b>📸 Con fotos (sin comando)</b>\n\n` +
-    `Foto de noticia → verifica credibilidad + genera análisis\n` +
-    `<i>Veredicto: ✅ VERIFICADA · 🟡 PROBABLE · ⚠️ DUDOSA · 🚫 FALSA</i>\n` +
-    `Al final decides si publicas en canal + X o te la quedas.\n\n` +
-    `Foto + <code>responde</code> → redacta una respuesta al comentario de la imagen (solo para ti)\n\n` +
-    `<i>Escribe /ayuda foto o /ayuda responde para más detalle.</i>`;
+    `<b>⚙️ Sistema</b>\n\n` +
+    `<code>/estado</code> — Estado completo y próximas ejecuciones\n` +
+    `<code>/pausa</code> · <code>/activa</code> — Pausar/reanudar automático\n` +
+    `<code>/ayuda</code> — Esta guía`;
 
   await reply(chatId, menu);
 }

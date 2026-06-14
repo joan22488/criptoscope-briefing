@@ -86,23 +86,32 @@ src/
 
 Escríbele directamente al bot (chat privado):
 
-### Publican en canal + X
+### Contenido manual — preview + botones antes de publicar
 | Comando | Ejemplo | Resultado |
 |---------|---------|-----------|
-| `/flash <tema>` | `/flash BlackRock compra BTC` | Alerta urgente → canal + X |
-| `/hilo <tema>` | `/hilo qué es el halving` | Thread 5 tweets → canal + X |
-| `/hilo <URL>` | `/hilo https://coindesk.com/...` | Hilo basado en el artículo real |
-| `/analiza <coin>` | `/analiza AVAX` | Análisis técnico → canal |
-| `/opinion <noticia>` | `/opinion SEC aprueba ETF` | Opinión trader → canal + X |
-| `/encuesta [tema]` | `/encuesta` · `/encuesta BTC esta semana` | Poll nativo → canal |
+| `/flash <tema>` | `/flash BlackRock compra BTC` | Alerta urgente con preview y botones de destino |
+| `/hilo <tema>` | `/hilo qué es el halving` | Thread 5 tweets — canal como mensaje único, X como thread encadenado |
+| `/hilo <URL>` | `/hilo https://coindesk.com/...` | Hilo basado en el contenido real del artículo |
+| `/analiza <coin>` | `/analiza AVAX` | Análisis técnico top-down con entrada, TP1, TP2, SL y R:R |
+| `/opinion <noticia>` | `/opinion SEC aprueba ETF` | Lectura de mercado estilo CriptoScope |
+| `/encuesta [tema]` | `/encuesta` · `/encuesta BTC esta semana` | Poll nativo para el canal con preview |
+
+**Botones de publicación** (aparecen tras generar cualquier contenido):
+- 📢 **Canal + X** — publica en Telegram y en X (con hashtags automáticos de monedas)
+- 📣 **Solo canal** — solo Telegram
+- 🐦 **Solo X** — solo Twitter/X
+- 📸 **Añadir / Cambiar portada** — la foto se integra en el mismo mensaje del canal y se adjunta al tweet de X
+- ❌ **Descartar** — no publica nada
+
+> También puedes enviar una foto con el comando como pie de foto (`/flash tema` + foto adjunta) y la foto se usa automáticamente como portada.
 
 ### Solo te responden a ti
 | Comando | Ejemplo | Resultado |
 |---------|---------|-----------|
 | `/precio <coin>` | `/precio BTC` | Precio + máx/mín/vol 24h |
-| `/quepasa` | `/quepasa` | Resumen mercado ahora |
-| `/senal <coin>` | `/senal ETH` | Señal técnica privada |
-| `/calendario` | `/calendario` | Eventos macro de la semana |
+| `/quepasa` | `/quepasa` | Resumen mercado ahora mismo |
+| `/senal <coin>` | `/senal ETH` | Señal técnica privada (no publica en canal) |
+| `/calendario` | `/calendario` | Eventos macro de la semana con hora exacta |
 | `/alerta <coin> <precio>` | `/alerta BTC 70000` · `/alerta ETH <1800` | Aviso cuando llegue al nivel |
 | `/alertas` | `/alertas` | Lista tus alertas activas |
 | `/borralalerta <n>` | `/borralalerta 1` | Elimina la alerta número 1 |
@@ -110,15 +119,15 @@ Escríbele directamente al bot (chat privado):
 ### Publicaciones programadas
 | Comando | Ejemplo | Resultado |
 |---------|---------|-----------|
-| `/programar <tipo> <HH:MM> <tema>` | `/programar flash 18:00 BlackRock` | Publica a esa hora (Madrid) |
-| `/programadas` | `/programadas` | Lista de pendientes |
-| `/cancelar <id>` | `/cancelar 3` | Cancela la publicación |
+| `/programar <tipo> <HH:MM> <tema>` | `/programar flash 18:00 BlackRock` | Publica a esa hora (horario Madrid) |
+| `/programadas` | `/programadas` | Lista de pendientes con IDs |
+| `/cancelar <id>` | `/cancelar 3` | Cancela la publicación número 3 |
 
-### Fotos (sin comando)
+### Fotos sin comando
 | Acción | Resultado |
 |--------|-----------|
-| Foto de noticia | Verificación credibilidad + análisis. Botones: publicar o privado |
-| Foto + pie "responde" | Redacta respuesta al comentario de la imagen (privado) |
+| Foto de noticia | Verificación de credibilidad (✅ VERIFICADA · 🟡 PROBABLE · ⚠️ DUDOSA · 🚫 FALSA) + análisis + botones para publicar |
+| Foto + pie `responde` | Redacta una respuesta al comentario de la imagen (solo para ti) |
 
 ### Monitor automático de noticias
 Cada 15 min el sistema revisa CoinDesk RSS. Si detecta una noticia con tus keywords (`MONITOR_KEYWORDS`) te la manda en privado con botones: **⚡ Publicar flash** · **📝 Hacer hilo** · **🙈 Ignorar**.
@@ -126,8 +135,8 @@ Cada 15 min el sistema revisa CoinDesk RSS. Si detecta una noticia con tus keywo
 ### Sistema
 | Comando | Acción |
 |---------|--------|
-| `/estado` | Estado completo: hora, alertas activas, programadas y próximas ejecuciones |
-| `/pausa` | Pausar publicaciones automáticas |
+| `/estado` | Estado completo: hora Madrid, alertas activas, programadas y próximas ejecuciones automáticas |
+| `/pausa` | Pausar todas las publicaciones automáticas |
 | `/activa` | Reanudar publicaciones |
 | `/ayuda` | Guía completa. `/ayuda <comando>` para detalle de cada uno |
 
