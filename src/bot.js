@@ -301,6 +301,139 @@ async function cmdActiva(chatId) {
   await reply(chatId, "▶️ Publicaciones automáticas <b>activadas</b>.");
 }
 
+// /ayuda — guía detallada de comandos
+async function cmdAyuda(chatId, cmd) {
+  const ayudas = {
+    flash: {
+      titulo: "⚡ /flash — Alerta urgente",
+      uso: "/flash <tema o noticia>",
+      ejemplo: "/flash BlackRock compra 10.000 BTC · /flash SEC demanda a Coinbase",
+      detalle:
+        "Genera una alerta de alto impacto sobre lo que le indiques. Claude analiza el tema, lo cruza con el precio actual de BTC/ETH y el Fear&Greed Index, y redacta un mensaje de alerta en la voz de CriptoScope.\n\n" +
+        "Se publica inmediatamente en el canal de Telegram y en X como tweet. Ideal para noticias que rompen mientras estás fuera o que quieres comentar en caliente.",
+    },
+    hilo: {
+      titulo: "📝 /hilo — Thread educativo",
+      uso: "/hilo <tema a explicar>",
+      ejemplo: "/hilo qué es el halving · /hilo cómo funciona el funding rate · /hilo qué son las liquidaciones",
+      detalle:
+        "Genera un hilo educativo de 5 tweets sobre el tema que indiques. Claude lo estructura de forma didáctica: gancho en el primer tweet, desarrollo en los siguientes, conclusión en el último.\n\n" +
+        "Se publica en el canal de Telegram como mensaje único y en X como thread real encadenado. Perfecto para explicar conceptos a tu comunidad de forma clara y con tu voz.",
+    },
+    analiza: {
+      titulo: "📊 /analiza — Análisis técnico on-demand",
+      uso: "/analiza <símbolo>",
+      ejemplo: "/analiza AVAX · /analiza DOGE · /analiza LINK · /analiza BTC",
+      detalle:
+        "Ejecuta un análisis técnico completo top-down sobre cualquier coin, no solo BTC/ETH/SOL. Descarga velas reales de 1D + 4H + 1H + 15m desde OKX, calcula RSI 14, MACD 12/26/9, EMA 20/50 y niveles pivot, y genera una señal con Claude.\n\n" +
+        "Devuelve: sesgo de mercado, operación (LONG/SHORT/ESPERAR), entrada, TP1, TP2, SL y ratio R:R. Se publica en el canal. Si el setup no es limpio, dice ESPERAR con nivel a vigilar.",
+    },
+    opinion: {
+      titulo: "🧠 /opinion — CriptoScope opina",
+      uso: "/opinion <noticia o hecho>",
+      ejemplo: "/opinion Ethereum ETF aprobado en Europa · /opinion China legaliza Bitcoin",
+      detalle:
+        "Le das una noticia y CriptoScope la analiza como trader: qué significa para el mercado, qué haría el precio a corto y medio plazo, y qué vigilarías. Sin hype, sin titulares vacíos.\n\n" +
+        "Se publica en el canal y en X. Útil cuando pasa algo importante y quieres dar una lectura rápida pero fundamentada a tu comunidad.",
+    },
+    precio: {
+      titulo: "💰 /precio — Precio actual",
+      uso: "/precio <coin>",
+      ejemplo: "/precio BTC · /precio ETH · /precio SOL",
+      detalle:
+        "Consulta privada: te muestra el precio actual de la coin, el cambio en las últimas 24h, el máximo y mínimo del día, y el volumen. Solo te responde a ti — no publica nada en el canal.\n\n" +
+        "Útil para consultar rápido antes de tomar una decisión sin salir del chat.",
+    },
+    quepasa: {
+      titulo: "📡 /quepasa — Mercado ahora mismo",
+      uso: "/quepasa",
+      ejemplo: "/quepasa",
+      detalle:
+        "Claude revisa BTC, ETH, SOL, Fear&Greed Index y dominancia BTC en tiempo real y te da un resumen de 3-4 frases: qué domina el mercado, si hay momentum o no, y qué vigilar ahora mismo.\n\n" +
+        "Consulta privada — no publica en el canal. Perfecto para cuando llevas horas sin mirar el mercado y quieres ponerte al día en segundos.",
+    },
+    senal: {
+      titulo: "🔒 /senal — Señal técnica privada",
+      uso: "/senal <coin>",
+      ejemplo: "/senal ETH · /senal BTC · /senal SOL",
+      detalle:
+        "Igual que /analiza pero solo para ti — no publica nada en el canal. Descarga datos reales, calcula todos los indicadores y te devuelve la señal en privado.\n\n" +
+        "Ideal para cuando quieres ver el setup antes de decidir si publicarlo o no, o simplemente para tu propia operativa sin molestar a la comunidad.",
+    },
+    calendario: {
+      titulo: "📅 /calendario — Eventos macro",
+      uso: "/calendario",
+      ejemplo: "/calendario",
+      detalle:
+        "Muestra los eventos macroeconómicos de alto impacto de la semana: Fed, CPI, NFP, FOMC, datos de empleo... con fecha y hora exacta en Madrid.\n\n" +
+        "El sistema ya los incluye automáticamente en el briefing matinal, pero puedes consultarlos aquí en cualquier momento. Útil antes de abrir posiciones para saber si hay riesgo de volatilidad macro.",
+    },
+    estado: {
+      titulo: "⚙️ /estado — Estado del sistema",
+      uso: "/estado",
+      ejemplo: "/estado",
+      detalle:
+        "Te muestra un resumen del estado actual: hora de Madrid, si las publicaciones están activas o pausadas, y cuándo son las próximas ejecuciones automáticas (briefing, señales, semanal).\n\n" +
+        "También lista todos los comandos disponibles. Útil para comprobar que todo funciona o para saber cuándo llegará el próximo mensaje al canal.",
+    },
+    pausa: {
+      titulo: "⏸ /pausa y /activa — Control de publicaciones",
+      uso: "/pausa · /activa",
+      ejemplo: "/pausa (para detener) · /activa (para reanudar)",
+      detalle:
+        "Con /pausa detienes todas las publicaciones automáticas del canal: briefing matinal, señales técnicas, resumen semanal y alertas de evento. El bot sigue respondiendo tus comandos privados con normalidad.\n\n" +
+        "Con /activa las reanudas. Útil si vas a publicar contenido manual durante un evento especial y no quieres que el bot interfiera, o si estás de vacaciones.",
+    },
+  };
+
+  // Si pide ayuda de un comando concreto
+  if (cmd) {
+    const key = cmd.toLowerCase().replace("/", "").replace("señal", "senal").replace("ayuda", "");
+    const info = ayudas[key];
+    if (!info) return reply(chatId, `❓ No conozco el comando /${key}. Escribe /ayuda para ver todos.`);
+    return reply(chatId,
+      `${info.titulo}\n\n` +
+      `<b>Uso:</b> <code>${info.uso}</code>\n` +
+      `<b>Ejemplos:</b> <code>${info.ejemplo}</code>\n\n` +
+      `${info.detalle}`
+    );
+  }
+
+  // Menú general
+  const menu =
+    `<b>🤖 CriptoScope Bot — Guía de comandos</b>\n\n` +
+    `Escribe <code>/ayuda [comando]</code> para explicación detallada de cualquiera.\n` +
+    `Ejemplo: <code>/ayuda flash</code>\n\n` +
+    `──────────────\n` +
+    `<b>📢 Publican en canal + X</b>\n\n` +
+    `<code>/flash</code> &lt;tema&gt;\n` +
+    `Alerta urgente sobre una noticia. La genera y publica al instante.\n\n` +
+    `<code>/hilo</code> &lt;tema&gt;\n` +
+    `Thread educativo de 5 tweets. Publica en canal y en X encadenado.\n\n` +
+    `<code>/analiza</code> &lt;coin&gt;\n` +
+    `Análisis técnico completo de cualquier coin. Con entrada, TP, SL y R:R.\n\n` +
+    `<code>/opinion</code> &lt;noticia&gt;\n` +
+    `CriptoScope opina sobre un hecho con perspectiva de trader.\n\n` +
+    `──────────────\n` +
+    `<b>🔒 Solo te responden a ti</b>\n\n` +
+    `<code>/precio</code> &lt;coin&gt;\n` +
+    `Precio actual con máx/mín 24h y volumen.\n\n` +
+    `<code>/quepasa</code>\n` +
+    `Resumen del mercado ahora mismo en 3-4 frases.\n\n` +
+    `<code>/senal</code> &lt;coin&gt;\n` +
+    `Señal técnica privada sin publicar en el canal.\n\n` +
+    `<code>/calendario</code>\n` +
+    `Eventos macro de la semana con hora exacta.\n\n` +
+    `──────────────\n` +
+    `<b>⚙️ Sistema</b>\n\n` +
+    `<code>/estado</code> — Estado y próximas ejecuciones\n` +
+    `<code>/pausa</code> — Parar publicaciones automáticas\n` +
+    `<code>/activa</code> — Reanudar publicaciones\n` +
+    `<code>/ayuda</code> — Esta guía`;
+
+  await reply(chatId, menu);
+}
+
 // ──────────────────────────────────────────────
 // ROUTER DE COMANDOS
 // ──────────────────────────────────────────────
@@ -309,7 +442,7 @@ async function procesarMensaje(msg) {
   const chatId = msg.chat.id;
   const texto = msg.text || "";
   if (!texto.startsWith("/")) {
-    await reply(chatId, "👋 Hola. Comandos disponibles:\n\n<b>Publicar en canal + X:</b>\n/flash · /hilo · /analiza · /opinion\n\n<b>Consulta privada:</b>\n/precio · /quepasa · /senal · /calendario\n\n<b>Sistema:</b>\n/estado · /pausa · /activa");
+    await reply(chatId, "👋 Hola. Escribe <code>/ayuda</code> para ver todos los comandos con explicación detallada.");
     return;
   }
 
@@ -332,6 +465,8 @@ async function procesarMensaje(msg) {
       case "/estado":     await cmdEstado(chatId); break;
       case "/pausa":      await cmdPausa(chatId); break;
       case "/activa":     await cmdActiva(chatId); break;
+      case "/ayuda":
+      case "/help":       await cmdAyuda(chatId, argStr); break;
       default:
         await reply(chatId, `❓ Comando no reconocido: ${cmd}\n\nEscribe /estado para ver todos los comandos.`);
     }
@@ -365,6 +500,7 @@ export async function iniciarBot() {
         { command: "estado",     description: "Estado del sistema" },
         { command: "pausa",      description: "Pausar publicaciones automáticas" },
         { command: "activa",     description: "Reanudar publicaciones automáticas" },
+        { command: "ayuda",      description: "Guía detallada de todos los comandos" },
       ],
     }),
   }).catch(() => {});
