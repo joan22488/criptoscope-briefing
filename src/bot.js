@@ -304,64 +304,118 @@ async function cmdActiva(chatId) {
   await reply(chatId, "▶️ Publicaciones automáticas <b>activadas</b>.");
 }
 
-// Foto con noticia → Claude la lee y genera opinión
+// Descarga imagen de Telegram y devuelve base64
+async function descargarFoto(photo) {
+  const fileId = photo[photo.length - 1].file_id;
+  const fileInfo = await fetch(`${API()}/getFile?file_id=${fileId}`).then((r) => r.json());
+  const filePath = fileInfo.result?.file_path;
+  if (!filePath) throw new Error("No se pudo obtener el archivo de Telegram");
+  const fileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${filePath}`;
+  const imgRes = await fetch(fileUrl);
+  const imgBuffer = await imgRes.arrayBuffer();
+  return Buffer.from(imgBuffer).toString("base64");
+}
+
+// Detectar si el caption indica modo "responder comentario"
+function esModoRespuesta(caption) {
+  const palabras = ["responde", "respóndeme", "replica", "contesta", "reply", "contestar", "respuesta"];
+  const c = (caption || "").toLowerCase();
+  return palabras.some((p) => c.includes(p));
+}
+
+// Foto con noticia → verificar credibilidad y generar opinión
 async function cmdFoto(chatId, photo, caption) {
+
+  // MODO RESPUESTA A COMENTARIO
+  if (esModoRespuesta(caption)) {
+    await cmdRespondeComentario(chatId, photo, caption);
+    return;
+  }
+
   await reply(chatId, "👁 Leyendo la imagen...");
 
   try {
-    // Obtener URL de descarga de Telegram
-    const fileId = photo[photo.length - 1].file_id;
-    const fileInfo = await fetch(`${API()}/getFile?file_id=${fileId}`).then((r) => r.json());
-    const filePath = fileInfo.result?.file_path;
-    if (!filePath) throw new Error("No se pudo obtener el archivo de Telegram");
+    const base64 = await descargarFoto(photo);
+    await reply(chatId, "🔍 Verificando credibilidad...");
 
-    // Descargar imagen y convertir a base64
-    const fileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${filePath}`;
-    const imgRes = await fetch(fileUrl);
-    const imgBuffer = await imgRes.arrayBuffer();
-    const base64 = Buffer.from(imgBuffer).toString("base64");
-
-    await reply(chatId, "🧠 Analizando con Claude...");
-
-    // Obtener precio actual para contexto
     const precios = await getPrices().catch(() => ({}));
     const ctxPrecio = `BTC $${precios["BTC-USD"]?.precio?.toFixed(0) || "?"} · ETH $${precios["ETH-USD"]?.precio?.toFixed(0) || "?"}`;
 
-    // Enviar imagen a Claude con visión
-    const response = await client.messages.create({
+    // PASO 1: Claude verifica credibilidad
+    const verificacion = await client.messages.create({
       model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
-      max_tokens: 900,
-      system: `Eres CriptoScope. Te llega una imagen con una noticia cripto o macro. Primero extrae el titular/contenido de la imagen, luego genera una opinión directa de trader: qué significa, cómo afecta al mercado, qué haría el precio a corto plazo y qué vigilarías. Voz directa, sin hype, sin frases de IA. 2-3 párrafos. HTML Telegram (<b>, <i>).`,
+      max_tokens: 600,
+      system: `Eres un fact-checker experto en cripto y mercados. Analiza la imagen y evalúa la credibilidad de la noticia. Devuelve SOLO este JSON sin markdown:
+{"titular":"titular exacto de la imagen","fuente":"fuente visible o 'desconocida'","veredicto":"VERIFICADA|PROBABLE|DUDOSA|FALSA","confianza":0-100,"razon":"1 frase explicando el veredicto","señales_alarma":["lista","de","señales"] o []}`,
       messages: [{
         role: "user",
         content: [
-          {
-            type: "image",
-            source: { type: "base64", media_type: "image/jpeg", data: base64 },
-          },
-          {
-            type: "text",
-            text: `Contexto mercado ahora: ${ctxPrecio}${caption ? `\nNota del usuario: ${caption}` : ""}`,
-          },
+          { type: "image", source: { type: "base64", media_type: "image/jpeg", data: base64 } },
+          { type: "text", text: "Evalúa la credibilidad de esta noticia." },
         ],
       }],
     });
 
-    const opinion = response.content[0].text.trim();
-    const msg = `🧠 <b>ANÁLISIS | CriptoScope</b>\n\n${opinion}\n\n<i>Análisis educativo · no es consejo financiero</i>`;
+    let check;
+    try {
+      const txt = verificacion.content[0].text;
+      check = JSON.parse(txt.slice(txt.indexOf("{"), txt.lastIndexOf("}") + 1));
+    } catch {
+      check = { titular: "Sin titular", fuente: "desconocida", veredicto: "DUDOSA", confianza: 50, razon: "No se pudo verificar", señales_alarma: [] };
+    }
 
-    // Guardar en memoria para el callback de publicar
+    // Emoji y color según veredicto
+    const veredictoEmoji = { VERIFICADA: "✅", PROBABLE: "🟡", DUDOSA: "⚠️", FALSA: "🚫" }[check.veredicto] || "⚠️";
+    const bloqueCheck =
+      `${veredictoEmoji} <b>Verificación: ${check.veredicto}</b> (confianza ${check.confianza}%)\n` +
+      `Fuente: ${check.fuente}\n` +
+      `${check.razon}` +
+      (check.señales_alarma?.length ? `\n⚠️ Señales: ${check.señales_alarma.join(" · ")}` : "");
+
+    // Si es FALSA, avisar y no ofrecer publicar
+    if (check.veredicto === "FALSA") {
+      await reply(chatId,
+        `🚫 <b>Noticia probablemente FALSA</b>\n\n${bloqueCheck}\n\n` +
+        `<i>No se recomienda publicar esta información.</i>`
+      );
+      return;
+    }
+
+    await reply(chatId, "🧠 Generando análisis...");
+
+    // PASO 2: Claude genera opinión
+    const respuesta = await client.messages.create({
+      model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
+      max_tokens: 900,
+      system: `Eres CriptoScope. Genera una opinión directa de trader sobre la noticia de la imagen: qué significa para el mercado, cómo afecta al precio, qué vigilarías. Voz directa, sin hype. 2-3 párrafos. HTML Telegram (<b>, <i>).`,
+      messages: [{
+        role: "user",
+        content: [
+          { type: "image", source: { type: "base64", media_type: "image/jpeg", data: base64 } },
+          { type: "text", text: `Contexto mercado: ${ctxPrecio}${caption ? `\nNota: ${caption}` : ""}` },
+        ],
+      }],
+    });
+
+    const opinion = respuesta.content[0].text.trim();
+    const msg = `🧠 <b>ANÁLISIS | CriptoScope</b>\n\n${bloqueCheck}\n\n──────────────\n${opinion}\n\n<i>Análisis educativo · no es consejo financiero</i>`;
+
+    // Guardar para callback
     const pid = Date.now().toString(36);
     pendingPublish.set(pid, msg);
-    setTimeout(() => pendingPublish.delete(pid), 30 * 60 * 1000); // expira en 30 min
+    setTimeout(() => pendingPublish.delete(pid), 30 * 60 * 1000);
 
-    // Mostrar opinión con botones de acción
+    // Si es DUDOSA, advertir antes de ofrecer publicar
+    const advertencia = check.veredicto === "DUDOSA"
+      ? "\n\n⚠️ <i>Credibilidad dudosa — revisa la fuente antes de publicar.</i>"
+      : "";
+
     await fetch(`${API()}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id: chatId,
-        text: msg + "\n\n──────────────\n<i>¿Publico esto en el canal y en X?</i>",
+        text: msg + advertencia + "\n\n──────────────\n<i>¿Publico esto en el canal y en X?</i>",
         parse_mode: "HTML",
         disable_web_page_preview: true,
         reply_markup: {
@@ -374,6 +428,37 @@ async function cmdFoto(chatId, photo, caption) {
     });
   } catch (e) {
     await reply(chatId, `❌ Error analizando la imagen: ${e.message}`);
+  }
+}
+
+// Foto con comentario → Claude redacta una respuesta en privado
+async function cmdRespondeComentario(chatId, photo, caption) {
+  await reply(chatId, "💬 Leyendo el comentario...");
+
+  try {
+    const base64 = await descargarFoto(photo);
+    await reply(chatId, "🧠 Redactando respuesta...");
+
+    const respuesta = await client.messages.create({
+      model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
+      max_tokens: 600,
+      system: `Eres CriptoScope. Te mandan una captura de un comentario o mensaje de redes sociales. Redacta una respuesta en la voz de CriptoScope: directa, educada pero firme, con conocimiento de mercados. Sin hype, sin insultos, argumentada. Máx 3 frases. Solo texto plano, sin HTML.`,
+      messages: [{
+        role: "user",
+        content: [
+          { type: "image", source: { type: "base64", media_type: "image/jpeg", data: base64 } },
+          { type: "text", text: caption?.replace(/responde|respóndeme|replica|contesta|reply|contestar|respuesta/gi, "").trim() || "Redacta una respuesta a este comentario." },
+        ],
+      }],
+    });
+
+    const respuestaTexto = respuesta.content[0].text.trim();
+    await reply(chatId,
+      `💬 <b>Propuesta de respuesta</b>\n\n<i>${respuestaTexto}</i>\n\n` +
+      `<i>Solo para ti · cópiala y pégala donde quieras</i>`
+    );
+  } catch (e) {
+    await reply(chatId, `❌ Error: ${e.message}`);
   }
 }
 
