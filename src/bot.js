@@ -656,24 +656,27 @@ async function procesarCallback(callback) {
     try {
       const res = await client.messages.create({
         model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
-        max_tokens: 200,
+        max_tokens: 300,
         messages: [{
           role: "user",
           content: `Eres el redactor de X/Twitter de CriptoScope, cuenta de análisis cripto en español.
 
-Tienes este contenido publicado en nuestro canal de Telegram:
+Contenido del canal de Telegram:
 
 ${limpio.slice(0, 1500)}
 
-Escribe UN tweet en español para X/Twitter que:
-- Primera línea: gancho directo que genere curiosidad o urgencia (dato concreto, pregunta provocadora o afirmación fuerte)
-- Segunda línea: 1-2 datos o ideas clave del análisis
-- NO menciones "canal de Telegram" ni pongas links (van en el reply automático)
-- Sin guiones largos (—). Sin etiquetas HTML.
-- Máximo 240 caracteres en total
-- 1-2 emojis máximo, solo si aportan
+Escribe UN tweet con este formato EXACTO (dos bloques separados por salto de línea):
 
-Devuelve SOLO el texto del tweet, sin comillas ni explicaciones.`,
+LÍNEA 1 — TÍTULO: frase corta de gancho (≤80 chars). Dato impactante, pregunta provocadora o afirmación fuerte. 1 emoji al inicio si encaja.
+LÍNEA 2 — CUERPO: 1-2 datos o ideas clave del análisis (≤130 chars). Sin repetir el título.
+
+Reglas:
+- NO menciones "canal de Telegram" ni pongas links
+- Sin guiones largos (—). Sin etiquetas HTML.
+- Total máximo 210 caracteres entre título y cuerpo
+- Máximo 2 emojis en todo el tweet
+
+Devuelve SOLO título + salto de línea + cuerpo. Sin comillas, sin etiquetas, sin explicaciones.`,
         }],
       });
       const tweet = res.content[0].text.trim();
