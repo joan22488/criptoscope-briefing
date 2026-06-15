@@ -32,6 +32,9 @@ let progContador = 1;
 const portadas = new Map();    // pid → fileId de la foto portada
 const waitingCover = new Map(); // chatId → pid (esperando foto de portada)
 
+// ── Hilos pendientes (array de tweets para publicar en X como thread real) ──
+const hilosPendientes = new Map(); // pid → string[]
+
 // ── Alertas de precio (persistentes) ──────────
 const ALERTAS_FILE = "./data/alertas.json";
 function cargarAlertas() {
@@ -223,8 +226,9 @@ async function cmdHilo(chatId, tema, portadaFileId = null) {
   const msgCanal = `📚 <b>HILO | ${tema}</b>\n\n` + tweets.map((t) => t.trim()).join("\n\n") + `\n\n<i>Análisis educativo · no es consejo financiero</i>`;
   const pid = Date.now().toString(36);
   pendingPublish.set(pid, msgCanal);
+  hilosPendientes.set(pid, tweets); // guardar tweets separados para publicar como thread real en X
   if (portadaFileId) portadas.set(pid, portadaFileId);
-  setTimeout(() => { pendingPublish.delete(pid); portadas.delete(pid); }, 30 * 60 * 1000);
+  setTimeout(() => { pendingPublish.delete(pid); portadas.delete(pid); hilosPendientes.delete(pid); }, 30 * 60 * 1000);
   await mostrarBotonesPublicacion(chatId, pid, msgCanal);
 }
 
@@ -667,13 +671,13 @@ ${limpio.slice(0, 1500)}
 
 Escribe UN tweet con este formato EXACTO (dos bloques separados por salto de línea):
 
-LÍNEA 1 — TÍTULO: frase corta de gancho (≤80 chars). Dato impactante, pregunta provocadora o afirmación fuerte. 1 emoji al inicio si encaja.
-LÍNEA 2 — CUERPO: 1-2 datos o ideas clave del análisis (≤130 chars). Sin repetir el título.
+LÍNEA 1 — TÍTULO: frase de gancho (≤100 chars). Dato impactante, pregunta provocadora o afirmación fuerte. 1 emoji al inicio si encaja.
+LÍNEA 2 — CUERPO: 1-2 datos o ideas clave del análisis (≤140 chars). Sin repetir el título.
 
 Reglas:
 - NO menciones "canal de Telegram" ni pongas links
 - Sin guiones largos (—). Sin etiquetas HTML.
-- Total máximo 210 caracteres entre título y cuerpo
+- Total máximo 240 caracteres entre título y cuerpo
 - Máximo 2 emojis en todo el tweet
 
 Devuelve SOLO título + salto de línea + cuerpo. Sin comillas, sin etiquetas, sin explicaciones.`,
@@ -710,12 +714,21 @@ Devuelve SOLO título + salto de línea + cuerpo. Sin comillas, sin etiquetas, s
       }
     }
     if (destino === "x" || destino === "ambos") {
-      const contenido = await generarTweetX(msg);
-      const hashtags = extraerHashtags(msg);
-      const tweetTexto = `${contenido}\n\n${hashtags}`;
       const mediaId = fileId ? await subirPortadaAX(fileId) : null;
+      const hashtags = extraerHashtags(msg);
+      let tweetsX;
+      if (hilosPendientes.has(pid)) {
+        // Hilo: publicar los tweets originales como thread real en X (sin pasar por generarTweetX)
+        tweetsX = hilosPendientes.get(pid).map((t) => t.trim());
+        // Añadir hashtags al último tweet del hilo
+        tweetsX[tweetsX.length - 1] += `\n\n${hashtags}`;
+      } else {
+        // Flash, opinión, analiza, semanal: generar tweet nativo con título+cuerpo
+        const contenido = await generarTweetX(msg);
+        tweetsX = [`${contenido}\n\n${hashtags}`];
+      }
       try {
-        await publicarThread([tweetTexto], { mediaId });
+        await publicarThread(tweetsX, { mediaId });
       } catch (e) {
         const detalle = e?.data ? ` (${JSON.stringify(e.data)})` : "";
         errorX = `${e.message}${detalle}`;
@@ -725,6 +738,7 @@ Devuelve SOLO título + salto de línea + cuerpo. Sin comillas, sin etiquetas, s
 
     pendingPublish.delete(pid);
     portadas.delete(pid);
+    hilosPendientes.delete(pid);
 
     const donde = destino === "ambos" ? "en el canal y en X" : destino === "canal" ? "en el canal" : "en X";
     if (errorX) {
