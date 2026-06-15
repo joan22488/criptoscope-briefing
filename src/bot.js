@@ -980,48 +980,38 @@ async function cmdAyuda(chatId, cmd) {
     );
   }
 
-  // Menú general
+  // Menú general — compacto para que entre en un solo mensaje
   const menu =
-    `<b>🤖 CriptoScope Bot — Guía de comandos</b>\n\n` +
-    `Escribe <code>/ayuda [comando]</code> para detalle de cualquiera.\n` +
-    `Ejemplo: <code>/ayuda flash</code>\n\n` +
+    `<b>🤖 CriptoScope Bot</b>\n` +
+    `<code>/ayuda &lt;comando&gt;</code> para detalle · ej: <code>/ayuda flash</code>\n\n` +
     `──────────────\n` +
-    `<b>📢 Contenido manual (con preview + botones)</b>\n\n` +
-    `<code>/flash</code> &lt;tema&gt;\n` +
-    `Alerta urgente. Preview → elige canal / X / ambos / portada / descartar.\n\n` +
-    `<code>/hilo</code> &lt;tema o URL&gt;\n` +
-    `Thread de 5 tweets. Puede basarse en un artículo real si le pasas la URL.\n\n` +
-    `<code>/opinion</code> &lt;noticia&gt;\n` +
-    `Análisis de mercado al estilo CriptoScope. Preview con botones.\n\n` +
-    `<code>/analiza</code> &lt;coin&gt;\n` +
-    `Análisis técnico completo: entrada, TP1, TP2, SL y R:R.\n\n` +
-    `<code>/encuesta</code> [tema]\n` +
-    `Encuesta nativa para el canal. Preview con botones para aprobar o regenerar.\n\n` +
-    `<code>/semanal</code>\n` +
-    `Resumen semanal bajo demanda — sin esperar al domingo. Preview con botones.\n\n` +
-    `<i>📸 Todos admiten portada: manda foto + comando como adjunto, o usa el botón "Añadir portada". La foto se integra en el mismo mensaje del canal.</i>\n\n` +
+    `<b>📢 Publican en canal / X (preview + botones)</b>\n` +
+    `<code>/flash</code> &lt;tema&gt; — Alerta urgente\n` +
+    `<code>/hilo</code> &lt;tema o URL&gt; — Thread de 5 tweets\n` +
+    `<code>/opinion</code> &lt;noticia&gt; — Análisis al estilo CriptoScope\n` +
+    `<code>/analiza</code> &lt;coin&gt; — Análisis técnico con entrada, TP y SL\n` +
+    `<code>/encuesta</code> [tema] — Poll nativo para el canal\n` +
+    `<code>/semanal</code> — Resumen semanal bajo demanda\n` +
+    `<i>📸 Todos admiten portada — /ayuda flash para más detalle</i>\n\n` +
     `──────────────\n` +
-    `<b>🔒 Solo te responden a ti</b>\n\n` +
-    `<code>/precio</code> &lt;coin&gt; — Precio actual con máx/mín y volumen\n` +
+    `<b>🔒 Solo para ti (privado)</b>\n` +
+    `<code>/precio</code> &lt;coin&gt; — Precio actual con máx/mín\n` +
     `<code>/quepasa</code> — Resumen del mercado ahora mismo\n` +
-    `<code>/senal</code> &lt;coin&gt; — Señal técnica privada sin publicar\n` +
+    `<code>/senal</code> &lt;coin&gt; — Señal técnica sin publicar\n` +
     `<code>/calendario</code> — Eventos macro de la semana\n` +
-    `<code>/alerta</code> &lt;coin&gt; &lt;precio&gt; — Aviso cuando llegue al nivel\n` +
+    `<code>/alerta</code> &lt;coin&gt; &lt;precio&gt; — Aviso al llegar al nivel\n` +
     `<code>/alertas</code> · <code>/borralalerta &lt;n&gt;</code>\n\n` +
     `──────────────\n` +
-    `<b>⏰ Programadas</b>\n\n` +
+    `<b>⏰ Programadas</b>\n` +
     `<code>/programar</code> &lt;tipo&gt; &lt;HH:MM&gt; &lt;tema&gt;\n` +
-    `Publica un flash/hilo/opinion a una hora concreta (horario Madrid).\n` +
     `<code>/programadas</code> · <code>/cancelar &lt;id&gt;</code>\n\n` +
     `──────────────\n` +
-    `<b>📸 Fotos sin comando</b>\n\n` +
-    `Foto de noticia → verificación + análisis + botones para publicar\n` +
-    `Foto + <code>responde</code> → redacta una respuesta al comentario (privado)\n\n` +
+    `<b>📸 Fotos sin comando</b>\n` +
+    `Foto → verificación + análisis + botones para publicar\n` +
+    `Foto + <code>responde</code> → redacta respuesta al comentario\n\n` +
     `──────────────\n` +
-    `<b>⚙️ Sistema</b>\n\n` +
-    `<code>/estado</code> — Estado completo y próximas ejecuciones\n` +
-    `<code>/pausa</code> · <code>/activa</code> — Pausar/reanudar automático\n` +
-    `<code>/ayuda</code> — Esta guía`;
+    `<b>⚙️ Sistema</b>\n` +
+    `<code>/estado</code> · <code>/pausa</code> · <code>/activa</code> · <code>/ayuda</code>`;
 
   await reply(chatId, menu);
 }
