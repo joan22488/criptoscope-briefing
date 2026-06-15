@@ -220,16 +220,12 @@ async function cmdHilo(chatId, tema, portadaFileId = null) {
 
   if (!tweets?.length) return reply(chatId, "❌ No pude generar el hilo. Inténtalo de nuevo.");
 
-  // Publicar en canal como mensaje único
   const msgCanal = `📚 <b>HILO | ${tema}</b>\n\n` + tweets.map((t) => t.trim()).join("\n\n") + `\n\n<i>Análisis educativo · no es consejo financiero</i>`;
-  await publicarCanal(msgCanal, portadaFileId);
-
-  // Publicar en X como thread real
-  try {
-    await publicarThread(tweets);
-  } catch {}
-
-  await reply(chatId, `✅ Hilo de ${tweets.length} tweets publicado en canal y en X`);
+  const pid = Date.now().toString(36);
+  pendingPublish.set(pid, msgCanal);
+  if (portadaFileId) portadas.set(pid, portadaFileId);
+  setTimeout(() => { pendingPublish.delete(pid); portadas.delete(pid); }, 30 * 60 * 1000);
+  await mostrarBotonesPublicacion(chatId, pid, msgCanal);
 }
 
 // /analiza <SYMBOL> — análisis técnico on-demand de cualquier par
@@ -243,10 +239,12 @@ async function cmdAnaliza(chatId, symbolRaw, portadaFileId = null) {
     const senales = await generarSenal([datos]);
     const hora = new Date().toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit", timeZone: process.env.TIMEZONE || "Europe/Madrid" });
 
-    // Construir mensaje con el formateador existente
     const msg = buildMsgAnalisis(senales, [datos], hora);
-    await publicarCanal(msg, portadaFileId);
-    await reply(chatId, `✅ Análisis de ${symbol.replace("USDT", "")} publicado en el canal`);
+    const pid = Date.now().toString(36);
+    pendingPublish.set(pid, msg);
+    if (portadaFileId) portadas.set(pid, portadaFileId);
+    setTimeout(() => { pendingPublish.delete(pid); portadas.delete(pid); }, 30 * 60 * 1000);
+    await mostrarBotonesPublicacion(chatId, pid, msg);
   } catch (e) {
     await reply(chatId, `❌ No pude analizar ${symbol.replace("USDT", "")}: ${e.message}`);
   }
@@ -841,15 +839,16 @@ async function cmdAyuda(chatId, cmd) {
       detalle:
         "Genera un hilo educativo de 5 tweets sobre el tema que indiques. Si le pasas una URL, descarga el artículo real y basa el hilo en su contenido.\n\n" +
         "Claude lo estructura de forma didáctica: gancho en el primer tweet, desarrollo en los siguientes, conclusión en el último.\n\n" +
-        "Se publica en el canal de Telegram como mensaje único y en X como thread encadenado, con un CTA final al canal. Puedes añadir portada igual que en /flash.",
+        "Muestra preview con botones para elegir dónde publicar. En el canal sale el hilo completo; en X, Claude genera un tweet teaser con gancho que lleva al canal. Admite portada.",
     },
     analiza: {
       titulo: "📊 /analiza — Análisis técnico on-demand",
       uso: "/analiza <símbolo>",
       ejemplo: "/analiza AVAX · /analiza DOGE · /analiza LINK · /analiza BTC",
       detalle:
-        "Ejecuta un análisis técnico completo top-down sobre cualquier coin, no solo BTC/ETH/SOL. Descarga velas reales de 1D + 4H + 1H + 15m desde OKX, calcula RSI 14, MACD 12/26/9, EMA 20/50 y niveles pivot, y genera una señal con Claude.\n\n" +
-        "Devuelve: sesgo de mercado, operación (LONG/SHORT/ESPERAR), entrada, TP1, TP2, SL y ratio R:R. Se publica en el canal. Si el setup no es limpio, dice ESPERAR con nivel a vigilar.",
+        "Ejecuta un análisis técnico completo top-down sobre cualquier coin. Descarga velas reales de 1D + 4H + 1H + 15m desde OKX, calcula RSI 14, MACD 12/26/9, EMA 20/50 y niveles pivot, y genera una señal con Claude.\n\n" +
+        "Devuelve: sesgo de mercado, operación (LONG/SHORT/ESPERAR), entrada, TP1, TP2, SL y ratio R:R.\n\n" +
+        "Igual que /flash, muestra preview con botones para elegir canal, X o ambos, y añadir portada. El tweet de X lo genera Claude con formato nativo de Twitter.",
     },
     opinion: {
       titulo: "🧠 /opinion — CriptoScope opina",
