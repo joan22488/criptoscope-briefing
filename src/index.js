@@ -29,6 +29,19 @@ console.log(`  Alertas:   ${horarioAlertas}`);
 console.log(`  Bot:       activo (long-polling)`);
 console.log("═══════════════════════════════════════");
 
+// Envía un aviso de error solo al owner (privado), nunca al canal público
+const alertarOwner = async (msg) => {
+  const ownerId = process.env.TELEGRAM_OWNER_ID;
+  if (!ownerId) return;
+  try {
+    await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: ownerId, text: msg, parse_mode: "HTML" }),
+    });
+  } catch {}
+};
+
 // Briefing matinal diario
 cron.schedule(
   horario,
@@ -38,7 +51,7 @@ cron.schedule(
       await ejecutarBriefing();
     } catch (e) {
       console.error("❌ Error en el briefing:", e.message);
-      try { await enviarTelegram(`⚠️ El briefing de hoy ha fallado: ${e.message}`, { silencioso: true }); } catch {}
+      await alertarOwner(`⚠️ <b>Briefing fallido</b>\n<code>${e.message.slice(0, 300)}</code>`);
     }
   },
   { timezone: zona }
@@ -54,7 +67,7 @@ cron.schedule(
       await enviarTelegram(mensaje);
     } catch (e) {
       console.error("❌ Error en análisis técnico:", e.message);
-      try { await enviarTelegram(`⚠️ Análisis técnico fallido: ${e.message}`, { silencioso: true }); } catch {}
+      await alertarOwner(`⚠️ <b>Análisis técnico fallido</b>\n<code>${e.message.slice(0, 300)}</code>`);
     }
   },
   { timezone: zona }
@@ -70,7 +83,7 @@ cron.schedule(
       await enviarTelegram(mensaje);
     } catch (e) {
       console.error("❌ Error en resumen semanal:", e.message);
-      try { await enviarTelegram(`⚠️ Resumen semanal fallido: ${e.message}`, { silencioso: true }); } catch {}
+      await alertarOwner(`⚠️ <b>Resumen semanal fallido</b>\n<code>${e.message.slice(0, 300)}</code>`);
     }
   },
   { timezone: zona }
