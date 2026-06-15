@@ -652,21 +652,40 @@ async function procesarCallback(callback) {
     }
   };
 
-  // Extrae contenido real para X: omite cabeceras y pies, máx 270 chars
-  const resumirParaX = (texto) => {
-    const limpio = texto
-      .replace(/<[^>]+>/g, "")
-      .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
-      .trim();
-    const excluir = ["CriptoScope", "consejo financiero", "Análisis educativo", "Fuente:", "──────", "FLASH", "ALERTA", "HILO", "ANÁLISIS", "OPINIÓN"];
-    // Solo líneas con texto real: contienen minúsculas y tienen longitud suficiente
-    const lineas = limpio.split("\n").map((l) => l.trim()).filter((l) =>
-      l.length > 30 && /[a-záéíóúñ]/.test(l) && !excluir.some((e) => l.toUpperCase().includes(e))
-    );
-    const contenido = lineas[0] || limpio;
-    if (contenido.length <= 270) return contenido;
-    const cortado = contenido.slice(0, 267);
-    return cortado.slice(0, cortado.lastIndexOf(" ")) + "...";
+  // Genera un tweet nativo para X usando Claude — formato y tono propios de Twitter
+  const generarTweetX = async (texto) => {
+    const limpio = texto.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
+    try {
+      const res = await client.messages.create({
+        model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
+        max_tokens: 200,
+        messages: [{
+          role: "user",
+          content: `Eres el redactor de X/Twitter de CriptoScope, cuenta de análisis cripto en español.
+
+Tienes este contenido publicado en nuestro canal de Telegram:
+
+${limpio.slice(0, 1500)}
+
+Escribe UN tweet en español para X/Twitter que:
+- Primera línea: gancho directo que genere curiosidad o urgencia (dato concreto, pregunta provocadora o afirmación fuerte)
+- Segunda línea: 1-2 datos o ideas clave del análisis
+- NO menciones "canal de Telegram" ni pongas links (van en el reply automático)
+- Sin guiones largos (—). Sin etiquetas HTML.
+- Máximo 240 caracteres en total
+- 1-2 emojis máximo, solo si aportan
+
+Devuelve SOLO el texto del tweet, sin comillas ni explicaciones.`,
+        }],
+      });
+      const tweet = res.content[0].text.trim();
+      return tweet.length <= 270 ? tweet : tweet.slice(0, 267).replace(/\s+\S*$/, "...");
+    } catch {
+      // Fallback: primera línea con contenido real
+      const lineas = limpio.split("\n").filter((l) => l.length > 30 && /[a-záéíóúñ]/.test(l) && !["CriptoScope", "consejo financiero", "FLASH", "ALERTA"].some((e) => l.toUpperCase().includes(e)));
+      const fb = lineas[0] || limpio;
+      return fb.length <= 270 ? fb : fb.slice(0, 267).replace(/\s+\S*$/, "...");
+    }
   };
 
   // Helper para publicar según destino
@@ -690,7 +709,7 @@ async function procesarCallback(callback) {
       }
     }
     if (destino === "x" || destino === "ambos") {
-      const contenido = resumirParaX(msg);
+      const contenido = await generarTweetX(msg);
       const hashtags = extraerHashtags(msg);
       const tweetTexto = `${contenido}\n\n${hashtags}`;
       const mediaId = fileId ? await subirPortadaAX(fileId) : null;
