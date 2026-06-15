@@ -124,16 +124,12 @@ async function mostrarBotonesPublicacion(chatId, pid, previewTexto) {
 
 async function publicarCanal(texto, portadaFileId = null) {
   if (portadaFileId) {
-    const CAPTION_LIMIT = 1024;
-    const caption = texto.length <= CAPTION_LIMIT ? texto : texto.slice(0, CAPTION_LIMIT);
     const res = await fetch(`${API()}/sendPhoto`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id: process.env.TELEGRAM_CHAT_ID,
         photo: portadaFileId,
-        caption,
-        parse_mode: "HTML",
       }),
     });
     const json = await res.json();
@@ -141,13 +137,8 @@ async function publicarCanal(texto, portadaFileId = null) {
       console.warn("⚠️ sendPhoto falló:", JSON.stringify(json));
       throw new Error(`sendPhoto falló: ${json.description || JSON.stringify(json)}`);
     }
-    // Si el texto no cabía en el caption, mandar el resto
-    if (texto.length > CAPTION_LIMIT) {
-      await enviarTelegram(texto.slice(CAPTION_LIMIT));
-    }
-  } else {
-    await enviarTelegram(texto);
   }
+  await enviarTelegram(texto);
 }
 
 // ──────────────────────────────────────────────
