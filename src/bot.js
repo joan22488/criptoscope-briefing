@@ -10,6 +10,7 @@ import { analizarSymbol, generarSenal } from "./signals.js";
 import { getEventosMacro, formatearAlertaMacro } from "./calendar.js";
 import { publicarThread, subirImagenX } from "./twitter-post.js";
 import { enviarTelegram } from "./telegram.js";
+import { ejecutarResumenSemanal } from "./weekly.js";
 
 const client = new Anthropic();
 const API = () => `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}`;
@@ -400,9 +401,9 @@ async function cmdEstado(chatId) {
     `📅 Resumen semanal: domingos 09:00\n` +
     `🚨 Monitor eventos: cada 30 min\n` +
     `🔔 Check alertas precio: cada 5 min\n` +
-    `📰 Monitor noticias RSS: cada 15 min\n\n` +
+    `📰 Monitor RSS: cada 15 min (CoinDesk · Cointelegraph · The Block · Decrypt)\n\n` +
     `<b>Bajo demanda — canal + X:</b>\n` +
-    `<code>/flash</code> · <code>/hilo</code> · <code>/analiza</code> · <code>/opinion</code> · <code>/encuesta</code>\n\n` +
+    `<code>/flash</code> · <code>/hilo</code> · <code>/analiza</code> · <code>/opinion</code> · <code>/encuesta</code> · <code>/semanal</code>\n\n` +
     `<b>Bajo demanda — privado:</b>\n` +
     `<code>/precio</code> · <code>/quepasa</code> · <code>/senal</code> · <code>/calendario</code>\n` +
     `<code>/alerta</code> · <code>/alertas</code> · <code>/borralalerta</code>\n` +
@@ -922,6 +923,15 @@ async function cmdAyuda(chatId, cmd) {
         "<code>/cancelar 1</code> — cancela la publicación con ID 1\n\n" +
         "⚠️ Las programadas viven en memoria — si el servidor se reinicia se pierden.",
     },
+    semanal: {
+      titulo: "📊 /semanal — Resumen semanal bajo demanda",
+      uso: "/semanal",
+      ejemplo: "/semanal",
+      detalle:
+        "Genera el resumen semanal ahora mismo, sin esperar al domingo. Analiza los movimientos de la semana, los mejores y peores activos, el Fear&Greed y las estadísticas de señales.\n\n" +
+        "Te muestra una preview con botones para publicar en canal, en X o en ambos. Puedes añadir portada antes de publicar.\n\n" +
+        "Útil si quieres publicar el resumen en un momento concreto (por ejemplo, el viernes por la tarde o tras un evento importante de la semana).",
+    },
     encuesta: {
       titulo: "🗳 /encuesta — Encuesta para el canal",
       uso: "/encuesta [tema opcional]",
@@ -987,6 +997,8 @@ async function cmdAyuda(chatId, cmd) {
     `Análisis técnico completo: entrada, TP1, TP2, SL y R:R.\n\n` +
     `<code>/encuesta</code> [tema]\n` +
     `Encuesta nativa para el canal. Preview con botones para aprobar o regenerar.\n\n` +
+    `<code>/semanal</code>\n` +
+    `Resumen semanal bajo demanda — sin esperar al domingo. Preview con botones.\n\n` +
     `<i>📸 Todos admiten portada: manda foto + comando como adjunto, o usa el botón "Añadir portada". La foto se integra en el mismo mensaje del canal.</i>\n\n` +
     `──────────────\n` +
     `<b>🔒 Solo te responden a ti</b>\n\n` +
@@ -1135,55 +1147,61 @@ export async function verificarAlertasPrecios() {
 const KEYWORDS_NOTICIAS = (process.env.MONITOR_KEYWORDS || "ETF,BlackRock,SEC,Fed,FOMC,Bitcoin,halving,Ethereum,crash,pump,liquidaciones,Binance,Coinbase")
   .split(",").map((k) => k.trim().toLowerCase());
 
+const FUENTES_RSS = [
+  { nombre: "CoinDesk",      url: "https://www.coindesk.com/arc/outboundfeeds/rss/" },
+  { nombre: "Cointelegraph", url: "https://cointelegraph.com/rss" },
+  { nombre: "The Block",     url: "https://www.theblock.co/rss.xml" },
+  { nombre: "Decrypt",       url: "https://decrypt.co/feed" },
+];
+
 export async function monitorNoticias() {
-  if (!OWNER()) return; // sin TELEGRAM_OWNER_ID no hay a quién avisar
-  try {
-    const res = await fetch("https://www.coindesk.com/arc/outboundfeeds/rss/", {
-      headers: { "User-Agent": "Mozilla/5.0" },
-    });
-    if (!res.ok) return;
-    const xml = await res.text();
+  if (!OWNER()) return;
 
-    const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].map((m) => {
-      const get = (tag) => m[1].match(new RegExp(`<${tag}[^>]*>(?:<!\\[CDATA\\[)?(.*?)(?:\\]\\]>)?<\\/${tag}>`, "s"))?.[1]?.trim() || "";
-      return { guid: get("guid"), titulo: get("title"), link: get("link"), fecha: get("pubDate") };
-    });
+  for (const fuente of FUENTES_RSS) {
+    try {
+      const res = await fetch(fuente.url, {
+        headers: { "User-Agent": "Mozilla/5.0" },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!res.ok) continue;
+      const xml = await res.text();
 
-    for (const item of items) {
-      if (noticiasVistas.has(item.guid)) continue;
-      noticiasVistas.add(item.guid);
-
-      const coincide = KEYWORDS_NOTICIAS.some((k) => item.titulo.toLowerCase().includes(k));
-      if (!coincide) continue;
-
-      // Guardar para callback
-      const pid = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
-      pendingPublish.set(pid, null); // se rellena con el texto generado al aprobar
-      setTimeout(() => pendingPublish.delete(pid), 60 * 60 * 1000); // 1h
-
-      await fetch(`${API()}/sendMessage`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id: OWNER(),
-          text: `📰 <b>Nueva noticia detectada</b>\n\n<b>${item.titulo}</b>\n\n<a href="${item.link}">Ver artículo</a>`,
-          parse_mode: "HTML",
-          disable_web_page_preview: false,
-          reply_markup: {
-            inline_keyboard: [[
-              { text: "⚡ Publicar flash", callback_data: `news_flash:${encodeURIComponent(item.titulo)}` },
-              { text: "📝 Hacer hilo", callback_data: `news_hilo:${encodeURIComponent(item.titulo)}` },
-              { text: "🙈 Ignorar", callback_data: "nopub" },
-            ]],
-          },
-        }),
+      const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].map((m) => {
+        const get = (tag) => m[1].match(new RegExp(`<${tag}[^>]*>(?:<!\\[CDATA\\[)?(.*?)(?:\\]\\]>)?<\\/${tag}>`, "s"))?.[1]?.trim() || "";
+        const guid = get("guid") || get("link");
+        return { guid, titulo: get("title"), link: get("link"), fuente: fuente.nombre };
       });
 
-      // Pausa para no inundar si hay varias noticias nuevas de golpe
-      await new Promise((r) => setTimeout(r, 1000));
+      for (const item of items) {
+        if (!item.guid || noticiasVistas.has(item.guid)) continue;
+        noticiasVistas.add(item.guid);
+
+        const coincide = KEYWORDS_NOTICIAS.some((k) => item.titulo.toLowerCase().includes(k));
+        if (!coincide) continue;
+
+        await fetch(`${API()}/sendMessage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id: OWNER(),
+            text: `📰 <b>${item.fuente}</b>\n\n<b>${item.titulo}</b>\n\n<a href="${item.link}">Ver artículo</a>`,
+            parse_mode: "HTML",
+            disable_web_page_preview: false,
+            reply_markup: {
+              inline_keyboard: [[
+                { text: "⚡ Flash", callback_data: `news_flash:${encodeURIComponent(item.titulo)}` },
+                { text: "📝 Hilo", callback_data: `news_hilo:${encodeURIComponent(item.titulo)}` },
+                { text: "🙈 Ignorar", callback_data: "nopub" },
+              ]],
+            },
+          }),
+        });
+
+        await new Promise((r) => setTimeout(r, 800));
+      }
+    } catch (e) {
+      console.warn(`⚠️  Monitor RSS ${fuente.nombre}:`, e.message);
     }
-  } catch (e) {
-    console.warn("⚠️  Monitor noticias:", e.message);
   }
 }
 
@@ -1270,6 +1288,20 @@ async function cmdCancelar(chatId, argStr) {
   clearTimeout(p.timer);
   programadas.delete(id);
   await reply(chatId, `🗑 Publicación #${id} cancelada: ${p.descripcion}`);
+}
+
+// /semanal — resumen semanal bajo demanda con preview + botones
+async function cmdSemanal(chatId) {
+  await reply(chatId, "📊 Generando resumen semanal...");
+  try {
+    const { mensaje } = await ejecutarResumenSemanal();
+    const pid = Date.now().toString(36);
+    pendingPublish.set(pid, mensaje);
+    setTimeout(() => pendingPublish.delete(pid), 30 * 60 * 1000);
+    await mostrarBotonesPublicacion(chatId, pid, mensaje);
+  } catch (e) {
+    await reply(chatId, `❌ No pude generar el resumen semanal: ${e.message}`);
+  }
 }
 
 // /encuesta — genera encuesta para el canal basada en el mercado actual
@@ -1420,6 +1452,7 @@ async function procesarMensaje(msg) {
       case "/programadas":  await cmdProgramadas(chatId); break;
       case "/cancelar":     await cmdCancelar(chatId, argStr); break;
       case "/encuesta":     await cmdEncuesta(chatId, argStr); break;
+      case "/semanal":      await cmdSemanal(chatId); break;
       case "/ayuda":
       case "/help":         await cmdAyuda(chatId, argStr); break;
       default:

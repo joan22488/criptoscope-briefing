@@ -95,6 +95,7 @@ Escríbele directamente al bot (chat privado):
 | `/analiza <coin>` | `/analiza AVAX` | Análisis técnico top-down con entrada, TP1, TP2, SL y R:R |
 | `/opinion <noticia>` | `/opinion SEC aprueba ETF` | Lectura de mercado estilo CriptoScope |
 | `/encuesta [tema]` | `/encuesta` · `/encuesta BTC esta semana` | Poll nativo para el canal con preview |
+| `/semanal` | `/semanal` | Resumen semanal bajo demanda — sin esperar al domingo |
 
 **Botones de publicación** (aparecen tras generar cualquier contenido):
 - 📢 **Canal + X** — publica en Telegram y en X (con hashtags automáticos de monedas)
@@ -130,7 +131,7 @@ Escríbele directamente al bot (chat privado):
 | Foto + pie `responde` | Redacta una respuesta al comentario de la imagen (solo para ti) |
 
 ### Monitor automático de noticias
-Cada 15 min el sistema revisa CoinDesk RSS. Si detecta una noticia con tus keywords (`MONITOR_KEYWORDS`) te la manda en privado con botones: **⚡ Publicar flash** · **📝 Hacer hilo** · **🙈 Ignorar**.
+Cada 15 min el sistema revisa **4 fuentes RSS en paralelo**: CoinDesk · Cointelegraph · The Block · Decrypt. Si detecta una noticia con tus keywords (`MONITOR_KEYWORDS`) te la manda en privado indicando la fuente, con botones: **⚡ Flash** · **📝 Hilo** · **🙈 Ignorar**.
 
 ### Sistema
 | Comando | Acción |
