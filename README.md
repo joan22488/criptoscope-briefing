@@ -168,6 +168,7 @@ X_ACCESS_SECRET=...
 NOTION_TOKEN=ntn_...                  # notion.so/my-integrations
 NOTION_BRIEFINGS_DB=...               # ID de la base de datos de briefings
 NOTION_SIGNALS_DB=...                 # ID de la base de datos de señales
+NOTION_PUBLICACIONES_DB=...           # ID de la base de datos de publicaciones (log unificado)
 
 # ─── CONFIGURACIÓN ────────────────────────────────────────────
 CLAUDE_MODEL=claude-sonnet-4-6
@@ -253,7 +254,19 @@ cp .env.example .env
 | Resultado | Select (PENDIENTE / TP1 ✅ / TP2 ✅ / SL ❌ / EXPIRADO) |
 | Resultado Fecha | Date |
 
-5. Copia los IDs de las bases de datos desde la URL → `NOTION_BRIEFINGS_DB` y `NOTION_SIGNALS_DB`
+**Publicaciones (log unificado):**
+
+| Columna | Tipo |
+|---------|------|
+| Título | Title |
+| Tipo | Select (Flash / Hilo / Análisis / Opinión / Semanal / Briefing / Otro) |
+| Plataforma | Select (Canal / X / Canal+X) |
+| Fecha | Date |
+| Texto | Text |
+| Portada | Checkbox |
+| Estado | Select (Publicado / Error canal / Error X) |
+
+5. Copia los IDs de las tres bases de datos desde la URL → `NOTION_BRIEFINGS_DB`, `NOTION_SIGNALS_DB` y `NOTION_PUBLICACIONES_DB`
 
 ### 6. Probar en local
 

@@ -57,6 +57,27 @@ export async function guardarBriefingEnNotion(paquete, contexto) {
   });
 }
 
+// ─── PUBLICACIONES (log de todo lo publicado por el bot) ─────
+
+export async function guardarPublicacionEnNotion({ tipo, titulo, texto, plataforma, conPortada = false, estado = "Publicado" }) {
+  if (!process.env.NOTION_PUBLICACIONES_DB) return;
+  const notion = getClient();
+  const limpio = (texto || "").replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
+
+  await notion.pages.create({
+    parent: { database_id: process.env.NOTION_PUBLICACIONES_DB },
+    properties: {
+      Título:     { title:     [{ text: { content: (titulo || "Sin título").slice(0, 200) } }] },
+      Tipo:       { select:    { name: tipo || "Otro" } },
+      Plataforma: { select:    { name: plataforma || "Canal" } },
+      Fecha:      { date:      { start: new Date().toISOString() } },
+      Portada:    { checkbox:  conPortada },
+      Estado:     { select:    { name: estado } },
+      Texto:      { rich_text: [{ text: { content: limpio.slice(0, 2000) } }] },
+    },
+  }).catch((e) => console.warn("⚠️ Notion publicación no guardada:", e.message));
+}
+
 // ─── SEÑALES ─────────────────────────────────────────────────
 
 export async function guardarSenalEnNotion(registro) {

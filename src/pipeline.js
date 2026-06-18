@@ -9,7 +9,7 @@ import { generarPaqueteDiario } from "./claude.js";
 import { enviarTelegram } from "./telegram.js";
 import { guardarPaquete } from "./output.js";
 import { getEventosMacro } from "./calendar.js";
-import { guardarBriefingEnNotion } from "./notion.js";
+import { guardarBriefingEnNotion, guardarPublicacionEnNotion } from "./notion.js";
 import { publicarThread } from "./twitter-post.js";
 
 export async function ejecutarBriefing() {
@@ -115,6 +115,15 @@ export async function ejecutarBriefing() {
     : "";
 
   await enviarTelegram(cabecera + paquete.briefing + bloqueSentimiento + bloqueGainers + bloqueMacro + bloquePalabra + pie);
+
+  guardarPublicacionEnNotion({
+    tipo: "Briefing",
+    titulo: paquete.titular || "Briefing matinal",
+    texto: paquete.briefing,
+    plataforma: paquete.thread?.length ? "Canal+X" : "Canal",
+    conPortada: false,
+    estado: "Publicado",
+  }).catch(() => {});
 
   const seg = ((Date.now() - inicio) / 1000).toFixed(1);
   console.log(`✅ Briefing completado en ${seg}s`);

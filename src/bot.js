@@ -11,6 +11,7 @@ import { getEventosMacro, formatearAlertaMacro } from "./calendar.js";
 import { publicarThread, subirImagenX } from "./twitter-post.js";
 import { enviarTelegram } from "./telegram.js";
 import { ejecutarResumenSemanal } from "./weekly.js";
+import { guardarPublicacionEnNotion } from "./notion.js";
 
 const client = new Anthropic();
 const API = () => `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}`;
@@ -739,6 +740,27 @@ Devuelve SOLO título + salto de línea + cuerpo. Sin comillas, sin etiquetas, s
     pendingPublish.delete(pid);
     portadas.delete(pid);
     hilosPendientes.delete(pid);
+
+    // Registrar en Notion
+    const detectarTipo = (t) => {
+      if (/FLASH/i.test(t))   return "Flash";
+      if (/HILO/i.test(t))    return "Hilo";
+      if (/ANÁLISIS|ANALISIS|On-Demand/i.test(t)) return "Análisis";
+      if (/OPINIÓN|OPINION/i.test(t)) return "Opinión";
+      if (/SEMANAL/i.test(t)) return "Semanal";
+      return "Otro";
+    };
+    const extraerTitulo = (t) => t.replace(/<[^>]+>/g, "").split("\n").find((l) => l.trim().length > 5) || "Sin título";
+    const plataformaNotion = errorX && destino === "x" ? "X" : errorX && destino === "ambos" ? "Canal" : destino === "ambos" ? "Canal+X" : destino === "canal" ? "Canal" : "X";
+    const estadoNotion = errorCanal ? "Error canal" : errorX ? "Error X" : "Publicado";
+    guardarPublicacionEnNotion({
+      tipo:       detectarTipo(msg),
+      titulo:     extraerTitulo(msg),
+      texto:      msg,
+      plataforma: plataformaNotion,
+      conPortada: !!portadas.get(pid) || false,
+      estado:     estadoNotion,
+    }).catch(() => {});
 
     const donde = destino === "ambos" ? "en el canal y en X" : destino === "canal" ? "en el canal" : "en X";
     if (errorX) {
