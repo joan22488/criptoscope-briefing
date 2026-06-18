@@ -158,7 +158,7 @@ async function cmdFlash(chatId, tema, portadaFileId = null) {
   const response = await client.messages.create({
     model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
     max_tokens: 600,
-    system: `Eres CriptoScope. Voz directa de trader, sin hype ni promesas. Genera una alerta flash sobre el tema. Máx 3 párrafos cortos. Usa HTML de Telegram (<b>, <i>). Sin emojis excesivos, solo 1-2 relevantes. No uses guiones largos (—) para conectar frases; escribe frases completas y directas.`,
+    system: `Eres CriptoScope. Voz directa de trader, sin hype ni promesas. Genera una alerta flash sobre el tema. Máx 3 párrafos cortos. Usa HTML de Telegram (<b>, <i>). Sin emojis excesivos, solo 1-2 relevantes. PROHIBIDO usar guiones medios o largos (– o —): delatan texto de IA. Usa punto seguido o dos puntos.`,
     messages: [{
       role: "user",
       content: `TEMA: ${tema}\nBTC: $${precios["BTC-USD"]?.precio?.toFixed(0) || "?"} · ETH: $${precios["ETH-USD"]?.precio?.toFixed(0) || "?"}\nFear&Greed: ${fearGreed?.valor || "?"} (${fearGreed?.clasificacion || "?"})`,
@@ -208,7 +208,7 @@ async function cmdHilo(chatId, tema, portadaFileId = null) {
   const response = await client.messages.create({
     model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
     max_tokens: 1500,
-    system: `Eres CriptoScope. Genera un hilo educativo de 5 tweets sobre el tema. Cada tweet máx 260 chars, numerado (1/5, 2/5...). Voz directa, sin hype. No uses guiones largos (—) para conectar frases; escribe frases completas. Devuelve SOLO JSON: {"tweets": ["tweet1", "tweet2", ...]}`,
+    system: `Eres CriptoScope. Genera un hilo educativo de 5 tweets sobre el tema. Cada tweet máx 260 chars, numerado (1/5, 2/5...). Voz directa, sin hype. PROHIBIDO usar guiones medios o largos (– o —): delatan texto de IA. Usa punto seguido o dos puntos. Devuelve SOLO JSON: {"tweets": ["tweet1", "tweet2", ...]}`,
     messages: [{ role: "user", content: `TEMA: ${tema}${contextoExtra}` }],
   });
 
@@ -288,7 +288,7 @@ async function cmdOpinion(chatId, noticia, portadaFileId = null) {
   const response = await client.messages.create({
     model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
     max_tokens: 700,
-    system: `Eres CriptoScope. Opina sobre la noticia con perspectiva de trader: qué significa para el mercado, qué haría el precio, qué vigilarías. Directo, sin rodeos. 2-3 párrafos. HTML Telegram. No uses guiones largos (—) para conectar frases; escribe frases completas y directas.`,
+    system: `Eres CriptoScope. Opina sobre la noticia con perspectiva de trader: qué significa para el mercado, qué haría el precio, qué vigilarías. Directo, sin rodeos. 2-3 párrafos. HTML Telegram. PROHIBIDO usar guiones medios o largos (– o —): delatan texto de IA. Usa punto seguido o dos puntos.`,
     messages: [{
       role: "user",
       content: `NOTICIA: ${noticia}\nContexto mercado: BTC $${precios["BTC-USD"]?.precio?.toFixed(0) || "?"} (${precios["BTC-USD"]?.cambio24h_pct?.toFixed(2) || "?"}%)`,
@@ -337,7 +337,7 @@ async function cmdQuePasa(chatId) {
   const response = await client.messages.create({
     model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
     max_tokens: 500,
-    system: `Eres CriptoScope. Resume el estado del mercado ahora mismo en 3-4 frases directas. Qué domina, qué vigilar, si hay oportunidad o no. Sin rodeos. No uses guiones largos (—) para conectar frases.`,
+    system: `Eres CriptoScope. Resume el estado del mercado ahora mismo en 3-4 frases directas. Qué domina, qué vigilar, si hay oportunidad o no. Sin rodeos. PROHIBIDO usar guiones medios o largos (– o —): delatan texto de IA. Usa punto seguido o dos puntos.`,
     messages: [{
       role: "user",
       content: `BTC: $${precios["BTC-USD"]?.precio?.toFixed(0)} (${precios["BTC-USD"]?.cambio24h_pct?.toFixed(2)}%)\nETH: $${precios["ETH-USD"]?.precio?.toFixed(0)} (${precios["ETH-USD"]?.cambio24h_pct?.toFixed(2)}%)\nSOL: $${precios["SOL-USD"]?.precio?.toFixed(0)} (${precios["SOL-USD"]?.cambio24h_pct?.toFixed(2)}%)\nFear&Greed: ${fearGreed?.valor} (${fearGreed?.clasificacion})\nDominancia BTC: ${globalMarket?.dominancia_btc}%`,
@@ -500,7 +500,7 @@ async function cmdFoto(chatId, photo, caption) {
     const respuesta = await client.messages.create({
       model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
       max_tokens: 900,
-      system: `Eres CriptoScope. Genera una opinión directa de trader sobre la noticia de la imagen: qué significa para el mercado, cómo afecta al precio, qué vigilarías. Voz directa, sin hype. 2-3 párrafos. HTML Telegram (<b>, <i>). No uses guiones largos (—) para conectar frases; escribe frases completas y directas.`,
+      system: `Eres CriptoScope. Genera una opinión directa de trader sobre la noticia de la imagen: qué significa para el mercado, cómo afecta al precio, qué vigilarías. Voz directa, sin hype. 2-3 párrafos. HTML Telegram (<b>, <i>). PROHIBIDO usar guiones medios o largos (– o —): delatan texto de IA. Usa punto seguido o dos puntos.`,
       messages: [{
         role: "user",
         content: [
@@ -676,7 +676,7 @@ LÍNEA 2 — CUERPO: 1-2 datos o ideas clave del análisis (≤140 chars). Sin r
 
 Reglas:
 - NO menciones "canal de Telegram" ni pongas links
-- Sin guiones largos (—). Sin etiquetas HTML.
+- PROHIBIDO guiones medios o largos (– o —). Sin etiquetas HTML.
 - Total máximo 240 caracteres entre título y cuerpo
 - Máximo 2 emojis en todo el tweet
 

@@ -14,6 +14,7 @@ VOZ Y ESTILO (innegociable):
 - Si algo es ruido o humo, se dice claramente que es ruido o humo.
 - Nunca se da consejo financiero directo: se enseña a leer el mercado, no se dan señales.
 - Honestidad: si el dato no está claro o falta contexto, se reconoce.
+- PROHIBIDO usar guiones medios o largos (– o —) en cualquier parte del texto. Delatan texto de IA inmediatamente. Sustituir siempre por punto seguido, dos puntos, o reestructurar la frase.
 `;
 
 export const INSTRUCCIONES_BRIEFING = `
