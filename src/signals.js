@@ -6,6 +6,62 @@ const OKX = "https://www.okx.com/api/v5/market";
 const OKX_PUBLIC = "https://www.okx.com/api/v5/public";
 const SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT"];
 
+// Configuración de cada franja horaria
+const SLOTS = { 7: "apertura", 11: "pulso", 15: "derivados", 19: "cierre" };
+
+const SLOT_CONFIG = {
+  apertura: {
+    label: "Radar de apertura",
+    emoji: "🌅",
+    hora_str: "07:00",
+    sistema_extra: `Análisis de apertura (07:00). Foco en la estructura 4H y el sesgo del día.
+Tu trabajo: leer la macro diaria, identificar el sesgo dominante y el nivel más importante del día.
+Sé directo: "BTC abre alcista con soporte en X" o "ETH en lateral sin dirección clara en 4H".`,
+    instruccion_extra: `FOCO 07:00: estructura 4H, tendencia 1D, sesgo del día y nivel clave a vigilar.
+El campo "sesgo" debe ser una lectura clara del bias del día. El campo "cuando" debe nombrar el nivel exacto que activa o invalida el setup.`,
+    pie: "Niveles y estructura para la sesión de hoy.",
+  },
+  pulso: {
+    label: "Pulso técnico",
+    emoji: "📈",
+    hora_str: "11:00",
+    sistema_extra: `Análisis de media mañana (11:00). Foco en 1H: ¿el precio respeta o rompe los niveles del radar de apertura?
+Tu trabajo: evaluar el momentum 1H con RSI y MACD. Si hay setup con entrada clara, defínelo. Si el precio está en tierra de nadie, di ESPERAR.
+RSI1H > 60 con histograma MACD subiendo = momentum alcista. RSI < 40 con histograma bajando = momentum bajista.`,
+    instruccion_extra: `FOCO 11:00: momentum 1H (RSI zona, MACD cruce y dirección histograma). ¿El setup de apertura se confirma o se invalida?
+El campo "sesgo" debe nombrar el estado actual del momentum en 1H. El campo "por_que" debe incluir RSI y MACD 1H.`,
+    pie: "Momentum 1H actualizado a media mañana.",
+  },
+  derivados: {
+    label: "On-chain y derivados",
+    emoji: "⚡",
+    hora_str: "15:00",
+    sistema_extra: `Análisis de tarde (15:00). Foco en derivados: funding rate, open interest, posicionamiento del mercado.
+Tu trabajo: leer el funding y el OI y traducirlos a lenguaje de mercado. Funding muy positivo = mercado excesivamente largo, riesgo de squeeze bajista. Funding muy negativo = shorts acumulados, riesgo de short squeeze.
+Si el OI sube con el precio: la tendencia tiene respaldo. Si el OI cae con el precio: el movimiento pierde fuerza.`,
+    instruccion_extra: `FOCO 15:00: interpreta funding rate y open interest de cada activo. El campo "sesgo" debe nombrar el posicionamiento del mercado (ej: "Mercado largo en exceso, funding 0.08%"). El campo "por_que" debe conectar funding+OI con la dirección del precio.`,
+    pie: "Datos de derivados instantáneos. El funding cambia cada 8h.",
+  },
+  cierre: {
+    label: "Cierre europeo",
+    emoji: "🌙",
+    hora_str: "19:00",
+    sistema_extra: `Análisis de cierre europeo (19:00). Foco en el balance del día y la preparación para la sesión asiática.
+Tu trabajo: comparar el precio actual con el rango del día, leer si el cierre deja estructura alcista o bajista, e identificar el nivel clave para la sesión asiática de esta noche.
+Un cierre en la parte alta del rango del día = fortaleza. En la parte baja = debilidad.`,
+    instruccion_extra: `FOCO 19:00: balance del día (dónde cierra en el rango diario), estructura del cierre y nivel clave para la sesión asiática.
+El campo "sesgo" debe incluir el balance: "Día alcista, cierra en máximos" o "Día bajista, cierra en mínimos del rango".
+El campo "cuando" debe nombrar el nivel asiático a vigilar esta noche.`,
+    pie: "Cierre de la sesión europea. La sesión asiática abre en unas horas.",
+  },
+};
+
+// Elimina guiones medios/largos que cuela Claude — delatan texto de IA
+function sanitizarDashes(s) {
+  if (typeof s !== "string") return s;
+  return s.replace(/ [–—] /g, ": ").replace(/[–—]/g, ".");
+}
+
 // Convierte "BTCUSDT" → "BTC-USDT", mapea intervalos Binance → OKX
 const toOKXId = (sym) => sym.replace("USDT", "-USDT");
 const toOKXBar = (iv) => ({ "1d": "1D", "4h": "4H", "1h": "1H", "15m": "15m" }[iv] || iv);
@@ -147,10 +203,15 @@ export async function analizarSymbol(symbol) {
   };
 }
 
-export async function generarSenal(datos) {
+export async function generarSenal(datos, slot = "apertura") {
+  const cfg = SLOT_CONFIG[slot] || SLOT_CONFIG.apertura;
+
   const sistema = `Eres el analista de CriptoScope. Voz directa de trader a trader — sin relleno, sin frases de IA. El precio manda.
 Metodologia: 4H estructura → 1H confirma RSI/MACD → 15m gatillo. RSI14 MACD 12/26/9.
-Divergencias en 1H/4H contra el setup = tamaño REDUCIDO o ESPERAR. RR minimo 1:1.5. Analisis educativo.`;
+Divergencias en 1H/4H contra el setup = tamaño REDUCIDO o ESPERAR. RR minimo 1:1.5. Analisis educativo.
+PROHIBIDO usar guiones medios o largos (– o —). Usa punto, dos puntos o reestructura la frase.
+
+${cfg.sistema_extra}`;
 
   const syms = datos.map((d) => d.nombre);
   const plantilla = syms.reduce((obj, s) => {
@@ -166,6 +227,7 @@ REGLAS EXTRA:
 - Los pivots (pivot, r1, r2, s1, s2) son niveles clave para TP y SL — úsalos cuando sean relevantes.
 - SOL analízala igual que BTC y ETH con su propia estructura.
 - RR mínimo 1:1.5. Si no hay setup limpio, op=ESPERAR siempre.
+${cfg.instruccion_extra}
 
 DATOS: ` + JSON.stringify(datos);
 
@@ -179,8 +241,18 @@ DATOS: ` + JSON.stringify(datos);
   const inicio = txt.indexOf("{");
   const fin = txt.lastIndexOf("}");
   const limpio = inicio !== -1 && fin !== -1 ? txt.slice(inicio, fin + 1) : txt.replace(/```json|```/g, "").trim();
+  const aplicarSanitizacion = (parsed) => {
+    const campos = ["sesgo", "por_que", "cuando", "alerta", "rr"];
+    for (const sym of Object.keys(parsed)) {
+      for (const campo of campos) {
+        if (parsed[sym]?.[campo]) parsed[sym][campo] = sanitizarDashes(parsed[sym][campo]);
+      }
+    }
+    return parsed;
+  };
+
   try {
-    return JSON.parse(limpio);
+    return aplicarSanitizacion(JSON.parse(limpio));
   } catch (e) {
     // Rescue: extract BTC and ETH blocks individually
     const rescatar = (sym) => {
@@ -193,24 +265,52 @@ DATOS: ` + JSON.stringify(datos);
   }
 }
 
-function formatear(senales, datos, hora, correlacion) {
+function formatear(senales, datos, hora, correlacion, slot = "apertura") {
+  const cfg = SLOT_CONFIG[slot] || SLOT_CONFIG.apertura;
   const iconOp = { LONG: "🟢 LONG", SHORT: "🔴 SHORT", ESPERAR: "⏸ ESPERAR" };
   const fecha = new Date().toLocaleDateString("es-ES", {
     weekday: "long", day: "numeric", month: "long",
     timeZone: process.env.TIMEZONE || "Europe/Madrid",
   });
 
-  let msg = `<b>📊 CRIPTOSCOPE | Análisis Técnico</b>\n`;
+  let msg = `<b>${cfg.emoji} CRIPTOSCOPE | ${cfg.label}</b>\n`;
   msg += `<b>${fecha} · ${hora}</b>\n\n`;
+
+  // DERIVADOS: tabla de funding/OI como intro antes de los coins
+  if (slot === "derivados") {
+    msg += `<b>Posicionamiento ahora:</b>\n`;
+    for (const d of datos) {
+      if (!d.funding) continue;
+      const fr = parseFloat(d.funding.funding_pct);
+      const icono = fr > 0.04 ? "🔴" : fr < -0.04 ? "🟢" : "⚪";
+      const sesgo = fr > 0.04 ? "longs pagando" : fr < -0.04 ? "shorts pagando" : "equilibrado";
+      const oi = d.funding.open_interest > 0 ? `  OI ${(d.funding.open_interest / 1e6).toFixed(0)}M` : "";
+      msg += `${icono} <b>${d.nombre}</b>: ${d.funding.funding_pct} (${sesgo})${oi}\n`;
+    }
+    msg += "\n";
+  }
 
   for (const [sym, d] of Object.entries(senales)) {
     const info = datos.find((x) => x.nombre === sym);
     const precio = info ? `$${info.precio.toFixed(0)}` : "";
-    const funding = info?.funding ? `  ·  Funding ${info.funding.funding_pct}` : "";
 
     msg += `──────────────\n`;
-    msg += `<b>${sym} ${precio}</b>${funding}\n\n`;
-    msg += `${d.sesgo}\n\n`;
+    msg += `<b>${sym} ${precio}</b>\n`;
+
+    // PULSO: RSI 1H y dirección MACD visible bajo el precio
+    if (slot === "pulso" && info?.tf1h) {
+      const { rsi, macd } = info.tf1h;
+      const rsiEmoji = rsi.v > 60 ? "🟢" : rsi.v < 40 ? "🔴" : "⚪";
+      const histDir = macd.hist_dir === "^" ? "▲" : "▼";
+      msg += `${rsiEmoji} RSI 1H: ${rsi.v} ${rsi.zona}  ·  MACD ${macd.cruce}  hist ${histDir}\n`;
+    }
+
+    // APERTURA y CIERRE: funding como dato de contexto, discreto
+    if ((slot === "apertura" || slot === "cierre") && info?.funding) {
+      msg += `Funding: ${info.funding.funding_pct}\n`;
+    }
+
+    msg += `\n${d.sesgo}\n\n`;
     msg += `${iconOp[d.op] || "⏸ ESPERAR"}\n`;
     msg += `${d.por_que}\n`;
 
@@ -221,25 +321,39 @@ function formatear(senales, datos, hora, correlacion) {
       if (d.tamano === "REDUCIDO") msg += `⚠️ Posición reducida por divergencia\n`;
       msg += `\n✅ Activar si: ${d.cuando}\n`;
     } else {
-      msg += `\n🎯 Vigilar: ${d.cuando}\n`;
+      // CIERRE usa label de sesión asiática, el resto usa Vigilar
+      const labelVigilar = slot === "cierre" ? "🌙 Asiática:" : "🎯 Vigilar:";
+      msg += `\n${labelVigilar} ${d.cuando}\n`;
     }
 
     if (d.alerta) msg += `\n⚠️ ${d.alerta}\n`;
     msg += "\n";
   }
 
-  if (correlacion) msg += `──────────────\n🔗 ${correlacion}\n\n`;
+  // APERTURA: síntesis del nivel del día al final (extraído del campo "cuando" de BTC)
+  if (slot === "apertura" && senales["BTC"]?.cuando) {
+    msg += `──────────────\n📌 Nivel del día: ${senales["BTC"].cuando}\n\n`;
+  }
+
+  if (correlacion && slot !== "derivados") msg += `──────────────\n🔗 ${correlacion}\n\n`;
   msg += `──────────────\n`;
-  msg += `<i>Análisis educativo · no es consejo financiero</i>`;
+  msg += `<i>${cfg.pie} · Análisis educativo, no consejo financiero</i>`;
   return msg;
 }
 
 export async function ejecutarAnalisisTecnico() {
-  console.log("📊 Analisis BTC + ETH (4H→1H→15m)...");
+  // Detectar franja horaria en Madrid
+  const horaNum = parseInt(new Date().toLocaleTimeString("es-ES", {
+    hour: "2-digit", timeZone: process.env.TIMEZONE || "Europe/Madrid",
+  }).split(":")[0]);
+  const slot = SLOTS[horaNum] || "apertura";
+  const cfg = SLOT_CONFIG[slot];
+
+  console.log(`📊 ${cfg.emoji} ${cfg.label} (${cfg.hora_str}) — BTC + ETH + SOL...`);
   const datos = await Promise.all(SYMBOLS.map(analizarSymbol));
-  console.log(`   BTC $${datos[0].precio.toFixed(0)} | ETH $${datos[1].precio.toFixed(0)}`);
-  console.log("🧠 Generando con Claude...");
-  const senales = await generarSenal(datos);
+  console.log(`   BTC $${datos[0].precio.toFixed(0)} | ETH $${datos[1].precio.toFixed(0)} | SOL $${datos[2].precio.toFixed(0)}`);
+  console.log(`🧠 Generando análisis [slot: ${slot}] con Claude...`);
+  const senales = await generarSenal(datos, slot);
   const hora = new Date().toLocaleTimeString("es-ES", {
     hour: "2-digit", minute: "2-digit",
     timeZone: process.env.TIMEZONE || "Europe/Madrid",
@@ -262,7 +376,7 @@ export async function ejecutarAnalisisTecnico() {
   // Calcular correlación BTC/ETH/SOL
   const correlacion = calcularCorrelacion(datos);
 
-  const mensaje = formatear(senales, datos, hora, correlacion);
+  const mensaje = formatear(senales, datos, hora, correlacion, slot);
   const ops = datos.map((d) => `${d.nombre}: ${senales[d.nombre]?.op || "?"}`).join(" | ");
   console.log(`   ${ops}`);
   return { mensaje, senales };

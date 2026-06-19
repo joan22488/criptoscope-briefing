@@ -8,8 +8,11 @@ Sistema que monitoriza el mercado cripto 24/7, genera análisis con IA (Claude) 
 
 | Cuándo | Qué publica |
 |--------|-------------|
-| 07:00 diario | ☕ Briefing matinal completo → Telegram + X |
-| 07:00, 11:00, 15:00, 19:00 | 📊 Señales técnicas BTC/ETH/SOL → Telegram |
+| 07:00 diario | ☕ Briefing matinal → Telegram + thread de 5 tweets en X (si `X_API_KEY` configurado) |
+| 07:00 | 🌅 Radar de apertura — sesgo del día y nivel clave 4H → Telegram |
+| 11:00 | 📈 Pulso técnico — momentum 1H RSI/MACD → Telegram |
+| 15:00 | ⚡ On-chain y derivados — funding rate, OI, posicionamiento → Telegram |
+| 19:00 | 🌙 Cierre europeo — balance del día + nivel sesión asiática → Telegram |
 | Cada 30 min | 🚨 Monitor de alertas de alto impacto |
 | Cada 30 min | ✅ Verificación automática de resultados de señales |
 | Domingos 09:00 | 📅 Resumen semanal con estadísticas de señales |
@@ -62,10 +65,19 @@ src/
 
 ## Análisis técnico (signals.js)
 
+**4 franjas horarias con ángulo diferente cada una:**
+
+| Franja | Foco | Pregunta que responde |
+|--------|------|-----------------------|
+| 🌅 07:00 Radar de apertura | 4H macro + 1D tendencia | ¿Cuál es el sesgo del día y el nivel más importante? |
+| 📈 11:00 Pulso técnico | 1H momentum RSI/MACD | ¿Se confirma el setup de apertura o se invalida? |
+| ⚡ 15:00 On-chain y derivados | Funding rate + Open Interest | ¿El mercado está largo o corto en exceso? |
+| 🌙 19:00 Cierre europeo | Rango del día + nivel 1D | ¿Cómo cierra y qué vigilar en la sesión asiática? |
+
 **Metodología top-down:**
 1. **1D** — filtra la tendencia macro
-2. **4H** — confirma estructura
-3. **1H** — valida RSI/MACD
+2. **4H** — confirma estructura (foco apertura y cierre)
+3. **1H** — valida RSI/MACD (foco pulso técnico)
 4. **15m** — gatillo de entrada
 
 **Indicadores calculados por timeframe:**
@@ -74,7 +86,7 @@ src/
 - Divergencias RSI y MACD (ventana 10-20 velas)
 - EMA 20 y EMA 50
 - Niveles pivot (R1, R2, S1, S2) basados en últimas 20 velas 4H
-- Funding rate perpetuos
+- Funding rate perpetuos + Open Interest
 
 **Pares:** BTCUSDT · ETHUSDT · SOLUSDT (ampliable con `/analiza`)
 
@@ -131,7 +143,11 @@ Escríbele directamente al bot (chat privado):
 | Foto + pie `responde` | Redacta una respuesta al comentario de la imagen (solo para ti) |
 
 ### Monitor automático de noticias
-Cada 15 min el sistema revisa **4 fuentes RSS en paralelo**: CoinDesk · Cointelegraph · The Block · Decrypt. Si detecta una noticia con tus keywords (`MONITOR_KEYWORDS`) te la manda en privado indicando la fuente, con botones: **⚡ Flash** · **📝 Hilo** · **🙈 Ignorar**.
+Cada 15 min el sistema revisa **4 fuentes RSS en paralelo**: CoinDesk · Cointelegraph · The Block · Decrypt. Si detecta una noticia con tus keywords (`MONITOR_KEYWORDS`) te la manda en privado con botones:
+- **⚡ Flash** — genera flash con preview + botones de destino
+- **📝 Hilo** — genera hilo de 5 tweets con preview + botones
+- **🐦 Tweet X** — genera tweet nativo y publica **directamente en X** sin pasos intermedios (queda registrado en Notion)
+- **🙈 Ignorar** — descarta la noticia
 
 ### Sistema
 | Comando | Acción |

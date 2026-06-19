@@ -51,13 +51,27 @@ export async function ejecutarBriefing() {
   }
 
   // PASO 3c: Publicar thread en X (si configurado)
+  let xPublicado = false;
   if (process.env.X_API_KEY && paquete.thread?.length) {
     console.log("🐦 Publicando thread en X...");
     try {
       await publicarThread(paquete.thread);
+      xPublicado = true;
+      console.log("   ✓ Thread publicado en X");
     } catch (e) {
       console.warn("⚠️ Error publicando thread en X:", e.message);
       if (e.data) console.warn("   Detalle X:", JSON.stringify(e.data));
+      if (process.env.TELEGRAM_OWNER_ID) {
+        await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id: process.env.TELEGRAM_OWNER_ID,
+            text: `⚠️ <b>Briefing: error al publicar thread en X</b>\n${e.message}`,
+            parse_mode: "HTML",
+          }),
+        }).catch(() => {});
+      }
     }
   }
 
@@ -120,7 +134,7 @@ export async function ejecutarBriefing() {
     tipo: "Briefing",
     titulo: paquete.titular || "Briefing matinal",
     texto: paquete.briefing,
-    plataforma: paquete.thread?.length ? "Canal+X" : "Canal",
+    plataforma: xPublicado ? "Canal+X" : "Canal",
     conPortada: false,
     estado: "Publicado",
   }).catch(() => {});

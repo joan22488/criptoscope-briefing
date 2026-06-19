@@ -9,7 +9,8 @@
     "once": "node src/run-once.js",
     "signals": "node src/run-signals.js",
     "weekly": "node src/run-weekly.js",
-    "test-telegram": "node src/test-telegram.js"
+    "test-telegram": "node src/test-telegram.js",
+    "monitor": "node src/run-monitor.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

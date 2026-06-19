@@ -154,15 +154,21 @@ async function cmdFlash(chatId, tema, portadaFileId = null) {
   if (!tema) return reply(chatId, "❓ Uso: /flash <tema o noticia>\n\nTip: manda una foto con <code>/flash tema</code> en el pie para publicarla como portada.");
   await reply(chatId, "⚡ Generando flash...");
 
-  const [precios, fearGreed] = await Promise.all([getPrices().catch(() => ({})), getFearGreed().catch(() => null)]);
+  const fearGreed = await getFearGreed().catch(() => null);
 
   const response = await client.messages.create({
     model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
     max_tokens: 600,
-    system: `Eres CriptoScope. Analista senior, voz directa y fría. El precio manda, no el hype.\nAbre con el dato o la conclusión, nunca con contexto. Frases cortas. Niveles exactos siempre (zona 3.180-3.200, nunca "cerca de soporte"). Voz activa ("el precio rompe", no "la resistencia ha sido rota").\nFormato: máx 3 párrafos cortos. HTML de Telegram (<b>, <i>). 1-2 emojis funcionales máx (📊🔴🟢⚠️🎯). NUNCA 🚀💎 ni lenguaje tribal.\nPROHIBIDO: guiones medios o largos (– o —), clickbait, consejos financieros directos, predicciones sin datos.`,
+    system: `Eres CriptoScope. Analista senior, voz directa y fría. El precio manda, no el hype.
+
+REGLA DE APERTURA: Abre con la conclusión o el dato más impactante del TEMA. Si el tema menciona un precio concreto, úsalo. Si no, no metas precios de BTC/ETH en la apertura.
+
+Frases cortas. Niveles exactos si el tema los incluye (zona 3.180-3.200, nunca "cerca de soporte"). Voz activa.
+Formato: máx 3 párrafos cortos. HTML Telegram (<b>, <i>). 1-2 emojis funcionales (📊🔴🟢⚠️🎯). NUNCA 🚀💎 ni lenguaje tribal.
+PROHIBIDO: guiones medios o largos (– o —), clickbait, consejos financieros directos, predicciones sin datos.`,
     messages: [{
       role: "user",
-      content: `TEMA: ${tema}\nBTC: $${precios["BTC-USD"]?.precio?.toFixed(0) || "?"} · ETH: $${precios["ETH-USD"]?.precio?.toFixed(0) || "?"}\nFear&Greed: ${fearGreed?.valor || "?"} (${fearGreed?.clasificacion || "?"})`,
+      content: `TEMA: ${tema}${fearGreed ? `\nSentimiento: Fear&Greed ${fearGreed.valor} (${fearGreed.clasificacion})` : ""}`,
     }],
   });
 
@@ -289,10 +295,14 @@ async function cmdOpinion(chatId, noticia, portadaFileId = null) {
   const response = await client.messages.create({
     model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
     max_tokens: 700,
-    system: `Eres CriptoScope. Analiza esta noticia con perspectiva de trader: qué significa para el mercado, cómo puede mover el precio, qué nivel vigilarías. Abre con la conclusión, no con contexto.\nVoz directa y fría. Distingue entre lo que dice el precio y lo que podría implicar. Si hay incertidumbre, nómbrala. 2-3 párrafos. HTML Telegram (<b>, <i>).\nPROHIBIDO: guiones medios o largos (– o —), 🚀💎🙌, clickbait, consejos financieros directos, predicciones sin datos.`,
+    system: `Eres CriptoScope. Analiza esta noticia con perspectiva de trader: qué significa para el mercado, cómo puede mover el precio, qué nivel vigilarías.
+
+REGLA DE APERTURA: Abre con la conclusión de la noticia, no con el precio de BTC. El precio de mercado es contexto de fondo. Si la noticia no tiene relación directa con BTC, no lo menciones en la apertura.
+Voz directa y fría. Distingue entre lo que dice la noticia y lo que podría implicar para el precio. Si hay incertidumbre, nómbrala. 2-3 párrafos. HTML Telegram (<b>, <i>).
+PROHIBIDO: guiones medios o largos (– o —), 🚀💎🙌, clickbait, consejos financieros directos, predicciones sin datos.`,
     messages: [{
       role: "user",
-      content: `NOTICIA: ${noticia}\nContexto mercado: BTC $${precios["BTC-USD"]?.precio?.toFixed(0) || "?"} (${precios["BTC-USD"]?.cambio24h_pct?.toFixed(2) || "?"}%)`,
+      content: `NOTICIA: ${noticia}\n\nCONTEXTO (úsalo si es relevante): BTC $${precios["BTC-USD"]?.precio?.toFixed(0) || "?"} (${precios["BTC-USD"]?.cambio24h_pct?.toFixed(2) || "?"}% 24h)`,
     }],
   });
 
@@ -391,11 +401,16 @@ async function cmdEstado(chatId) {
     `⏰ Publicaciones programadas: <b>${nProgramadas}</b>\n\n` +
     `<b>Automático:</b>\n` +
     `☕ Briefing: 07:00 diario → Telegram + X\n` +
-    `📊 Señales BTC/ETH/SOL: 07:00 · 11:00 · 15:00 · 19:00\n` +
+    `📊 Señales BTC/ETH/SOL:\n` +
+    `   🌅 07:00 Radar de apertura — sesgo del día y nivel clave\n` +
+    `   📈 11:00 Pulso técnico — momentum 1H RSI/MACD\n` +
+    `   ⚡ 15:00 On-chain y derivados — funding, OI, posicionamiento\n` +
+    `   🌙 19:00 Cierre europeo — balance del día + nivel asiático\n` +
     `📅 Resumen semanal: domingos 09:00\n` +
     `🚨 Monitor eventos: cada 30 min\n` +
     `🔔 Check alertas precio: cada 5 min\n` +
-    `📰 Monitor RSS: cada 15 min (CoinDesk · Cointelegraph · The Block · Decrypt)\n\n` +
+    `📰 Monitor RSS: cada 15 min (CoinDesk · Cointelegraph · The Block · Decrypt)\n` +
+    `   Botones: ⚡ Flash · 📝 Hilo · 🐦 Tweet X (directo a X) · 🙈 Ignorar\n\n` +
     `<b>Publicación manual (preview + botones):</b>\n` +
     `<code>/flash</code> · <code>/hilo</code> · <code>/analiza</code> · <code>/opinion</code> · <code>/encuesta</code> · <code>/semanal</code>\n` +
     `<i>Todos publican en Canal / X / Canal+X — tweet generado por Claude con título gancho</i>\n` +
@@ -504,7 +519,11 @@ async function cmdFoto(chatId, photo, caption) {
     const respuesta = await client.messages.create({
       model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
       max_tokens: 900,
-      system: `Eres CriptoScope. Analiza la noticia de la imagen con perspectiva de trader: qué significa para el mercado, cómo puede mover el precio, qué nivel vigilarías. Abre con la conclusión, no con contexto. Distingue entre lo que dice el precio y lo que podría implicar. Si hay incertidumbre, nómbrala.\nVoz directa y fría. 2-3 párrafos. HTML Telegram (<b>, <i>). PROHIBIDO: guiones medios o largos (– o —), 🚀💎🙌, clickbait, consejos financieros directos.`,
+      system: `Eres CriptoScope. Analiza la noticia de la imagen con perspectiva de trader: qué significa para el mercado, cómo puede mover el precio, qué nivel vigilarías.
+
+REGLA DE APERTURA: Abre con la conclusión de la noticia de la imagen, no con el precio de BTC. El precio de mercado es contexto de fondo, no el gancho de apertura.
+Voz directa y fría. 2-3 párrafos. HTML Telegram (<b>, <i>). Distingue entre lo que dice la noticia y lo que podría implicar. Si hay incertidumbre, nómbrala.
+PROHIBIDO: guiones medios o largos (– o —), 🚀💎🙌, clickbait, consejos financieros directos.`,
       messages: [{
         role: "user",
         content: [
@@ -846,6 +865,43 @@ Devuelve SOLO título + salto de línea + cuerpo. Sin comillas, sin etiquetas, s
     await cmdHilo(chatId, titulo);
   }
 
+  if (data.startsWith("news_tweet:")) {
+    const titulo = decodeURIComponent(data.slice(11));
+    await quitarBotones();
+
+    if (!process.env.X_API_KEY) {
+      return reply(chatId, "❌ X no configurado. Añade X_API_KEY en Railway.");
+    }
+
+    await reply(chatId, "🐦 Generando tweet para X...");
+    const contenido = await generarTweetX(titulo);
+    const hashtags = extraerHashtags(titulo);
+    const tweetFinal = `${contenido}\n\n${hashtags}`;
+
+    try {
+      await publicarThread([tweetFinal]);
+      guardarPublicacionEnNotion({
+        tipo: "Flash",
+        titulo,
+        texto: tweetFinal,
+        plataforma: "X",
+        conPortada: false,
+        estado: "Publicado",
+      }).catch(() => {});
+      await reply(chatId, `✅ Tweet publicado en X:\n\n<code>${tweetFinal.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</code>`);
+    } catch (e) {
+      guardarPublicacionEnNotion({
+        tipo: "Flash",
+        titulo,
+        texto: tweetFinal,
+        plataforma: "X",
+        conPortada: false,
+        estado: "Error X",
+      }).catch(() => {});
+      await reply(chatId, `❌ Error al publicar en X: ${e.message}\n\nTweet generado:\n<code>${tweetFinal.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</code>`);
+    }
+  }
+
   if (data.startsWith("enc_re:")) {
     const tema = data.slice(7);
     await fetch(`${API()}/editMessageReplyMarkup`, {
@@ -922,7 +978,12 @@ async function cmdAyuda(chatId, cmd) {
       ejemplo: "/senal ETH · /senal BTC · /senal SOL",
       detalle:
         "Igual que /analiza pero solo para ti — no publica nada en el canal. Descarga datos reales, calcula todos los indicadores y te devuelve la señal en privado.\n\n" +
-        "Ideal para cuando quieres ver el setup antes de decidir si publicarlo o no, o simplemente para tu propia operativa sin molestar a la comunidad.",
+        "El sistema automático publica 4 análisis al día con ángulos distintos:\n" +
+        "🌅 07:00 Radar de apertura — sesgo del día y nivel clave en 4H\n" +
+        "📈 11:00 Pulso técnico — momentum 1H, RSI y MACD actualizados\n" +
+        "⚡ 15:00 On-chain y derivados — funding rate, OI y posicionamiento\n" +
+        "🌙 19:00 Cierre europeo — balance del día y nivel asiático a vigilar\n\n" +
+        "/senal te da la misma profundidad en cualquier momento bajo demanda.",
     },
     calendario: {
       titulo: "📅 /calendario — Eventos macro",
@@ -937,8 +998,15 @@ async function cmdAyuda(chatId, cmd) {
       uso: "/estado",
       ejemplo: "/estado",
       detalle:
-        "Te muestra el estado completo: hora de Madrid, publicaciones activas/pausadas, alertas activas, publicaciones programadas y cuándo son los próximos automáticos.\n\n" +
-        "También lista todos los comandos disponibles agrupados por función. Todo lo que publique el bot queda registrado automáticamente en Notion (Publicaciones · Señales · Briefings).",
+        "Te muestra el estado completo: hora de Madrid, publicaciones activas/pausadas, alertas activas, publicaciones programadas y próximos automáticos.\n\n" +
+        "Automáticos diarios:\n" +
+        "☕ 07:00 Briefing matinal → canal + X\n" +
+        "🌅 07:00 Radar de apertura — sesgo del día (4H)\n" +
+        "📈 11:00 Pulso técnico — momentum 1H\n" +
+        "⚡ 15:00 On-chain y derivados — funding y OI\n" +
+        "🌙 19:00 Cierre europeo — balance + sesión asiática\n" +
+        "📅 Domingos 09:00 Resumen semanal\n\n" +
+        "Todo queda registrado automáticamente en Notion (Publicaciones · Señales · Briefings).",
     },
     pausa: {
       titulo: "⏸ /pausa y /activa — Control de publicaciones",
@@ -1016,6 +1084,18 @@ async function cmdAyuda(chatId, cmd) {
         "Claude lee el comentario de la imagen y te redacta una respuesta en la voz de CriptoScope: directa, educada pero firme, bien argumentada. Solo para ti — no publica nada.\n\n" +
         "Cópiala y pégala donde quieras. Útil para responder críticas, preguntas técnicas o debate en redes sin perder tiempo.",
     },
+    monitor: {
+      titulo: "📰 Monitor de noticias — Botones de acción rápida",
+      uso: "Automático — llega solo cuando detecta keywords",
+      ejemplo: "(no tiene comando — llega en privado cuando hay noticia relevante)",
+      detalle:
+        "El bot revisa 4 fuentes RSS cada 15 min: CoinDesk, Cointelegraph, The Block y Decrypt. Cuando detecta una noticia con tus keywords (MONITOR_KEYWORDS), te la manda en privado con cuatro botones:\n\n" +
+        "⚡ <b>Flash</b> — genera un flash al estilo CriptoScope con preview y botones de destino\n" +
+        "📝 <b>Hilo</b> — genera un hilo educativo de 5 tweets con preview y botones\n" +
+        "🐦 <b>Tweet X</b> — genera un tweet nativo y lo publica directamente en X sin pasos intermedios. Se registra en Notion automáticamente.\n" +
+        "🙈 <b>Ignorar</b> — descarta la noticia sin hacer nada\n\n" +
+        "Configura tus keywords en MONITOR_KEYWORDS en Railway (separadas por comas).",
+    },
   };
 
   // Si pide ayuda de un comando concreto
@@ -1060,6 +1140,10 @@ async function cmdAyuda(chatId, cmd) {
     `<b>📸 Fotos sin comando</b>\n` +
     `Foto → verificación + análisis + botones para publicar\n` +
     `Foto + <code>responde</code> → redacta respuesta al comentario\n\n` +
+    `──────────────\n` +
+    `<b>📰 Monitor RSS (automático)</b>\n` +
+    `Noticias con keywords → ⚡ Flash · 📝 Hilo · 🐦 Tweet X · 🙈 Ignorar\n` +
+    `<i>/ayuda monitor para detalle</i>\n\n` +
     `──────────────\n` +
     `<b>⚙️ Sistema</b>\n` +
     `<code>/estado</code> · <code>/pausa</code> · <code>/activa</code> · <code>/ayuda</code>`;
@@ -1229,11 +1313,16 @@ export async function monitorNoticias() {
             parse_mode: "HTML",
             disable_web_page_preview: false,
             reply_markup: {
-              inline_keyboard: [[
-                { text: "⚡ Flash", callback_data: `news_flash:${encodeURIComponent(item.titulo)}` },
-                { text: "📝 Hilo", callback_data: `news_hilo:${encodeURIComponent(item.titulo)}` },
-                { text: "🙈 Ignorar", callback_data: "nopub" },
-              ]],
+              inline_keyboard: [
+                [
+                  { text: "⚡ Flash", callback_data: `news_flash:${encodeURIComponent(item.titulo)}` },
+                  { text: "📝 Hilo", callback_data: `news_hilo:${encodeURIComponent(item.titulo)}` },
+                ],
+                [
+                  { text: "🐦 Tweet X", callback_data: `news_tweet:${encodeURIComponent(item.titulo)}` },
+                  { text: "🙈 Ignorar", callback_data: "nopub" },
+                ],
+              ],
             },
           }),
         });
