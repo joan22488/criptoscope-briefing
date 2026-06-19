@@ -104,7 +104,7 @@ Escríbele directamente al bot (chat privado):
 | `/flash <tema>` | `/flash BlackRock compra BTC` | Alerta urgente con preview y botones de destino |
 | `/hilo <tema>` | `/hilo qué es el halving` | Thread 5 tweets — canal como mensaje único, X como thread encadenado |
 | `/hilo <URL>` | `/hilo https://coindesk.com/...` | Hilo basado en el contenido real del artículo |
-| `/analiza <coin>` | `/analiza AVAX` | Análisis técnico top-down con entrada, TP1, TP2, SL y R:R |
+| `/analiza <coin>` | `/analiza AVAX` | Gráfico 4H + análisis técnico top-down con entrada, TP1, TP2, SL y R:R |
 | `/opinion <noticia>` | `/opinion SEC aprueba ETF` | Lectura de mercado estilo CriptoScope |
 | `/encuesta [tema]` | `/encuesta` · `/encuesta BTC esta semana` | Poll nativo para el canal con preview |
 | `/semanal` | `/semanal` | Resumen semanal bajo demanda — sin esperar al domingo |
@@ -113,6 +113,8 @@ Escríbele directamente al bot (chat privado):
 - 📢 **Canal + X** — publica en Telegram y en X (con hashtags automáticos de monedas)
 - 📣 **Solo canal** — solo Telegram
 - 🐦 **Solo X** — solo Twitter/X
+- 🟡 **Binance Square** — formatea el texto en plain text (sin HTML) listo para copiar-pegar en Binance Square
+- 📊 **CMC Community** — ídem para CoinMarketCap Community
 - 📸 **Añadir / Cambiar portada** — la foto se integra en el mismo mensaje del canal y se adjunta al tweet de X
 - ❌ **Descartar** — no publica nada
 
@@ -143,7 +145,7 @@ Escríbele directamente al bot (chat privado):
 | Foto + pie `responde` | Redacta una respuesta al comentario de la imagen (solo para ti) |
 
 ### Monitor automático de noticias
-Cada 15 min el sistema revisa **4 fuentes RSS en paralelo**: CoinDesk · Cointelegraph · The Block · Decrypt. Si detecta una noticia con tus keywords (`MONITOR_KEYWORDS`) te la manda en privado con botones:
+Cada 15 min el sistema revisa **4 fuentes RSS en paralelo**: CoinDesk · Cointelegraph · The Block · Decrypt. Si detecta una noticia con tus keywords (`MONITOR_KEYWORDS`) te la manda en privado con botones. Cuando una señal toca TP1, TP2 o SL, recibes una **alerta privada** con todos los detalles (entrada, niveles, R:R).
 - **⚡ Flash** — genera flash con preview + botones de destino
 - **📝 Hilo** — genera hilo de 5 tweets con preview + botones
 - **🐦 Tweet X** — genera tweet nativo y publica **directamente en X** sin pasos intermedios (queda registrado en Notion)
