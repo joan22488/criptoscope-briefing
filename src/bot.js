@@ -177,8 +177,16 @@ Voz activa. Frases cortas. PROHIBIDO: guiones (– o —), 🚀💎🙌, clickba
   // Extraer GANCHO y CUERPO del formato estructurado
   const ganchoMatch = raw.match(/GANCHO:\s*(.+?)(?:\n|$)/s);
   const cuerpoMatch = raw.match(/CUERPO:\s*([\s\S]+)/s);
-  const gancho = ganchoMatch ? ganchoMatch[1].trim() : raw.split("\n")[0];
+  let gancho = ganchoMatch ? ganchoMatch[1].trim() : raw.split("\n")[0];
   const cuerpo = cuerpoMatch ? cuerpoMatch[1].trim() : raw.split("\n").slice(1).join("\n").trim();
+
+  // Red de seguridad: si el GANCHO empieza con precio/coin inventado, usar primera frase del CUERPO
+  const tienePrecionInventado = /^(BTC|ETH|SOL|bitcoin|ethereum|el precio|la cotización)\s/i.test(gancho)
+    || /^\$[\d.,]+/.test(gancho);
+  if (tienePrecionInventado) {
+    const primeraFrase = cuerpo.replace(/<[^>]+>/g, "").split(/(?<=[.!?])\s/)[0]?.trim();
+    if (primeraFrase && primeraFrase.length > 20) gancho = primeraFrase;
+  }
 
   const msg = `🚨 <b>FLASH | CriptoScope</b>\n\n<b>${gancho}</b>\n\n${cuerpo}\n\n<i>Análisis educativo · no es consejo financiero</i>`;
 
