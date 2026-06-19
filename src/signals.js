@@ -4,7 +4,8 @@ import { registrarSenal, verificarResultados, calcularCorrelacion } from "./trac
 const client = new Anthropic();
 const OKX = "https://www.okx.com/api/v5/market";
 const OKX_PUBLIC = "https://www.okx.com/api/v5/public";
-const SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT"];
+const SYMBOLS = (process.env.SIGNALS_SYMBOLS || "BTC,ETH,SOL,AVAX,LINK,BNB,XRP")
+  .split(",").map((s) => s.trim().toUpperCase().replace("USDT", "") + "USDT");
 
 // Configuración de cada franja horaria
 const SLOTS = { 7: "apertura", 11: "pulso", 15: "derivados", 19: "cierre" };
@@ -66,7 +67,7 @@ function sanitizarDashes(s) {
 const toOKXId = (sym) => sym.replace("USDT", "-USDT");
 const toOKXBar = (iv) => ({ "1d": "1D", "4h": "4H", "1h": "1H", "15m": "15m" }[iv] || iv);
 
-async function getVelas(symbol, interval, limit = 120) {
+export async function getVelas(symbol, interval, limit = 120) {
   const instId = toOKXId(symbol);
   const bar = toOKXBar(interval);
   const url = `${OKX}/candles?instId=${instId}&bar=${bar}&limit=${limit}`;
@@ -98,7 +99,7 @@ async function getFunding(symbol) {
   } catch { return null; }
 }
 
-function calcEMA(velas, p) {
+export function calcEMA(velas, p) {
   const k = 2 / (p + 1);
   let ema = velas[0].close;
   const s = [ema];
@@ -238,7 +239,7 @@ DATOS: ` + JSON.stringify(datos);
 
   const response = await client.messages.create({
     model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
-    max_tokens: 2000,
+    max_tokens: 4000,
     system: sistema,
     messages: [{ role: "user", content: instruccion }],
   });
@@ -354,9 +355,10 @@ export async function ejecutarAnalisisTecnico() {
   const slot = SLOTS[horaNum] || "apertura";
   const cfg = SLOT_CONFIG[slot];
 
-  console.log(`📊 ${cfg.emoji} ${cfg.label} (${cfg.hora_str}) — BTC + ETH + SOL...`);
+  const nombresLog = SYMBOLS.map((s) => s.replace("USDT", "")).join(" + ");
+  console.log(`📊 ${cfg.emoji} ${cfg.label} (${cfg.hora_str}) — ${nombresLog}...`);
   const datos = await Promise.all(SYMBOLS.map(analizarSymbol));
-  console.log(`   BTC $${datos[0].precio.toFixed(0)} | ETH $${datos[1].precio.toFixed(0)} | SOL $${datos[2].precio.toFixed(0)}`);
+  console.log("   " + datos.map((d) => `${d.nombre} $${d.precio.toFixed(0)}`).join(" | "));
   console.log(`🧠 Generando análisis [slot: ${slot}] con Claude...`);
   const senales = await generarSenal(datos, slot);
   const hora = new Date().toLocaleTimeString("es-ES", {

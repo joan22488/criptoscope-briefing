@@ -6,7 +6,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
 import { getMarketContext, getPrices, getFearGreed, getGlobalMarket } from "./coindesk.js";
-import { analizarSymbol, generarSenal } from "./signals.js";
+import { analizarSymbol, generarSenal, getVelas, calcEMA } from "./signals.js";
 import { getEventosMacro, formatearAlertaMacro } from "./calendar.js";
 import { publicarThread, subirImagenX } from "./twitter-post.js";
 import { enviarTelegram } from "./telegram.js";
@@ -322,23 +322,36 @@ function buildMsgAnalisis(senales, datos, hora) {
   return msg;
 }
 
-// Genera URL de gráfico de velas 4H via quickchart.io (sin dependencias extra)
-function generarGraficoUrl(datos) {
-  const velas = datos.velas4h;
-  if (!velas?.length) return null;
-  const labels = velas.map((v) => new Date(v.time).getTime());
-  const candleData = velas.map((v) => ({
+// Genera URL de gráfico de velas via quickchart.io
+// Acepta (nombre, velas[], ema20[], ema50[], tfLabel) o (datos) para compatibilidad con /analiza
+function generarGraficoUrl(nombreOrDatos, velas, ema20arr, ema50arr, tfLabel = "4H") {
+  let nombre, velasData, ema20Data, ema50Data, tf;
+  if (typeof nombreOrDatos === "object" && nombreOrDatos.velas4h) {
+    // Compatibilidad: llamada desde /analiza con objeto datos
+    nombre   = nombreOrDatos.nombre;
+    velasData = nombreOrDatos.velas4h;
+    ema20arr  = nombreOrDatos.ema20_4h || [];
+    ema50arr  = nombreOrDatos.ema50_4h || [];
+    tf = "4H";
+  } else {
+    nombre    = nombreOrDatos;
+    velasData = velas;
+    tf        = tfLabel;
+  }
+  if (!velasData?.length) return null;
+  const labels = velasData.map((v) => new Date(v.time).getTime());
+  const candles = velasData.map((v) => ({
     x: new Date(v.time).getTime(),
     o: +v.open.toFixed(2), h: +v.high.toFixed(2),
-    l: +v.low.toFixed(2), c: +v.close.toFixed(2),
+    l: +v.low.toFixed(2),  c: +v.close.toFixed(2),
   }));
-  const ema20Data = (datos.ema20_4h || []).map((y, i) => ({ x: labels[i], y: +y.toFixed(2) }));
-  const ema50Data = (datos.ema50_4h || []).map((y, i) => ({ x: labels[i], y: +y.toFixed(2) }));
+  ema20Data = (ema20arr || []).map((y, i) => ({ x: labels[i], y: +y.toFixed(2) }));
+  ema50Data = (ema50arr || []).map((y, i) => ({ x: labels[i], y: +y.toFixed(2) }));
   const chart = {
     type: "candlestick",
     data: {
       datasets: [
-        { label: `${datos.nombre}/USDT 4H`, data: candleData,
+        { label: `${nombre}/USDT ${tf}`, data: candles,
           color: { up: "rgba(38,166,154,0.9)", down: "rgba(239,83,80,0.9)", unchanged: "#888" } },
         { type: "line", label: "EMA20", data: ema20Data, borderColor: "#ffc107", borderWidth: 1.5, pointRadius: 0, fill: false },
         { type: "line", label: "EMA50", data: ema50Data, borderColor: "#2196f3", borderWidth: 1.5, pointRadius: 0, fill: false },
@@ -350,6 +363,51 @@ function generarGraficoUrl(datos) {
     },
   };
   return `https://quickchart.io/chart?c=${encodeURIComponent(JSON.stringify(chart))}&w=800&h=420&bkg=%231e1e2e&f=png`;
+}
+
+// /grafico <coin> [timeframe] — gráfico de velas on-demand
+async function cmdGrafico(chatId, args) {
+  const partes = (args || "").trim().split(/\s+/);
+  const symbolRaw = partes[0];
+  if (!symbolRaw) return reply(chatId, "❓ Uso: /grafico BTC · /grafico ETH 1H · /grafico SOL 1D\n\nTimeframes: 15m · 1H · 4H · 1D");
+
+  const symbol  = symbolRaw.toUpperCase().replace("USDT", "").replace(/\/.*/, "") + "USDT";
+  const nombre  = symbol.replace("USDT", "");
+
+  // Normalizar timeframe
+  const tfInput = (partes[1] || "4H").toUpperCase().replace("H", "h").replace("D", "d").replace("M", "m");
+  const TF_MAP  = { "15M": "15m", "1H": "1h", "4H": "4h", "1D": "1d" };
+  const tf      = TF_MAP[tfInput.toUpperCase()] || "4h";
+  const tfLabel = tf.toUpperCase();
+
+  // Número de velas según timeframe (aprox. 5 días de historia)
+  const limitMap = { "15m": 96, "1h": 120, "4h": 60, "1d": 60 };
+  const limit    = limitMap[tf] || 60;
+
+  await reply(chatId, `📊 Generando gráfico ${nombre} ${tfLabel}...`);
+
+  try {
+    const velas  = await getVelas(symbol, tf, limit);
+    const slice  = velas.slice(-Math.min(limit, velas.length));
+    const ema20s = calcEMA(slice, 20);
+    const ema50s = calcEMA(slice, 50);
+
+    const chartUrl = generarGraficoUrl(nombre, slice, ema20s, ema50s, tfLabel);
+    if (!chartUrl) return reply(chatId, "❌ No se pudo generar el gráfico.");
+
+    const imgRes = await fetch(chartUrl, { signal: AbortSignal.timeout(12000) });
+    if (!imgRes.ok) return reply(chatId, `❌ Quickchart error: ${imgRes.status}`);
+
+    const buf  = Buffer.from(await imgRes.arrayBuffer());
+    const form = new FormData();
+    form.append("chat_id", chatId.toString());
+    form.append("photo", new Blob([buf], { type: "image/png" }), "chart.png");
+    form.append("caption", `📊 <b>${nombre}/USDT ${tfLabel}</b> · EMA20 🟡 EMA50 🔵\n<i>Últimas ${slice.length} velas · OKX</i>`);
+    form.append("parse_mode", "HTML");
+    await fetch(`${API()}/sendPhoto`, { method: "POST", body: form });
+  } catch (e) {
+    await reply(chatId, `❌ Error: ${e.message}`);
+  }
 }
 
 // /opinion <noticia> — CriptoScope opina sobre algo
@@ -476,7 +534,7 @@ async function cmdEstado(chatId) {
     `📅 Resumen semanal: domingos 09:00\n` +
     `🚨 Monitor eventos: cada 30 min\n` +
     `🔔 Check alertas precio: cada 5 min\n` +
-    `📰 Monitor RSS: cada 15 min (CoinDesk · Cointelegraph · The Block · Decrypt)\n` +
+    `📰 Monitor RSS: cada 15 min (CoinDesk · CT · The Block · Decrypt · BeInCrypto · The Defiant)\n` +
     `   Botones: ⚡ Flash · 📝 Hilo · 🐦 Tweet X (directo a X) · 🙈 Ignorar\n` +
     `🔔 Señales: alerta privada al owner cuando una señal toca TP1/TP2/SL\n` +
     `🔗 Webhook TradingView: activo en /webhook/tradingview\n\n` +
@@ -1374,6 +1432,11 @@ const FUENTES_RSS = [
   { nombre: "Cointelegraph", url: "https://cointelegraph.com/rss" },
   { nombre: "The Block",     url: "https://www.theblock.co/rss.xml" },
   { nombre: "Decrypt",       url: "https://decrypt.co/feed" },
+  { nombre: "BeInCrypto",    url: "https://beincrypto.com/feed/" },
+  { nombre: "The Defiant",   url: "https://thedefiant.io/feed/" },
+  ...(process.env.CRYPTOPANIC_TOKEN
+    ? [{ nombre: "CryptoPanic", url: `https://cryptopanic.com/news/rss/?auth_token=${process.env.CRYPTOPANIC_TOKEN}&kind=news` }]
+    : []),
 ];
 
 export async function monitorNoticias() {
@@ -1663,6 +1726,8 @@ async function procesarMensaje(msg) {
       case "/flash":      await cmdFlash(chatId, argStr); break;
       case "/hilo":       await cmdHilo(chatId, argStr); break;
       case "/analiza":    await cmdAnaliza(chatId, argStr); break;
+      case "/grafico":
+      case "/grafica":   await cmdGrafico(chatId, argStr); break;
       case "/opinion":    await cmdOpinion(chatId, argStr); break;
       case "/precio":     await cmdPrecio(chatId, argStr); break;
       case "/quepasa":    await cmdQuePasa(chatId); break;
@@ -1706,7 +1771,8 @@ export async function iniciarBot() {
       commands: [
         { command: "flash",      description: "Alerta urgente al canal + X" },
         { command: "hilo",       description: "Thread educativo al canal + X" },
-        { command: "analiza",    description: "Análisis técnico on-demand" },
+        { command: "analiza",    description: "Análisis técnico on-demand con gráfico 4H" },
+        { command: "grafico",    description: "Gráfico de velas + EMA20/50 en cualquier timeframe" },
         { command: "opinion",    description: "Opinión sobre una noticia" },
         { command: "precio",     description: "Precio actual de una coin (privado)" },
         { command: "quepasa",    description: "Resumen del mercado ahora (privado)" },

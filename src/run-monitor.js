@@ -10,6 +10,11 @@ const FUENTES_RSS = [
   { nombre: "Cointelegraph", url: "https://cointelegraph.com/rss" },
   { nombre: "The Block",     url: "https://www.theblock.co/rss.xml" },
   { nombre: "Decrypt",       url: "https://decrypt.co/feed" },
+  { nombre: "BeInCrypto",    url: "https://beincrypto.com/feed/" },
+  { nombre: "The Defiant",   url: "https://thedefiant.io/feed/" },
+  ...(process.env.CRYPTOPANIC_TOKEN
+    ? [{ nombre: "CryptoPanic", url: `https://cryptopanic.com/news/rss/?auth_token=${process.env.CRYPTOPANIC_TOKEN}&kind=news` }]
+    : []),
 ];
 
 const keywords = (process.env.MONITOR_KEYWORDS || "ETF,BlackRock,SEC,Fed,FOMC,Bitcoin,halving,Ethereum,crash,pump,liquidaciones,Binance,Coinbase")
