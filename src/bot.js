@@ -390,20 +390,23 @@ async function cmdEstado(chatId) {
     `🔔 Alertas de precio activas: <b>${nAlertas}</b>\n` +
     `⏰ Publicaciones programadas: <b>${nProgramadas}</b>\n\n` +
     `<b>Automático:</b>\n` +
-    `☕ Briefing: 07:00 diario\n` +
+    `☕ Briefing: 07:00 diario → Telegram + X\n` +
     `📊 Señales BTC/ETH/SOL: 07:00 · 11:00 · 15:00 · 19:00\n` +
     `📅 Resumen semanal: domingos 09:00\n` +
     `🚨 Monitor eventos: cada 30 min\n` +
     `🔔 Check alertas precio: cada 5 min\n` +
     `📰 Monitor RSS: cada 15 min (CoinDesk · Cointelegraph · The Block · Decrypt)\n\n` +
-    `<b>Bajo demanda — canal + X:</b>\n` +
-    `<code>/flash</code> · <code>/hilo</code> · <code>/analiza</code> · <code>/opinion</code> · <code>/encuesta</code> · <code>/semanal</code>\n\n` +
-    `<b>Bajo demanda — privado:</b>\n` +
+    `<b>Publicación manual (preview + botones):</b>\n` +
+    `<code>/flash</code> · <code>/hilo</code> · <code>/analiza</code> · <code>/opinion</code> · <code>/encuesta</code> · <code>/semanal</code>\n` +
+    `<i>Todos publican en Canal / X / Canal+X — tweet generado por Claude con título gancho</i>\n` +
+    `<i>/hilo publica en X como thread real encadenado</i>\n\n` +
+    `<b>Privado (solo te responde a ti):</b>\n` +
     `<code>/precio</code> · <code>/quepasa</code> · <code>/senal</code> · <code>/calendario</code>\n` +
     `<code>/alerta</code> · <code>/alertas</code> · <code>/borralalerta</code>\n` +
     `<code>/programar</code> · <code>/programadas</code> · <code>/cancelar</code>\n\n` +
     `<b>Sistema:</b>\n` +
-    `<code>/pausa</code> · <code>/activa</code> · <code>/estado</code> · <code>/ayuda</code>`;
+    `<code>/pausa</code> · <code>/activa</code> · <code>/estado</code> · <code>/ayuda</code>\n\n` +
+    `<i>📒 Todo queda registrado en Notion (Publicaciones · Señales · Briefings)</i>`;
   await reply(chatId, msg);
 }
 
@@ -877,8 +880,8 @@ async function cmdAyuda(chatId, cmd) {
       ejemplo: "/hilo qué es el halving · /hilo cómo funciona el funding rate · /hilo https://coindesk.com/...",
       detalle:
         "Genera un hilo educativo de 5 tweets sobre el tema que indiques. Si le pasas una URL, descarga el artículo real y basa el hilo en su contenido.\n\n" +
-        "Claude lo estructura de forma didáctica: gancho en el primer tweet, desarrollo en los siguientes, conclusión en el último.\n\n" +
-        "Muestra preview con botones para elegir dónde publicar. En el canal sale el hilo completo; en X, Claude genera un tweet teaser con gancho que lleva al canal. Admite portada.",
+        "Cada tweet es autónomo: funciona aunque el lector entre por el tweet 3. Gancho en el primero, un punto concreto por tweet, regla práctica en el último.\n\n" +
+        "En el canal se publica el hilo completo como un solo mensaje. En X se publica como thread real encadenado (5 tweets + CTA). Los hashtags de monedas mencionadas se añaden al último tweet automáticamente. Admite portada.",
     },
     analiza: {
       titulo: "📊 /analiza — Análisis técnico on-demand",
@@ -934,8 +937,8 @@ async function cmdAyuda(chatId, cmd) {
       uso: "/estado",
       ejemplo: "/estado",
       detalle:
-        "Te muestra un resumen del estado actual: hora de Madrid, si las publicaciones están activas o pausadas, y cuándo son las próximas ejecuciones automáticas (briefing, señales, semanal).\n\n" +
-        "También lista todos los comandos disponibles. Útil para comprobar que todo funciona o para saber cuándo llegará el próximo mensaje al canal.",
+        "Te muestra el estado completo: hora de Madrid, publicaciones activas/pausadas, alertas activas, publicaciones programadas y cuándo son los próximos automáticos.\n\n" +
+        "También lista todos los comandos disponibles agrupados por función. Todo lo que publique el bot queda registrado automáticamente en Notion (Publicaciones · Señales · Briefings).",
     },
     pausa: {
       titulo: "⏸ /pausa y /activa — Control de publicaciones",
