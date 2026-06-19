@@ -155,25 +155,36 @@ async function cmdFlash(chatId, tema, portadaFileId = null) {
   await reply(chatId, "⚡ Generando flash...");
 
   const fearGreed = await getFearGreed().catch(() => null);
+  const fgCtx = fearGreed ? ` Fear&Greed: ${fearGreed.valor} (${fearGreed.clasificacion}).` : "";
 
   const response = await client.messages.create({
     model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
-    max_tokens: 600,
-    system: `Eres CriptoScope. Analista senior, voz directa y fría. El precio manda, no el hype.
+    max_tokens: 700,
+    system: `Eres CriptoScope. Analista senior, voz directa y fría.
 
-REGLA DE APERTURA: Abre con la conclusión o el dato más impactante del TEMA. Si el tema menciona un precio concreto, úsalo. Si no, no metas precios de BTC/ETH en la apertura.
+Genera el flash en este formato EXACTO (responde SOLO el contenido, sin etiquetas ni explicaciones):
 
-Frases cortas. Niveles exactos si el tema los incluye (zona 3.180-3.200, nunca "cerca de soporte"). Voz activa.
-Formato: máx 3 párrafos cortos. HTML Telegram (<b>, <i>). 1-2 emojis funcionales (📊🔴🟢⚠️🎯). NUNCA 🚀💎 ni lenguaje tribal.
-PROHIBIDO: guiones medios o largos (– o —), clickbait, consejos financieros directos, predicciones sin datos.`,
+GANCHO: [1 frase impactante sobre el tema. Sin precio de BTC/ETH a menos que el tema sea ese precio exacto. Puede ser una afirmación rotunda, una pregunta, o la conclusión clave.]
+CUERPO: [2 párrafos de análisis. Aquí sí puedes mencionar niveles si son relevantes. HTML Telegram: <b>, <i>. 1-2 emojis funcionales máx: 📊🔴🟢⚠️🎯]
+
+Reglas:
+- Voz activa. Frases cortas. Niveles exactos cuando los hay (zona 61.200-61.800, nunca "cerca de soporte").
+- PROHIBIDO: guiones medios o largos (– o —), 🚀💎🙌, clickbait, consejos financieros.`,
     messages: [{
       role: "user",
-      content: `TEMA: ${tema}${fearGreed ? `\nSentimiento: Fear&Greed ${fearGreed.valor} (${fearGreed.clasificacion})` : ""}`,
+      content: `TEMA: ${tema}${fgCtx}`,
     }],
   });
 
-  const cuerpo = response.content[0].text.trim();
-  const msg = `🚨 <b>FLASH | CriptoScope</b>\n\n${cuerpo}\n\n<i>Análisis educativo · no es consejo financiero</i>`;
+  const raw = response.content[0].text.trim();
+
+  // Extraer GANCHO y CUERPO del formato estructurado
+  const ganchoMatch = raw.match(/GANCHO:\s*(.+?)(?:\n|$)/s);
+  const cuerpoMatch = raw.match(/CUERPO:\s*([\s\S]+)/s);
+  const gancho = ganchoMatch ? ganchoMatch[1].trim() : raw.split("\n")[0];
+  const cuerpo = cuerpoMatch ? cuerpoMatch[1].trim() : raw.split("\n").slice(1).join("\n").trim();
+
+  const msg = `🚨 <b>FLASH | CriptoScope</b>\n\n<b>${gancho}</b>\n\n${cuerpo}\n\n<i>Análisis educativo · no es consejo financiero</i>`;
 
   const pid = Date.now().toString(36);
   pendingPublish.set(pid, msg);
