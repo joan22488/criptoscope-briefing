@@ -13,6 +13,7 @@ import { enviarTelegram } from "./telegram.js";
 import { verificarResultados } from "./tracker.js";
 import { getPrices } from "./coindesk.js";
 import { iniciarBot, isPausado, verificarAlertasPrecios, monitorNoticias } from "./bot.js";
+import { iniciarWebhookServer } from "./webhook.js";
 
 const horario = process.env.CRON_SCHEDULE || "0 7 * * *";
 const horarioSenales = process.env.SIGNALS_SCHEDULE || "0 7,11,15,19 * * *";
@@ -149,5 +150,8 @@ cron.schedule("*/15 * * * *", async () => {
 
 // Bot de comandos bajo demanda (long-polling — no bloquea los crons)
 iniciarBot().catch((e) => console.error("❌ Bot error fatal:", e.message));
+
+// Servidor HTTP para webhooks de TradingView
+iniciarWebhookServer();
 
 console.log("⏳ Esperando ejecuciones programadas... (Ctrl+C para salir)");

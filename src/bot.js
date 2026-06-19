@@ -478,7 +478,8 @@ async function cmdEstado(chatId) {
     `🔔 Check alertas precio: cada 5 min\n` +
     `📰 Monitor RSS: cada 15 min (CoinDesk · Cointelegraph · The Block · Decrypt)\n` +
     `   Botones: ⚡ Flash · 📝 Hilo · 🐦 Tweet X (directo a X) · 🙈 Ignorar\n` +
-    `🔔 Señales: alerta privada al owner cuando una señal toca TP1/TP2/SL\n\n` +
+    `🔔 Señales: alerta privada al owner cuando una señal toca TP1/TP2/SL\n` +
+    `🔗 Webhook TradingView: activo en /webhook/tradingview\n\n` +
     `<b>Publicación manual (preview + botones):</b>\n` +
     `<code>/flash</code> · <code>/hilo</code> · <code>/analiza</code> · <code>/opinion</code> · <code>/encuesta</code> · <code>/semanal</code>\n` +
     `<i>Canal / X / Canal+X / 🟡 Binance Square / 📊 CMC Community</i>\n` +
@@ -1726,9 +1727,11 @@ export async function iniciarBot() {
     }),
   }).catch(() => {});
 
+
   while (true) {
     try {
       const res = await fetch(`${API()}/getUpdates?offset=${offset}&timeout=25&allowed_updates=["message","callback_query"]`);
+
       const data = await res.json();
       if (data.ok && data.result.length) {
         for (const update of data.result) {
@@ -1745,4 +1748,42 @@ export async function iniciarBot() {
       await new Promise((r) => setTimeout(r, 5000));
     }
   }
+}
+
+// ──────────────────────────────────────────────
+// WEBHOOK TRADINGVIEW
+// Llamado desde webhook.js al recibir una alerta
+// ──────────────────────────────────────────────
+
+export async function procesarAlertaTradingView(bodyRaw) {
+  const ownerId = process.env.TELEGRAM_OWNER_ID;
+  if (!ownerId) { console.warn("⚠️ TV Webhook: TELEGRAM_OWNER_ID no configurado"); return; }
+
+  // Intentar parsear como JSON, si no tratar como texto plano
+  let payload;
+  try { payload = JSON.parse(bodyRaw); }
+  catch { payload = { message: bodyRaw }; }
+
+  // Construir el tema a partir del payload
+  const partes = [];
+  const ticker = (payload.ticker || payload.symbol || "").replace(/USDT|PERP|USD\.P/gi, "").trim();
+  if (ticker)                          partes.push(ticker);
+  const tf = payload.timeframe || payload.interval || payload.tf || "";
+  if (tf)                              partes.push(`${tf}`);
+  const precio = payload.price || payload.close || payload.last || "";
+  if (precio)                          partes.push(`$${parseFloat(precio).toLocaleString("es-ES")}`);
+  const msg = payload.message || payload.alert || payload.text || "";
+  if (msg)                             partes.push(msg);
+  else if (payload.action || payload.side) partes.push(payload.action || payload.side);
+
+  const tema = partes.filter(Boolean).join(" · ") || bodyRaw.slice(0, 300).trim();
+  if (!tema) return;
+
+  console.log(`🔔 TradingView → ${tema.slice(0, 100)}`);
+
+  // Notificar al owner que llegó una alerta y generar flash con preview + botones
+  await reply(parseInt(ownerId),
+    `🔔 <b>Alerta TradingView</b>\n\n<i>${tema.slice(0, 300)}</i>\n\nGenerando flash...`
+  );
+  await cmdFlash(parseInt(ownerId), tema);
 }
