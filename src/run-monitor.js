@@ -64,11 +64,11 @@ for (const fuente of FUENTES_RSS) {
           reply_markup: {
             inline_keyboard: [
               [
-                { text: "⚡ Flash", callback_data: `news_flash:${encodeURIComponent(item.titulo)}` },
-                { text: "📝 Hilo", callback_data: `news_hilo:${encodeURIComponent(item.titulo)}` },
+                { text: "⚡ Flash", callback_data: `news_flash:${Date.now().toString(36)}` },
+                { text: "📝 Hilo",  callback_data: `news_hilo:${Date.now().toString(36)}` },
               ],
               [
-                { text: "🐦 Tweet X", callback_data: `news_tweet:${encodeURIComponent(item.titulo)}` },
+                { text: "🐦 Tweet X", callback_data: `news_tweet:${Date.now().toString(36)}` },
                 { text: "🙈 Ignorar", callback_data: "nopub" },
               ],
             ],

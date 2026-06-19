@@ -56,6 +56,14 @@ let alertasPrecios = cargarAlertas();
 
 // ── Monitor de noticias (IDs vistos en memoria) ──
 const noticiasVistas = new Set();
+// Caché de títulos de noticias — evita superar el límite de 64 bytes de callback_data
+const noticiasCache = new Map(); // nid → { titulo, link }
+const cachearNoticia = (titulo, link) => {
+  const nid = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+  noticiasCache.set(nid, { titulo, link });
+  setTimeout(() => noticiasCache.delete(nid), 2 * 60 * 60 * 1000); // expira en 2h
+  return nid;
+};
 
 let offset = 0;
 
@@ -973,7 +981,9 @@ Devuelve SOLO título + salto de línea + cuerpo. Sin comillas, sin etiquetas, s
   }
 
   if (data.startsWith("news_flash:")) {
-    const titulo = decodeURIComponent(data.slice(11));
+    const nid = data.slice(11);
+    const cached = noticiasCache.get(nid);
+    const titulo = cached?.titulo || nid;
     await fetch(`${API()}/editMessageReplyMarkup`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -983,7 +993,9 @@ Devuelve SOLO título + salto de línea + cuerpo. Sin comillas, sin etiquetas, s
   }
 
   if (data.startsWith("news_hilo:")) {
-    const titulo = decodeURIComponent(data.slice(10));
+    const nid = data.slice(10);
+    const cached = noticiasCache.get(nid);
+    const titulo = cached?.titulo || nid;
     await fetch(`${API()}/editMessageReplyMarkup`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -993,7 +1005,9 @@ Devuelve SOLO título + salto de línea + cuerpo. Sin comillas, sin etiquetas, s
   }
 
   if (data.startsWith("news_tweet:")) {
-    const titulo = decodeURIComponent(data.slice(11));
+    const nid = data.slice(11);
+    const cached = noticiasCache.get(nid);
+    const titulo = cached?.titulo || nid;
     await quitarBotones();
 
     if (!process.env.X_API_KEY) {
@@ -1464,6 +1478,7 @@ export async function monitorNoticias() {
         const coincide = KEYWORDS_NOTICIAS.some((k) => item.titulo.toLowerCase().includes(k));
         if (!coincide) continue;
 
+        const nid = cachearNoticia(item.titulo, item.link);
         await fetch(`${API()}/sendMessage`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1475,11 +1490,11 @@ export async function monitorNoticias() {
             reply_markup: {
               inline_keyboard: [
                 [
-                  { text: "⚡ Flash", callback_data: `news_flash:${encodeURIComponent(item.titulo)}` },
-                  { text: "📝 Hilo", callback_data: `news_hilo:${encodeURIComponent(item.titulo)}` },
+                  { text: "⚡ Flash", callback_data: `news_flash:${nid}` },
+                  { text: "📝 Hilo",  callback_data: `news_hilo:${nid}` },
                 ],
                 [
-                  { text: "🐦 Tweet X", callback_data: `news_tweet:${encodeURIComponent(item.titulo)}` },
+                  { text: "🐦 Tweet X", callback_data: `news_tweet:${nid}` },
                   { text: "🙈 Ignorar", callback_data: "nopub" },
                 ],
               ],
