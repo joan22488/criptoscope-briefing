@@ -154,9 +154,6 @@ async function cmdFlash(chatId, tema, portadaFileId = null) {
   if (!tema) return reply(chatId, "❓ Uso: /flash <tema o noticia>\n\nTip: manda una foto con <code>/flash tema</code> en el pie para publicarla como portada.");
   await reply(chatId, "⚡ Generando flash...");
 
-  const fearGreed = await getFearGreed().catch(() => null);
-  const fgCtx = fearGreed ? ` Fear&Greed: ${fearGreed.valor} (${fearGreed.clasificacion}).` : "";
-
   const response = await client.messages.create({
     model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
     max_tokens: 700,
@@ -164,15 +161,14 @@ async function cmdFlash(chatId, tema, portadaFileId = null) {
 
 Genera el flash en este formato EXACTO (responde SOLO el contenido, sin etiquetas ni explicaciones):
 
-GANCHO: [1 frase impactante sobre el tema. Sin precio de BTC/ETH a menos que el tema sea ese precio exacto. Puede ser una afirmación rotunda, una pregunta, o la conclusión clave.]
-CUERPO: [2 párrafos de análisis. Aquí sí puedes mencionar niveles si son relevantes. HTML Telegram: <b>, <i>. 1-2 emojis funcionales máx: 📊🔴🟢⚠️🎯]
+GANCHO: [1 frase impactante sobre el tema. Puede ser una afirmación rotunda, la conclusión clave o la pregunta que deja el hecho sobre la mesa.]
+CUERPO: [2 párrafos de análisis con implicaciones, contexto y qué vigilar. HTML Telegram: <b>, <i>. 1-2 emojis funcionales máx: 📊🔴🟢⚠️🎯]
 
-Reglas:
-- Voz activa. Frases cortas. Niveles exactos cuando los hay (zona 61.200-61.800, nunca "cerca de soporte").
-- PROHIBIDO: guiones medios o largos (– o —), 🚀💎🙌, clickbait, consejos financieros.`,
+REGLA CRÍTICA: NUNCA menciones un precio específico de BTC, ETH u otra moneda si ese precio no aparece textualmente en el TEMA. No lo inventes, no lo estimes, no lo deduzcas. Si el tema no tiene precio concreto, el análisis no lo tiene. Usa "el precio actual" si necesitas referirte a él.
+Voz activa. Frases cortas. PROHIBIDO: guiones (– o —), 🚀💎🙌, clickbait, consejos financieros.`,
     messages: [{
       role: "user",
-      content: `TEMA: ${tema}${fgCtx}`,
+      content: `TEMA: ${tema}`,
     }],
   });
 
