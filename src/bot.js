@@ -985,7 +985,6 @@ Devuelve SOLO título + salto de línea + cuerpo. Sin comillas, sin etiquetas, s
     const pid = isCmc ? data.slice(8) : data.slice(7);
     const msg = pendingPublish.get(pid);
     if (!msg) return reply(chatId, "❌ El contenido ya expiró (>30 min). Vuelve a generarlo.");
-    await quitarBotones();
 
     const limpio = msg
       .replace(/<b>(.*?)<\/b>/gs, "**$1**")
