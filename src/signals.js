@@ -193,6 +193,8 @@ export async function analizarSymbol(symbol) {
     getVelas(symbol, "1h", 120), getVelas(symbol, "15m", 120),
     getFunding(symbol),
   ]);
+  const ema20s = calcEMA(v4h, 20);
+  const ema50s = calcEMA(v4h, 50);
   return {
     nombre, precio: v15m[v15m.length - 1].close, funding,
     tf1d: analizarTF(v1d, "1D"),
@@ -200,6 +202,9 @@ export async function analizarSymbol(symbol) {
     tf1h: analizarTF(v1h, "1H"),
     tf15m: analizarTF(v15m, "15m"),
     pivots: calcPivots(v4h),
+    velas4h: v4h.slice(-30),
+    ema20_4h: ema20s.slice(-30),
+    ema50_4h: ema50s.slice(-30),
   };
 }
 

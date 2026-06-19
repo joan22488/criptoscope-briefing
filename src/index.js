@@ -116,10 +116,19 @@ cron.schedule(
       const actualizadas = await verificarResultados(preciosMap);
       for (const s of actualizadas) {
         const emoji = s.resultado.includes("TP") ? "✅" : "❌";
+        // Aviso público al canal (breve)
         await enviarTelegram(
           `${emoji} <b>Señal ${s.resultado}</b>\n` +
-          `${s.symbol} ${s.op} · Entrada ${s.entrada}\n` +
+          `${s.symbol} ${s.op} · Entrada ${s.entrada || "?"}\n` +
           `<i>Enviada el ${new Date(s.fecha).toLocaleDateString("es-ES")}</i>`
+        );
+        // Notificación privada al owner con todos los detalles
+        await alertarOwner(
+          `${emoji} <b>Señal ${s.resultado}</b> — ${s.symbol} ${s.op}\n\n` +
+          (s.entrada ? `Entrada: <b>${s.entrada}</b>\n` : "") +
+          `TP1: ${s.tp1 || "?"}  ·  TP2: ${s.tp2 || "?"}  ·  SL: ${s.sl || "?"}\n` +
+          (s.rr ? `R:R: ${s.rr}\n` : "") +
+          `<i>Señal del ${new Date(s.fecha).toLocaleDateString("es-ES", { day: "numeric", month: "long" })}</i>`
         );
       }
     } catch (e) {

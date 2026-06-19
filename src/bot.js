@@ -118,6 +118,10 @@ async function mostrarBotonesPublicacion(chatId, pid, previewTexto) {
             { text: tienePortada ? "🖼 Cambiar portada" : "📸 Añadir portada", callback_data: `add_portada:${pid}` },
           ],
           [
+            { text: "🟡 Binance Square", callback_data: `pub_bs:${pid}` },
+            { text: "📊 CMC Community", callback_data: `pub_cmc:${pid}` },
+          ],
+          [
             { text: "❌ Descartar", callback_data: "nopub" },
           ],
         ],
@@ -270,6 +274,24 @@ async function cmdAnaliza(chatId, symbolRaw, portadaFileId = null) {
     pendingPublish.set(pid, msg);
     if (portadaFileId) portadas.set(pid, portadaFileId);
     setTimeout(() => { pendingPublish.delete(pid); portadas.delete(pid); }, 30 * 60 * 1000);
+
+    // Gráfico de velas 4H con EMA20/EMA50 via quickchart.io
+    if (datos.velas4h?.length) {
+      try {
+        const chartUrl = generarGraficoUrl(datos);
+        const imgRes = await fetch(chartUrl, { signal: AbortSignal.timeout(12000) });
+        if (imgRes.ok) {
+          const buf = Buffer.from(await imgRes.arrayBuffer());
+          const form = new FormData();
+          form.append("chat_id", chatId.toString());
+          form.append("photo", new Blob([buf], { type: "image/png" }), "chart.png");
+          await fetch(`${API()}/sendPhoto`, { method: "POST", body: form });
+        }
+      } catch (e) {
+        console.warn("⚠️ Gráfico no generado:", e.message);
+      }
+    }
+
     await mostrarBotonesPublicacion(chatId, pid, msg);
   } catch (e) {
     await reply(chatId, `❌ No pude analizar ${symbol.replace("USDT", "")}: ${e.message}`);
@@ -298,6 +320,36 @@ function buildMsgAnalisis(senales, datos, hora) {
   }
   msg += `──────────────\n<i>Análisis educativo · no es consejo financiero</i>`;
   return msg;
+}
+
+// Genera URL de gráfico de velas 4H via quickchart.io (sin dependencias extra)
+function generarGraficoUrl(datos) {
+  const velas = datos.velas4h;
+  if (!velas?.length) return null;
+  const labels = velas.map((v) => new Date(v.time).getTime());
+  const candleData = velas.map((v) => ({
+    x: new Date(v.time).getTime(),
+    o: +v.open.toFixed(2), h: +v.high.toFixed(2),
+    l: +v.low.toFixed(2), c: +v.close.toFixed(2),
+  }));
+  const ema20Data = (datos.ema20_4h || []).map((y, i) => ({ x: labels[i], y: +y.toFixed(2) }));
+  const ema50Data = (datos.ema50_4h || []).map((y, i) => ({ x: labels[i], y: +y.toFixed(2) }));
+  const chart = {
+    type: "candlestick",
+    data: {
+      datasets: [
+        { label: `${datos.nombre}/USDT 4H`, data: candleData,
+          color: { up: "rgba(38,166,154,0.9)", down: "rgba(239,83,80,0.9)", unchanged: "#888" } },
+        { type: "line", label: "EMA20", data: ema20Data, borderColor: "#ffc107", borderWidth: 1.5, pointRadius: 0, fill: false },
+        { type: "line", label: "EMA50", data: ema50Data, borderColor: "#2196f3", borderWidth: 1.5, pointRadius: 0, fill: false },
+      ],
+    },
+    options: {
+      scales: { x: { type: "time" }, y: { position: "right" } },
+      plugins: { legend: { display: true, labels: { color: "#ddd" } } },
+    },
+  };
+  return `https://quickchart.io/chart?c=${encodeURIComponent(JSON.stringify(chart))}&w=800&h=420&bkg=%231e1e2e&f=png`;
 }
 
 // /opinion <noticia> — CriptoScope opina sobre algo
@@ -425,11 +477,12 @@ async function cmdEstado(chatId) {
     `🚨 Monitor eventos: cada 30 min\n` +
     `🔔 Check alertas precio: cada 5 min\n` +
     `📰 Monitor RSS: cada 15 min (CoinDesk · Cointelegraph · The Block · Decrypt)\n` +
-    `   Botones: ⚡ Flash · 📝 Hilo · 🐦 Tweet X (directo a X) · 🙈 Ignorar\n\n` +
+    `   Botones: ⚡ Flash · 📝 Hilo · 🐦 Tweet X (directo a X) · 🙈 Ignorar\n` +
+    `🔔 Señales: alerta privada al owner cuando una señal toca TP1/TP2/SL\n\n` +
     `<b>Publicación manual (preview + botones):</b>\n` +
     `<code>/flash</code> · <code>/hilo</code> · <code>/analiza</code> · <code>/opinion</code> · <code>/encuesta</code> · <code>/semanal</code>\n` +
-    `<i>Todos publican en Canal / X / Canal+X — tweet generado por Claude con título gancho</i>\n` +
-    `<i>/hilo publica en X como thread real encadenado</i>\n\n` +
+    `<i>Canal / X / Canal+X / 🟡 Binance Square / 📊 CMC Community</i>\n` +
+    `<i>/analiza incluye gráfico de velas 4H + EMA20/50</i>\n\n` +
     `<b>Privado (solo te responde a ti):</b>\n` +
     `<code>/precio</code> · <code>/quepasa</code> · <code>/senal</code> · <code>/calendario</code>\n` +
     `<code>/alerta</code> · <code>/alertas</code> · <code>/borralalerta</code>\n` +
@@ -926,6 +979,34 @@ Devuelve SOLO título + salto de línea + cuerpo. Sin comillas, sin etiquetas, s
     });
     await cmdEncuesta(chatId, tema || "");
   }
+
+  if (data.startsWith("pub_bs:") || data.startsWith("pub_cmc:")) {
+    const isCmc = data.startsWith("pub_cmc:");
+    const pid = isCmc ? data.slice(8) : data.slice(7);
+    const msg = pendingPublish.get(pid);
+    if (!msg) return reply(chatId, "❌ El contenido ya expiró (>30 min). Vuelve a generarlo.");
+    await quitarBotones();
+
+    const limpio = msg
+      .replace(/<b>(.*?)<\/b>/gs, "**$1**")
+      .replace(/<i>(.*?)<\/i>/gs, "_$1_")
+      .replace(/<code>(.*?)<\/code>/gs, "`$1`")
+      .replace(/<[^>]+>/g, "")
+      .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+      .trim();
+
+    const plataforma = isCmc ? "CMC Community" : "Binance Square";
+    const icono = isCmc ? "📊" : "🟡";
+    const tipo = /FLASH/i.test(msg) ? "Flash" : /HILO/i.test(msg) ? "Hilo" : /ANÁLISIS|ANALISIS|On-Demand/i.test(msg) ? "Análisis" : "Otro";
+    const titulo = msg.replace(/<[^>]+>/g, "").split("\n").find((l) => l.trim().length > 5) || "Sin título";
+
+    await reply(chatId,
+      `${icono} <b>Texto listo para ${plataforma}</b>\n\nCópialo y pégalo directamente:\n\n` +
+      `<code>${limpio.replace(/</g, "&lt;").replace(/>/g, "&gt;").slice(0, 3500)}</code>`
+    );
+
+    guardarPublicacionEnNotion({ tipo, titulo, texto: msg, plataforma, conPortada: !!portadas.get(pid), estado: "Formateado" }).catch(() => {});
+  }
 }
 
 // /ayuda — guía detallada de comandos
@@ -961,7 +1042,8 @@ async function cmdAyuda(chatId, cmd) {
       detalle:
         "Ejecuta un análisis técnico completo top-down sobre cualquier coin. Descarga velas reales de 1D + 4H + 1H + 15m desde OKX, calcula RSI 14, MACD 12/26/9, EMA 20/50 y niveles pivot, y genera una señal con Claude.\n\n" +
         "Devuelve: sesgo de mercado, operación (LONG/SHORT/ESPERAR), entrada, TP1, TP2, SL y ratio R:R.\n\n" +
-        "Igual que /flash, muestra preview con botones para elegir canal, X o ambos, y añadir portada. El tweet de X lo genera Claude con formato nativo de Twitter.",
+        "Adjunta automáticamente un <b>gráfico de velas 4H con EMA20 y EMA50</b> (últimas 30 velas, 5 días) antes de la preview.\n\n" +
+        "Botones de publicación: Canal / X / ambos / Binance Square / CMC Community. El tweet de X lo genera Claude con formato nativo.",
     },
     opinion: {
       titulo: "🧠 /opinion — CriptoScope opina",
