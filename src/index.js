@@ -12,7 +12,7 @@ import { verificarAlertas } from "./alerts.js";
 import { enviarTelegram } from "./telegram.js";
 import { verificarResultados } from "./tracker.js";
 import { getPrices } from "./coindesk.js";
-import { iniciarBot, isPausado, verificarAlertasPrecios, monitorNoticias } from "./bot.js";
+import { iniciarBot, isPausado, verificarAlertasPrecios, monitorNoticias, ejecutarRecapDiario } from "./bot.js";
 import { iniciarWebhookServer } from "./webhook.js";
 
 const horario = process.env.CRON_SCHEDULE || "0 7 * * *";
@@ -146,6 +146,11 @@ cron.schedule("*/5 * * * *", async () => {
 // Monitor de noticias — cada 15 minutos
 cron.schedule("*/15 * * * *", async () => {
   await monitorNoticias().catch((e) => console.warn("⚠️  Monitor noticias:", e.message));
+}, { timezone: zona });
+
+// Recap diario privado al owner — 22:00
+cron.schedule("0 22 * * *", async () => {
+  await ejecutarRecapDiario().catch((e) => console.warn("⚠️  Recap diario:", e.message));
 }, { timezone: zona });
 
 // Bot de comandos bajo demanda (long-polling — no bloquea los crons)

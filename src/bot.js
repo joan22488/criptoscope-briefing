@@ -5,6 +5,9 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
+import sharp from "sharp";
 import { getMarketContext, getPrices, getFearGreed, getGlobalMarket } from "./coindesk.js";
 import { analizarSymbol, generarSenal, getVelas, calcEMA } from "./signals.js";
 import { getEventosMacro, formatearAlertaMacro } from "./calendar.js";
@@ -12,6 +15,33 @@ import { publicarThread, subirImagenX } from "./twitter-post.js";
 import { enviarTelegram } from "./telegram.js";
 import { ejecutarResumenSemanal } from "./weekly.js";
 import { guardarPublicacionEnNotion } from "./notion.js";
+import { generarEstadisticasSemana } from "./tracker.js";
+
+// ── Logo overlay ──────────────────────────────────────────────
+const __dir = dirname(fileURLToPath(import.meta.url));
+const LOGO_PATH = join(__dir, "../assets/logo.png");
+
+async function aplicarLogo(imgBuffer, logoWidthPct = 0.18) {
+  try {
+    const base   = sharp(imgBuffer);
+    const { width, height } = await base.metadata();
+    const logoW  = Math.round(width * logoWidthPct);
+    const logo   = await sharp(LOGO_PATH)
+      .resize(logoW, null, { fit: "inside" })
+      .png()
+      .toBuffer();
+    const logoMeta = await sharp(logo).metadata();
+    const left = width  - logoMeta.width  - 14;
+    const top  = height - logoMeta.height - 14;
+    return await base
+      .composite([{ input: logo, left, top, blend: "over" }])
+      .png()
+      .toBuffer();
+  } catch (e) {
+    console.warn("⚠️ Logo overlay fallido:", e.message);
+    return imgBuffer; // devuelve original si falla
+  }
+}
 
 const client = new Anthropic();
 const API = () => `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}`;
@@ -59,8 +89,14 @@ function guardarAlertas(arr) {
 // [{coin, precio, direccion, chatId}]  direccion: "sube"|"baja"
 let alertasPrecios = cargarAlertas();
 
-// ── Monitor de noticias (IDs vistos en memoria) ──
-const noticiasVistas = new Set();
+// ── Monitor de noticias (guid → timestamp) ──
+const noticiasVistas = new Map();
+function limpiarNoticiasViejas() {
+  const limite = Date.now() - 24 * 60 * 60 * 1000;
+  for (const [guid, ts] of noticiasVistas) {
+    if (ts < limite) noticiasVistas.delete(guid);
+  }
+}
 // Caché de títulos de noticias — evita superar el límite de 64 bytes de callback_data
 const noticiasCache = new Map(); // nid → { titulo, link }
 const cachearNoticia = (titulo, link) => {
@@ -149,18 +185,34 @@ const xFooter = () => process.env.X_PROFILE_URL
 
 async function publicarCanal(texto, portadaFileId = null) {
   if (portadaFileId) {
-    const res = await fetch(`${API()}/sendPhoto`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: process.env.TELEGRAM_CHAT_ID,
-        photo: portadaFileId,
-      }),
-    });
-    const json = await res.json();
-    if (!json.ok) {
-      console.warn("⚠️ sendPhoto falló:", JSON.stringify(json));
-      throw new Error(`sendPhoto falló: ${json.description || JSON.stringify(json)}`);
+    try {
+      // Descargar imagen de Telegram, aplicar logo y resubir como multipart
+      const fileInfoRes = await fetch(`${API()}/getFile?file_id=${encodeURIComponent(portadaFileId)}`, { signal: AbortSignal.timeout(10000) });
+      const fileInfo = await fileInfoRes.json();
+      if (!fileInfo.ok) throw new Error(fileInfo.description || "getFile falló");
+      const imgRes = await fetch(`https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${fileInfo.result.file_path}`, { signal: AbortSignal.timeout(20000) });
+      if (!imgRes.ok) throw new Error(`Descarga imagen HTTP ${imgRes.status}`);
+      const imgBuf   = Buffer.from(await imgRes.arrayBuffer());
+      const imgLogo  = await aplicarLogo(imgBuf);
+      const form = new FormData();
+      form.append("chat_id", process.env.TELEGRAM_CHAT_ID);
+      form.append("photo", new Blob([imgLogo], { type: "image/png" }), "portada.png");
+      const res  = await fetch(`${API()}/sendPhoto`, { method: "POST", body: form, signal: AbortSignal.timeout(25000) });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.description || JSON.stringify(json));
+    } catch (e) {
+      console.warn("⚠️ Portada con logo fallida, usando file_id original:", e.message);
+      // Fallback: enviar sin logo con el file_id original
+      const res  = await fetch(`${API()}/sendPhoto`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: process.env.TELEGRAM_CHAT_ID, photo: portadaFileId }),
+      });
+      const json = await res.json();
+      if (!json.ok) {
+        console.warn("⚠️ sendPhoto fallback falló:", JSON.stringify(json));
+        throw new Error(`sendPhoto falló: ${json.description || JSON.stringify(json)}`);
+      }
     }
   }
   await enviarTelegram(texto + xFooter());
@@ -296,17 +348,19 @@ async function cmdAnaliza(chatId, symbolRaw, portadaFileId = null) {
     if (portadaFileId) portadas.set(pid, portadaFileId);
     setTimeout(() => { pendingPublish.delete(pid); portadas.delete(pid); }, 30 * 60 * 1000);
 
-    // Gráfico de velas 4H con EMA20/EMA50 via quickchart.io
+    // Gráfico de velas 4H con EMA20/EMA50/volumen via quickchart.io
     if (datos.velas4h?.length) {
       try {
-        const chartUrl = generarGraficoUrl(datos);
-        const imgRes = await fetch(chartUrl, { signal: AbortSignal.timeout(12000) });
-        if (imgRes.ok) {
-          const buf = Buffer.from(await imgRes.arrayBuffer());
+        const chartConfig = buildChartConfig(datos);
+        const buf = await fetchGraficoBuffer(chartConfig).then((b) => b ? aplicarLogo(b) : null);
+        if (buf) {
           const form = new FormData();
           form.append("chat_id", chatId.toString());
           form.append("photo", new Blob([buf], { type: "image/png" }), "chart.png");
-          await fetch(`${API()}/sendPhoto`, { method: "POST", body: form });
+          form.append("caption", `📊 ${datos.nombre}/USDT 4H · EMA20 · EMA50 · OKX`);
+          const photoRes = await fetch(`${API()}/sendPhoto`, { method: "POST", body: form });
+          const photoJson = await photoRes.json();
+          if (photoJson.ok) portadas.set(pid, photoJson.result.photo.at(-1).file_id);
         }
       } catch (e) {
         console.warn("⚠️ Gráfico no generado:", e.message);
@@ -359,41 +413,63 @@ function buildChartConfig(nombreOrDatos, velas, ema20arr, ema50arr, tfLabel = "4
     tf        = tfLabel;
   }
   if (!velasData?.length) return null;
-  const labels   = velasData.map((v) => new Date(v.time).getTime());
-  const candles  = velasData.map((v) => ({
-    x: new Date(v.time).getTime(),
+  const ts       = velasData.map((v) => new Date(v.time).getTime());
+  const candles  = velasData.map((v, i) => ({
+    x: ts[i],
     o: +v.open.toFixed(2), h: +v.high.toFixed(2),
     l: +v.low.toFixed(2),  c: +v.close.toFixed(2),
   }));
-  const ema20Data = (ema20arr || []).map((y, i) => ({ x: labels[i], y: +y.toFixed(2) }));
-  const ema50Data = (ema50arr || []).map((y, i) => ({ x: labels[i], y: +y.toFixed(2) }));
+  const ema20Data = (ema20arr || []).map((y, i) => ({ x: ts[i], y: +y.toFixed(2) }));
+  const ema50Data = (ema50arr || []).map((y, i) => ({ x: ts[i], y: +y.toFixed(2) }));
+  const volData   = velasData.map((v, i) => ({ x: ts[i], y: v.volume }));
+  const volColors = velasData.map((v) => v.close >= v.open ? "rgba(38,166,154,0.35)" : "rgba(239,83,80,0.35)");
+  const maxVol    = Math.max(...velasData.map((v) => v.volume));
   return {
     type: "candlestick",
     data: {
       datasets: [
         { label: `${nombre}/USDT ${tf}`, data: candles,
           color: { up: "rgba(38,166,154,0.9)", down: "rgba(239,83,80,0.9)", unchanged: "#888" } },
-        { type: "line", label: "EMA20", data: ema20Data, borderColor: "#ffc107", borderWidth: 1.5, pointRadius: 0, fill: false },
-        { type: "line", label: "EMA50", data: ema50Data, borderColor: "#2196f3", borderWidth: 1.5, pointRadius: 0, fill: false },
+        { type: "bar",  label: "Vol",   data: volData,   backgroundColor: volColors, yAxisID: "vol", order: 3 },
+        { type: "line", label: "EMA20", data: ema20Data, borderColor: "#ffc107", borderWidth: 1.5, pointRadius: 0, fill: false, order: 1 },
+        { type: "line", label: "EMA50", data: ema50Data, borderColor: "#2196f3", borderWidth: 1.5, pointRadius: 0, fill: false, order: 1 },
       ],
     },
     options: {
-      scales: { x: { type: "time" }, y: { position: "right" } },
-      plugins: { legend: { display: true, labels: { color: "#ddd" } } },
+      scales: {
+        x:   { ticks: { maxTicksLimit: 8, color: "#aaa" } },
+        y:   { position: "right", ticks: { color: "#aaa" } },
+        vol: { position: "left", display: false, max: maxVol * 5 },
+      },
+      plugins: {
+        legend: { display: false },
+        title: {
+          display: true,
+          text: "CriptoScope · x.com/joan22488",
+          position: "bottom",
+          color: "rgba(255,255,255,0.35)",
+          font: { size: 11 },
+        },
+      },
     },
   };
 }
 
-// Usa POST (sin límite de URL) para obtener la imagen PNG del gráfico
+// Usa POST para obtener la imagen PNG del gráfico
+// Comprueba Content-Type (no el status) porque quickchart puede devolver 400 + PNG válido
 async function fetchGraficoBuffer(chartConfig) {
   if (!chartConfig) return null;
   const res = await fetch("https://quickchart.io/chart", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chart: chartConfig, width: 800, height: 420, backgroundColor: "#1e1e2e", format: "png" }),
+    body: JSON.stringify({ chart: chartConfig, width: 800, height: 420, backgroundColor: "#1e1e2e", format: "png", version: 4 }),
     signal: AbortSignal.timeout(15000),
   });
-  if (!res.ok) throw new Error(`quickchart ${res.status}`);
+  const ct = res.headers.get("content-type") || "";
+  if (!ct.includes("image")) {
+    const errBody = await res.text().catch(() => "");
+    throw new Error(`quickchart ${res.status}: ${errBody.replace(/<[^>]*>/g, "").slice(0, 150)}`);
+  }
   return Buffer.from(await res.arrayBuffer());
 }
 
@@ -418,8 +494,8 @@ async function cmdGrafico(chatId, args) {
   const tf      = TF_MAP[tfInput] || "4h";
   const tfLabel = { "15m": "15m", "1h": "1H", "4h": "4H", "1d": "1D" }[tf];
 
-  const limitMap = { "15m": 96, "1h": 120, "4h": 60, "1d": 60 };
-  const limit    = limitMap[tf] || 60;
+  const limitMap = { "15m": 30, "1h": 30, "4h": 30, "1d": 30 };
+  const limit    = limitMap[tf] || 30;
 
   await reply(chatId, `📊 Generando gráfico y análisis ${nombre} ${tfLabel}...`);
 
@@ -433,7 +509,7 @@ async function cmdGrafico(chatId, args) {
     const ema20s = calcEMA(slice, 20);
     const ema50s = calcEMA(slice, 50);
 
-    // Enviar gráfico via POST (sin límite de URL) — capturar file_id para la publicación
+    // Generar PNG via POST (sin límite de URL) y subir a Telegram
     let chartFileId = null;
     try {
       const chartConfig = buildChartConfig(nombre, slice, ema20s, ema50s, tfLabel);
@@ -442,19 +518,23 @@ async function cmdGrafico(chatId, args) {
         const form = new FormData();
         form.append("chat_id", chatId.toString());
         form.append("photo", new Blob([buf], { type: "image/png" }), "chart.png");
-        form.append("caption", `📊 <b>${nombre}/USDT ${tfLabel}</b> · EMA20 🟡 EMA50 🔵 · OKX`);
-        form.append("parse_mode", "HTML");
-        const photoRes  = await fetch(`${API()}/sendPhoto`, { method: "POST", body: form });
+        form.append("caption", `📊 ${nombre}/USDT ${tfLabel} · EMA20 · EMA50 · OKX`);
+        const photoRes  = await fetch(`${API()}/sendPhoto`, { method: "POST", body: form, signal: AbortSignal.timeout(20000) });
         const photoJson = await photoRes.json();
         if (photoJson.ok) {
           chartFileId = photoJson.result.photo.at(-1).file_id;
         } else {
-          console.warn("⚠️ sendPhoto falló:", photoJson.description);
+          throw new Error(`Telegram: ${photoJson.description}`);
         }
       }
     } catch (chartErr) {
-      console.warn("⚠️ Gráfico fallido:", chartErr.message);
-      await reply(chatId, `⚠️ No pude generar el gráfico (${chartErr.message}), pero el análisis sigue...`);
+      console.warn("Grafico fallido:", chartErr.message);
+      // plain text para evitar fallo de HTML parse en errores externos
+      await fetch(`${API()}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: chatId, text: `Sin grafico: ${chartErr.message}` }),
+      });
     }
 
     // Extraer datos técnicos del TF solicitado
@@ -1404,6 +1484,7 @@ async function cmdAyuda(chatId, cmd) {
     `<i>/ayuda monitor para detalle</i>\n\n` +
     `──────────────\n` +
     `<b>⚙️ Sistema</b>\n` +
+    `<code>/stats</code> — Rendimiento señales 7 días\n` +
     `<code>/estado</code> · <code>/pausa</code> · <code>/activa</code> · <code>/ayuda</code>`;
 
   await reply(chatId, menu);
@@ -1544,6 +1625,10 @@ const FUENTES_RSS = [
 
 export async function monitorNoticias() {
   if (!OWNER()) return;
+  limpiarNoticiasViejas(); // purga GUIDs con más de 24h para evitar memory leak
+
+  const MAX_EDAD_MS  = 60 * 60 * 1000; // ignorar noticias de más de 1 hora
+  const MAX_X_FUENTE = 3;               // máx alertas por fuente por ciclo
 
   for (const fuente of FUENTES_RSS) {
     try {
@@ -1556,13 +1641,22 @@ export async function monitorNoticias() {
 
       const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].map((m) => {
         const get = (tag) => m[1].match(new RegExp(`<${tag}[^>]*>(?:<!\\[CDATA\\[)?(.*?)(?:\\]\\]>)?<\\/${tag}>`, "s"))?.[1]?.trim() || "";
-        const guid = get("guid") || get("link");
-        return { guid, titulo: get("title"), link: get("link"), fuente: fuente.nombre };
+        const guid       = get("guid") || get("link");
+        const pubDateStr = get("pubDate") || get("dc:date");
+        const pubDate    = pubDateStr ? new Date(pubDateStr) : null;
+        return { guid, titulo: get("title"), link: get("link"), fuente: fuente.nombre, pubDate };
       });
 
+      let enviadas = 0;
       for (const item of items) {
+        if (enviadas >= MAX_X_FUENTE) break;
         if (!item.guid || noticiasVistas.has(item.guid)) continue;
-        noticiasVistas.add(item.guid);
+
+        // Marcar siempre como vista (antigua o nueva) para no repetir en siguientes ciclos
+        noticiasVistas.set(item.guid, Date.now());
+
+        // Descartar si tiene pubDate y lleva más de 1 hora publicada
+        if (item.pubDate && !isNaN(item.pubDate) && Date.now() - item.pubDate.getTime() > MAX_EDAD_MS) continue;
 
         const coincide = KEYWORDS_NOTICIAS.some((k) => item.titulo.toLowerCase().includes(k));
         if (!coincide) continue;
@@ -1591,6 +1685,7 @@ export async function monitorNoticias() {
           }),
         });
 
+        enviadas++;
         await new Promise((r) => setTimeout(r, 800));
       }
     } catch (e) {
@@ -1849,6 +1944,7 @@ async function procesarMensaje(msg) {
       case "/cancelar":     await cmdCancelar(chatId, argStr); break;
       case "/encuesta":     await cmdEncuesta(chatId, argStr); break;
       case "/semanal":      await cmdSemanal(chatId); break;
+      case "/stats":        await cmdStats(chatId); break;
       case "/ayuda":
       case "/help":         await cmdAyuda(chatId, argStr); break;
       default:
@@ -1862,6 +1958,55 @@ async function procesarMensaje(msg) {
 
 // ──────────────────────────────────────────────
 // LOOP PRINCIPAL (long-polling)
+// /stats — rendimiento de señales últimos 7 días
+async function cmdStats(chatId) {
+  const stats = await generarEstadisticasSemana().catch(() => null);
+  if (!stats || stats.total === 0) return reply(chatId, "📊 Sin señales registradas esta semana.");
+  const wins = stats.tp1 + stats.tp2;
+  const losses = stats.sl;
+  await reply(chatId,
+    `📊 <b>STATS | Señales últimos 7 días</b>\n\n` +
+    `Total: <b>${stats.total}</b>  ·  LONG: ${stats.longs}  ·  SHORT: ${stats.shorts}\n` +
+    `✅ TP1: ${stats.tp1}  ·  TP2: ${stats.tp2}  ·  ❌ SL: ${stats.sl}\n` +
+    `⏳ Pendientes: ${stats.pendientes}  ·  Expiradas: ${stats.expiradas}\n\n` +
+    `<b>Win rate: ${stats.winrate}%</b>  <i>(${wins}W / ${losses}L)</i>`
+  );
+}
+
+// Recap diario privado al owner — llamado desde index.js a las 22:00
+export async function ejecutarRecapDiario() {
+  const ownerId = OWNER();
+  if (!ownerId) return;
+
+  const stats = await generarEstadisticasSemana().catch(() => null);
+  const hoy = new Date();
+  const hoyStr = hoy.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long", timeZone: process.env.TIMEZONE || "Europe/Madrid" });
+  const hoyInicio = new Date(hoy.toLocaleDateString("en-CA", { timeZone: process.env.TIMEZONE || "Europe/Madrid" })).getTime();
+
+  let msg = `🌙 <b>Recap del día — ${hoyStr}</b>\n\n`;
+
+  if (stats?.senales?.length) {
+    const hoySeñales = stats.senales.filter((s) => new Date(s.fecha).getTime() >= hoyInicio);
+    const hoyTp = hoySeñales.filter((s) => s.resultado?.includes("TP")).length;
+    const hoySl = hoySeñales.filter((s) => s.resultado?.includes("SL")).length;
+    const hoyPend = hoySeñales.filter((s) => s.resultado === "PENDIENTE").length;
+    if (hoySeñales.length) {
+      msg += `📡 <b>Señales de hoy:</b> ${hoySeñales.length} lanzadas\n`;
+      if (hoyTp || hoySl) msg += `✅ TP: ${hoyTp}  ·  ❌ SL: ${hoySl}  ·  ⏳ Pendientes: ${hoyPend}\n`;
+    }
+    msg += `\n📊 <b>Semana acumulada:</b> ${stats.total} señales · Win rate ${stats.winrate}%\n`;
+    msg += `✅ ${stats.tp1 + stats.tp2} aciertos  ·  ❌ ${stats.sl} pérdidas`;
+  } else {
+    msg += `📡 Sin señales registradas hoy.`;
+  }
+
+  await fetch(`${API()}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: ownerId, text: msg, parse_mode: "HTML" }),
+  });
+}
+
 // ──────────────────────────────────────────────
 
 export async function iniciarBot() {
