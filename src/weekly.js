@@ -73,12 +73,14 @@ ${INSTRUCCIONES_RESUMEN_SEMANAL}`,
     ? `\n\n💬 <b>Reflexión de la semana:</b> ${paquete.pregunta_comunidad}`
     : "";
 
+  const xLink = process.env.X_PROFILE_URL ? `\n\n🐦 <a href="${process.env.X_PROFILE_URL}">Síguenos en X</a>` : "";
   const mensaje =
     `<b>📊 CRIPTOSCOPE | Resumen Semanal</b>\n<b>${paquete.titular}</b>\n\n` +
     paquete.resumen +
     bloqueGainers +
     bloqueStats +
-    pie;
+    pie +
+    xLink;
 
   console.log(`   ✓ Resumen semanal generado: ${paquete.titular}`);
   return { mensaje, paquete };

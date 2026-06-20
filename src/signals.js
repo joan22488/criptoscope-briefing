@@ -345,6 +345,7 @@ function formatear(senales, datos, hora, correlacion, slot = "apertura") {
   if (correlacion && slot !== "derivados") msg += `──────────────\n🔗 ${correlacion}\n\n`;
   msg += `──────────────\n`;
   msg += `<i>${cfg.pie} · Análisis educativo, no consejo financiero</i>`;
+  if (process.env.X_PROFILE_URL) msg += `\n\n🐦 <a href="${process.env.X_PROFILE_URL}">Síguenos en X</a>`;
   return msg;
 }
 

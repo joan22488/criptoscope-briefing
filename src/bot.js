@@ -143,6 +143,10 @@ async function mostrarBotonesPublicacion(chatId, pid, previewTexto) {
   });
 }
 
+const xFooter = () => process.env.X_PROFILE_URL
+  ? `\n\n🐦 <a href="${process.env.X_PROFILE_URL}">Síguenos en X</a>`
+  : "";
+
 async function publicarCanal(texto, portadaFileId = null) {
   if (portadaFileId) {
     const res = await fetch(`${API()}/sendPhoto`, {
@@ -159,7 +163,7 @@ async function publicarCanal(texto, portadaFileId = null) {
       throw new Error(`sendPhoto falló: ${json.description || JSON.stringify(json)}`);
     }
   }
-  await enviarTelegram(texto);
+  await enviarTelegram(texto + xFooter());
 }
 
 // ──────────────────────────────────────────────
@@ -540,7 +544,7 @@ async function cmdEstado(chatId) {
     `⏰ Publicaciones programadas: <b>${nProgramadas}</b>\n\n` +
     `<b>Automático:</b>\n` +
     `☕ Briefing: 07:00 diario → Telegram + X\n` +
-    `📊 Señales BTC/ETH/SOL:\n` +
+    `📊 Señales (7 monedas):\n` +
     `   🌅 07:00 Radar de apertura — sesgo del día y nivel clave\n` +
     `   📈 11:00 Pulso técnico — momentum 1H RSI/MACD\n` +
     `   ⚡ 15:00 On-chain y derivados — funding, OI, posicionamiento\n` +
@@ -562,7 +566,8 @@ async function cmdEstado(chatId) {
     `<code>/programar</code> · <code>/programadas</code> · <code>/cancelar</code>\n\n` +
     `<b>Sistema:</b>\n` +
     `<code>/pausa</code> · <code>/activa</code> · <code>/estado</code> · <code>/ayuda</code>\n\n` +
-    `<i>📒 Todo queda registrado en Notion (Publicaciones · Señales · Briefings)</i>`;
+    `<i>📒 Todo queda registrado en Notion (Publicaciones · Señales · Briefings)</i>\n` +
+    (process.env.X_PROFILE_URL ? `🐦 Cuenta X: <a href="${process.env.X_PROFILE_URL}">${process.env.X_PROFILE_URL.replace("https://x.com/", "@")}</a>` : "");
   await reply(chatId, msg);
 }
 

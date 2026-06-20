@@ -88,7 +88,7 @@ src/
 - Niveles pivot (R1, R2, S1, S2) basados en últimas 20 velas 4H
 - Funding rate perpetuos + Open Interest
 
-**Pares:** BTCUSDT · ETHUSDT · SOLUSDT (ampliable con `/analiza`)
+**Pares:** BTC · ETH · SOL · AVAX · LINK · BNB · XRP (configurable con `SIGNALS_SYMBOLS`)
 
 **Salida:** LONG / SHORT / ESPERAR con entrada, TP1, TP2, SL, R:R y tamaño (NORMAL / REDUCIDO si hay divergencia)
 
@@ -145,7 +145,7 @@ Escríbele directamente al bot (chat privado):
 | Foto + pie `responde` | Redacta una respuesta al comentario de la imagen (solo para ti) |
 
 ### Monitor automático de noticias
-Cada 15 min el sistema revisa **4 fuentes RSS en paralelo**: CoinDesk · Cointelegraph · The Block · Decrypt. Si detecta una noticia con tus keywords (`MONITOR_KEYWORDS`) te la manda en privado con botones. Cuando una señal toca TP1, TP2 o SL, recibes una **alerta privada** con todos los detalles (entrada, niveles, R:R).
+Cada 15 min el sistema revisa **6 fuentes RSS en paralelo**: CoinDesk · Cointelegraph · The Block · Decrypt · BeInCrypto · The Defiant. Si detecta una noticia con tus keywords (`MONITOR_KEYWORDS`) te la manda en privado con botones. Cuando una señal toca TP1, TP2 o SL, recibes una **alerta privada** con todos los detalles (entrada, niveles, R:R).
 - **⚡ Flash** — genera flash con preview + botones de destino
 - **📝 Hilo** — genera hilo de 5 tweets con preview + botones
 - **🐦 Tweet X** — genera tweet nativo y publica **directamente en X** sin pasos intermedios (queda registrado en Notion)
@@ -175,6 +175,7 @@ TELEGRAM_CHAT_ID=-100...              # ID del canal (con -100 delante)
 COINGECKO_API_KEY=CG-...              # coingecko.com/en/developers → Demo gratis
 TELEGRAM_OWNER_ID=...                 # Tu chat ID personal → escríbele a @userinfobot
 MONITOR_KEYWORDS=ETF,BlackRock,SEC,Fed,Bitcoin,halving,Ethereum,crash,Binance  # Keywords del monitor RSS
+X_PROFILE_URL=https://x.com/tuusuario  # Aparece al pie de cada publicación del canal
 
 # ─── X / TWITTER (opcional) ──────────────────────────────────
 X_API_KEY=...                         # developer.twitter.com → OAuth 1.0a
@@ -188,10 +189,16 @@ NOTION_BRIEFINGS_DB=...               # ID de la base de datos de briefings
 NOTION_SIGNALS_DB=...                 # ID de la base de datos de señales
 NOTION_PUBLICACIONES_DB=...           # ID de la base de datos de publicaciones (log unificado)
 
+# ─── SEÑALES (opcional) ───────────────────────────────────────
+SIGNALS_SYMBOLS=BTC,ETH,SOL,AVAX,LINK,BNB,XRP  # Monedas en el análisis automático
+
+# ─── INTEGRACIONES EXTERNAS (opcional) ───────────────────────
+WEBHOOK_SECRET=criptoscope-tv         # Token para webhooks de TradingView
+CRYPTOPANIC_TOKEN=...                 # cryptopanic.com → 7ª fuente RSS
+
 # ─── CONFIGURACIÓN ────────────────────────────────────────────
 CLAUDE_MODEL=claude-sonnet-4-6
 TIMEZONE=Europe/Madrid
-TELEGRAM_CANAL_URL=https://t.me/tucanalaqui
 CRON_SCHEDULE=0 7 * * *
 SIGNALS_SCHEDULE=0 7,11,15,19 * * *
 WEEKLY_SCHEDULE=0 9 * * 0

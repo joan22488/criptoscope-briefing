@@ -128,7 +128,8 @@ export async function ejecutarBriefing() {
     ? `\n\n💬 <b>Pregunta del día:</b> ${paquete.pregunta_comunidad}`
     : "";
 
-  await enviarTelegram(cabecera + paquete.briefing + bloqueSentimiento + bloqueGainers + bloqueMacro + bloquePalabra + pie);
+  const xLink = process.env.X_PROFILE_URL ? `\n\n🐦 <a href="${process.env.X_PROFILE_URL}">Síguenos en X</a>` : "";
+  await enviarTelegram(cabecera + paquete.briefing + bloqueSentimiento + bloqueGainers + bloqueMacro + bloquePalabra + pie + xLink);
 
   guardarPublicacionEnNotion({
     tipo: "Briefing",
