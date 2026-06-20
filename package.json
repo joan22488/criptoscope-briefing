@@ -21,6 +21,6 @@
     "twitter-api-v2": "^1.29.0"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   }
 }
