@@ -17,6 +17,11 @@ const client = new Anthropic();
 const API = () => `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}`;
 const OWNER = () => process.env.TELEGRAM_OWNER_ID;
 
+// Elimina guiones medios/largos que cuela Claude — delatan texto de IA
+const limpiarDashes = (s) => typeof s === "string"
+  ? s.replace(/ [–—] /g, ": ").replace(/[–—]/g, ".").replace(/ - /g, ": ")
+  : s;
+
 // Estado global
 export let pausado = false;
 export const setPausado = (v) => { pausado = v; };
@@ -189,8 +194,8 @@ Voz activa. Frases cortas. PROHIBIDO: guiones (– o —), 🚀💎🙌, clickba
   // Extraer GANCHO y CUERPO del formato estructurado
   const ganchoMatch = raw.match(/GANCHO:\s*(.+?)(?:\n|$)/s);
   const cuerpoMatch = raw.match(/CUERPO:\s*([\s\S]+)/s);
-  let gancho = ganchoMatch ? ganchoMatch[1].trim() : raw.split("\n")[0];
-  const cuerpo = cuerpoMatch ? cuerpoMatch[1].trim() : raw.split("\n").slice(1).join("\n").trim();
+  let gancho = limpiarDashes(ganchoMatch ? ganchoMatch[1].trim() : raw.split("\n")[0]);
+  const cuerpo = limpiarDashes(cuerpoMatch ? cuerpoMatch[1].trim() : raw.split("\n").slice(1).join("\n").trim());
 
   // Red de seguridad: si el GANCHO empieza con precio/coin inventado, usar primera frase del CUERPO
   const tienePrecionInventado = /^(BTC|ETH|SOL|bitcoin|ethereum|el precio|la cotización)\s/i.test(gancho)
@@ -257,7 +262,8 @@ async function cmdHilo(chatId, tema, portadaFileId = null) {
 
   if (!tweets?.length) return reply(chatId, "❌ No pude generar el hilo. Inténtalo de nuevo.");
 
-  const msgCanal = `📚 <b>HILO | ${tema}</b>\n\n` + tweets.map((t) => t.trim()).join("\n\n") + `\n\n<i>Análisis educativo · no es consejo financiero</i>`;
+  tweets = tweets.map((t) => limpiarDashes(t.trim()));
+  const msgCanal = `📚 <b>HILO | ${tema}</b>\n\n` + tweets.join("\n\n") + `\n\n<i>Análisis educativo · no es consejo financiero</i>`;
   const pid = Date.now().toString(36);
   pendingPublish.set(pid, msgCanal);
   hilosPendientes.set(pid, tweets); // guardar tweets separados para publicar como thread real en X
@@ -439,7 +445,7 @@ PROHIBIDO: guiones medios o largos (– o —), 🚀💎🙌, clickbait, consejo
     }],
   });
 
-  const cuerpo = response.content[0].text.trim();
+  const cuerpo = limpiarDashes(response.content[0].text.trim());
   const msg = `🧠 <b>OPINIÓN | CriptoScope</b>\n\n<i>"${noticia}"</i>\n\n${cuerpo}\n\n<i>Análisis educativo · no es consejo financiero</i>`;
 
   const pid = Date.now().toString(36);
@@ -668,7 +674,7 @@ PROHIBIDO: guiones medios o largos (– o —), 🚀💎🙌, clickbait, consejo
       }],
     });
 
-    const opinion = respuesta.content[0].text.trim();
+    const opinion = limpiarDashes(respuesta.content[0].text.trim());
 
     // Fuente: usar la detectada por Claude, o "desconocida"
     const fuenteConocida = check.fuente && check.fuente.toLowerCase() !== "desconocida";
