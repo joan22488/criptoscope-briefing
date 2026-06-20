@@ -221,12 +221,14 @@ ${cfg.sistema_extra}`;
 
   const syms = datos.map((d) => d.nombre);
   const plantilla = syms.reduce((obj, s) => {
-    obj[s] = { sesgo: "frase corta directa", op: "LONG|SHORT|ESPERAR", por_que: "1 frase", entrada: null, tp1: null, tp2: null, sl: null, rr: null, tamano: "NORMAL|REDUCIDO", cuando: "condicion o nivel", alerta: null };
+    obj[s] = { sesgo: "máx 8 palabras", op: "LONG|SHORT|ESPERAR", por_que: "máx 10 palabras", entrada: null, tp1: null, tp2: null, sl: null, rr: null, tamano: "NORMAL|REDUCIDO", cuando: "máx 10 palabras", alerta: null };
     return obj;
   }, {});
 
   const instruccion = `Genera SOLO este JSON sin markdown:
 ${JSON.stringify(plantilla)}
+
+LÍMITES ESTRICTOS DE CAMPO: sesgo ≤8 palabras · por_que ≤10 palabras · cuando ≤10 palabras · alerta ≤8 palabras o null. ESTOS LÍMITES SON OBLIGATORIOS.
 
 REGLAS EXTRA:
 - Usa el 1D para filtrar: si el Daily está en tendencia clara, prioriza esa dirección.
@@ -317,14 +319,13 @@ function formatear(senales, datos, hora, correlacion, slot = "apertura") {
     }
 
     msg += `\n${d.sesgo}\n\n`;
-    msg += `${iconOp[d.op] || "⏸ ESPERAR"}\n`;
+    msg += `${iconOp[d.op] || "⏸ ESPERAR"}${d.tamano === "REDUCIDO" ? " · pos.reducida" : ""}\n`;
     msg += `${d.por_que}\n`;
 
     if (d.op !== "ESPERAR" && d.entrada) {
       msg += `\nEntrada  <b>${d.entrada}</b>\n`;
       msg += `TP1  ${d.tp1}  ·  TP2  ${d.tp2}\n`;
       msg += `SL  ${d.sl}  ·  R:R  ${d.rr}\n`;
-      if (d.tamano === "REDUCIDO") msg += `⚠️ Posición reducida por divergencia\n`;
       msg += `\n✅ Activar si: ${d.cuando}\n`;
     } else {
       // CIERRE usa label de sesión asiática, el resto usa Vigilar
