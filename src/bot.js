@@ -267,7 +267,10 @@ async function cmdHilo(chatId, tema, portadaFileId = null) {
   if (!tweets?.length) return reply(chatId, "❌ No pude generar el hilo. Inténtalo de nuevo.");
 
   tweets = tweets.map((t) => limpiarDashes(t.trim()));
-  const msgCanal = `📚 <b>HILO | ${tema}</b>\n\n` + tweets.join("\n\n") + `\n\n<i>Análisis educativo · no es consejo financiero</i>`;
+
+  // Canal: elimina numeración "1/5", "2/5"... y une como texto cohesionado
+  const tweetsCanal = tweets.map((t) => t.replace(/^\d+\/\d+[\s:·\-–—]*/u, "").trim());
+  const msgCanal = `📚 <b>HILO | ${tema.toUpperCase()}</b>\n\n` + tweetsCanal.join("\n\n") + `\n\n<i>Análisis educativo · no es consejo financiero</i>`;
   const pid = Date.now().toString(36);
   pendingPublish.set(pid, msgCanal);
   hilosPendientes.set(pid, tweets); // guardar tweets separados para publicar como thread real en X
