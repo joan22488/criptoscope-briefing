@@ -386,7 +386,7 @@ function generarGraficoUrl(nombreOrDatos, velas, ema20arr, ema50arr, tfLabel = "
   return `https://quickchart.io/chart?c=${encodeURIComponent(JSON.stringify(chart))}&w=800&h=420&bkg=%231e1e2e&f=png`;
 }
 
-// /grafico <coin> [timeframe] — gráfico de velas on-demand
+// /grafico <coin> [timeframe] — gráfico de velas + análisis del TF + preview + botones
 async function cmdGrafico(chatId, args) {
   const partes = (args || "").trim().split(/\s+/);
   const symbolRaw = partes[0];
@@ -395,37 +395,74 @@ async function cmdGrafico(chatId, args) {
   const symbol  = symbolRaw.toUpperCase().replace("USDT", "").replace(/\/.*/, "") + "USDT";
   const nombre  = symbol.replace("USDT", "");
 
-  // Normalizar timeframe
-  const tfInput = (partes[1] || "4H").toUpperCase().replace("H", "h").replace("D", "d").replace("M", "m");
+  const tfInput = (partes[1] || "4H").toUpperCase();
   const TF_MAP  = { "15M": "15m", "1H": "1h", "4H": "4h", "1D": "1d" };
-  const tf      = TF_MAP[tfInput.toUpperCase()] || "4h";
-  const tfLabel = tf.toUpperCase();
+  const tf      = TF_MAP[tfInput] || "4h";
+  const tfLabel = { "15m": "15m", "1h": "1H", "4h": "4H", "1d": "1D" }[tf];
 
-  // Número de velas según timeframe (aprox. 5 días de historia)
   const limitMap = { "15m": 96, "1h": 120, "4h": 60, "1d": 60 };
   const limit    = limitMap[tf] || 60;
 
-  await reply(chatId, `📊 Generando gráfico ${nombre} ${tfLabel}...`);
+  await reply(chatId, `📊 Generando gráfico y análisis ${nombre} ${tfLabel}...`);
 
   try {
-    const velas  = await getVelas(symbol, tf, limit);
+    // Fetch velas del TF pedido + datos completos en paralelo
+    const [velas, datos] = await Promise.all([
+      getVelas(symbol, tf, limit),
+      analizarSymbol(symbol),
+    ]);
     const slice  = velas.slice(-Math.min(limit, velas.length));
     const ema20s = calcEMA(slice, 20);
     const ema50s = calcEMA(slice, 50);
 
+    // Enviar gráfico primero (sin esperar al análisis)
     const chartUrl = generarGraficoUrl(nombre, slice, ema20s, ema50s, tfLabel);
-    if (!chartUrl) return reply(chatId, "❌ No se pudo generar el gráfico.");
+    if (chartUrl) {
+      const imgRes = await fetch(chartUrl, { signal: AbortSignal.timeout(12000) });
+      if (imgRes.ok) {
+        const buf  = Buffer.from(await imgRes.arrayBuffer());
+        const form = new FormData();
+        form.append("chat_id", chatId.toString());
+        form.append("photo", new Blob([buf], { type: "image/png" }), "chart.png");
+        form.append("caption", `📊 <b>${nombre}/USDT ${tfLabel}</b> · EMA20 🟡 EMA50 🔵 · OKX`);
+        form.append("parse_mode", "HTML");
+        await fetch(`${API()}/sendPhoto`, { method: "POST", body: form });
+      }
+    }
 
-    const imgRes = await fetch(chartUrl, { signal: AbortSignal.timeout(12000) });
-    if (!imgRes.ok) return reply(chatId, `❌ Quickchart error: ${imgRes.status}`);
+    // Extraer datos técnicos del TF solicitado
+    const tfKey = { "1D": "tf1d", "4H": "tf4h", "1H": "tf1h", "15m": "tf15m" }[tfLabel] || "tf4h";
+    const td = datos[tfKey];
 
-    const buf  = Buffer.from(await imgRes.arrayBuffer());
-    const form = new FormData();
-    form.append("chat_id", chatId.toString());
-    form.append("photo", new Blob([buf], { type: "image/png" }), "chart.png");
-    form.append("caption", `📊 <b>${nombre}/USDT ${tfLabel}</b> · EMA20 🟡 EMA50 🔵\n<i>Últimas ${slice.length} velas · OKX</i>`);
-    form.append("parse_mode", "HTML");
-    await fetch(`${API()}/sendPhoto`, { method: "POST", body: form });
+    // Generar análisis enfocado en ese TF con Claude
+    const res = await client.messages.create({
+      model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
+      max_tokens: 600,
+      system: `Eres CriptoScope. Analiza ${nombre}/USDT en ${tfLabel} con los datos técnicos que te doy.
+Estructura (3 párrafos cortos, HTML Telegram con <b> e <i>):
+1. Sesgo en ${tfLabel}: qué dice la estructura y la posición respecto a EMA20/EMA50
+2. RSI y MACD: qué señalan, si hay divergencia o cruce relevante
+3. Nivel clave a vigilar: soporte/resistencia principal. Si hay setup, entrada/TP/SL en una línea. Si no, por qué esperar.
+Voz directa, sin relleno. PROHIBIDO: guiones medios o largos (– o —), emojis no funcionales, predicciones sin base.`,
+      messages: [{
+        role: "user",
+        content: `${nombre}/USDT ${tfLabel}
+Precio: ${td.precio} · EMA20: ${td.ema20} · EMA50: ${td.ema50}
+RSI(14): ${td.rsi.v} (${td.rsi.zona})${td.rsi.div ? ` · ${td.rsi.div}` : ""}
+MACD: ${td.macd.cruce} · histograma ${td.macd.hist_dir === "^" ? "subiendo" : "bajando"} · sobre cero: ${td.macd.cero === "+" ? "sí" : "no"}${td.macd.div ? ` · ${td.macd.div}` : ""}
+Resistencia: ${td.res} · Soporte: ${td.sop}
+Funding: ${datos.funding?.funding_pct || "N/A"} · OI: ${datos.funding?.open_interest ? (datos.funding.open_interest / 1e6).toFixed(2) + "M" : "N/A"}`,
+      }],
+    });
+
+    const analisis = limpiarDashes(res.content[0].text.trim());
+    const msg = `📊 <b>ANÁLISIS | ${nombre}/USDT ${tfLabel}</b>\n\n${analisis}\n\n<i>Análisis educativo · no es consejo financiero</i>`;
+
+    const pid = Date.now().toString(36);
+    pendingPublish.set(pid, msg);
+    setTimeout(() => pendingPublish.delete(pid), 30 * 60 * 1000);
+    await mostrarBotonesPublicacion(chatId, pid, msg);
+
   } catch (e) {
     await reply(chatId, `❌ Error: ${e.message}`);
   }
