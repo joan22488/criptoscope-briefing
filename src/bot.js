@@ -343,13 +343,12 @@ function buildMsgAnalisis(senales, datos, hora) {
   return msg;
 }
 
-// Genera URL de gráfico de velas via quickchart.io
+// Construye config de gráfico de velas para quickchart.io
 // Acepta (nombre, velas[], ema20[], ema50[], tfLabel) o (datos) para compatibilidad con /analiza
-function generarGraficoUrl(nombreOrDatos, velas, ema20arr, ema50arr, tfLabel = "4H") {
-  let nombre, velasData, ema20Data, ema50Data, tf;
+function buildChartConfig(nombreOrDatos, velas, ema20arr, ema50arr, tfLabel = "4H") {
+  let nombre, velasData, tf;
   if (typeof nombreOrDatos === "object" && nombreOrDatos.velas4h) {
-    // Compatibilidad: llamada desde /analiza con objeto datos
-    nombre   = nombreOrDatos.nombre;
+    nombre    = nombreOrDatos.nombre;
     velasData = nombreOrDatos.velas4h;
     ema20arr  = nombreOrDatos.ema20_4h || [];
     ema50arr  = nombreOrDatos.ema50_4h || [];
@@ -360,15 +359,15 @@ function generarGraficoUrl(nombreOrDatos, velas, ema20arr, ema50arr, tfLabel = "
     tf        = tfLabel;
   }
   if (!velasData?.length) return null;
-  const labels = velasData.map((v) => new Date(v.time).getTime());
-  const candles = velasData.map((v) => ({
+  const labels   = velasData.map((v) => new Date(v.time).getTime());
+  const candles  = velasData.map((v) => ({
     x: new Date(v.time).getTime(),
     o: +v.open.toFixed(2), h: +v.high.toFixed(2),
     l: +v.low.toFixed(2),  c: +v.close.toFixed(2),
   }));
-  ema20Data = (ema20arr || []).map((y, i) => ({ x: labels[i], y: +y.toFixed(2) }));
-  ema50Data = (ema50arr || []).map((y, i) => ({ x: labels[i], y: +y.toFixed(2) }));
-  const chart = {
+  const ema20Data = (ema20arr || []).map((y, i) => ({ x: labels[i], y: +y.toFixed(2) }));
+  const ema50Data = (ema50arr || []).map((y, i) => ({ x: labels[i], y: +y.toFixed(2) }));
+  return {
     type: "candlestick",
     data: {
       datasets: [
@@ -383,6 +382,25 @@ function generarGraficoUrl(nombreOrDatos, velas, ema20arr, ema50arr, tfLabel = "
       plugins: { legend: { display: true, labels: { color: "#ddd" } } },
     },
   };
+}
+
+// Usa POST (sin límite de URL) para obtener la imagen PNG del gráfico
+async function fetchGraficoBuffer(chartConfig) {
+  if (!chartConfig) return null;
+  const res = await fetch("https://quickchart.io/chart", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chart: chartConfig, width: 800, height: 420, backgroundColor: "#1e1e2e", format: "png" }),
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!res.ok) throw new Error(`quickchart ${res.status}`);
+  return Buffer.from(await res.arrayBuffer());
+}
+
+// Compatibilidad: wrapper GET para /analiza (30 velas — URL corta, sigue funcionando)
+function generarGraficoUrl(nombreOrDatos, velas, ema20arr, ema50arr, tfLabel = "4H") {
+  const chart = buildChartConfig(nombreOrDatos, velas, ema20arr, ema50arr, tfLabel);
+  if (!chart) return null;
   return `https://quickchart.io/chart?c=${encodeURIComponent(JSON.stringify(chart))}&w=800&h=420&bkg=%231e1e2e&f=png`;
 }
 
@@ -415,26 +433,28 @@ async function cmdGrafico(chatId, args) {
     const ema20s = calcEMA(slice, 20);
     const ema50s = calcEMA(slice, 50);
 
-    // Enviar gráfico — capturar file_id para adjuntarlo en la publicación
+    // Enviar gráfico via POST (sin límite de URL) — capturar file_id para la publicación
     let chartFileId = null;
-    const chartUrl = generarGraficoUrl(nombre, slice, ema20s, ema50s, tfLabel);
-    if (chartUrl) {
-      const imgRes = await fetch(chartUrl, { signal: AbortSignal.timeout(12000) });
-      if (imgRes.ok) {
-        const buf  = Buffer.from(await imgRes.arrayBuffer());
+    try {
+      const chartConfig = buildChartConfig(nombre, slice, ema20s, ema50s, tfLabel);
+      const buf = await fetchGraficoBuffer(chartConfig);
+      if (buf) {
         const form = new FormData();
         form.append("chat_id", chatId.toString());
         form.append("photo", new Blob([buf], { type: "image/png" }), "chart.png");
         form.append("caption", `📊 <b>${nombre}/USDT ${tfLabel}</b> · EMA20 🟡 EMA50 🔵 · OKX`);
         form.append("parse_mode", "HTML");
-        const photoRes = await fetch(`${API()}/sendPhoto`, { method: "POST", body: form });
+        const photoRes  = await fetch(`${API()}/sendPhoto`, { method: "POST", body: form });
         const photoJson = await photoRes.json();
-        // Guardar file_id para adjuntar el gráfico al publicar
         if (photoJson.ok) {
-          const photos = photoJson.result.photo;
-          chartFileId = photos[photos.length - 1].file_id;
+          chartFileId = photoJson.result.photo.at(-1).file_id;
+        } else {
+          console.warn("⚠️ sendPhoto falló:", photoJson.description);
         }
       }
+    } catch (chartErr) {
+      console.warn("⚠️ Gráfico fallido:", chartErr.message);
+      await reply(chatId, `⚠️ No pude generar el gráfico (${chartErr.message}), pero el análisis sigue...`);
     }
 
     // Extraer datos técnicos del TF solicitado
