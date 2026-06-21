@@ -1,36 +1,37 @@
 import React, { useState } from "react";
+import { Zap, Radio, BrainCircuit, Coffee, CalendarDays, ChevronRight } from "lucide-react";
 
 const ACCIONES = [
   {
-    emoji: "⚡",
+    Icon: Zap,
     titulo: "Flash urgente",
     desc: "Noticia importante al canal de inmediato",
     cmd: "flash",
     color: "#f59e0b",
   },
   {
-    emoji: "📡",
+    Icon: Radio,
     titulo: "¿Qué pasa?",
     desc: "Resumen del mercado en este momento",
     cmd: "quepasa",
     color: "#6366f1",
   },
   {
-    emoji: "🧠",
+    Icon: BrainCircuit,
     titulo: "Opinión / Análisis",
     desc: "Analiza una noticia o imagen con Claude",
     cmd: "opinion",
     color: "#8b5cf6",
   },
   {
-    emoji: "☕",
+    Icon: Coffee,
     titulo: "Briefing matinal",
     desc: "Genera y publica el briefing completo",
     cmd: "briefing",
     color: "#f97316",
   },
   {
-    emoji: "📅",
+    Icon: CalendarDays,
     titulo: "Resumen semanal",
     desc: "Resumen de toda la semana con gráfico",
     cmd: "semanal",
@@ -59,28 +60,27 @@ export default function Publish() {
         <p className="text-[11px] opacity-35 mt-0.5">Abre el bot para lanzar la acción.</p>
       </div>
 
-      {ACCIONES.map((a) => (
+      {ACCIONES.map(({ Icon, titulo, desc, cmd, color }) => (
         <button
-          key={a.cmd}
-          onClick={() => handleAction(a.cmd)}
+          key={cmd}
+          onClick={() => handleAction(cmd)}
           className="w-full flex items-center gap-3 p-3 rounded-xl text-left transition-all active:scale-[0.98]"
           style={{
             backgroundColor: "var(--tg-theme-secondary-bg-color, #1a1a24)",
-            opacity: pressed === a.cmd ? 0.7 : 1,
+            opacity: pressed === cmd ? 0.7 : 1,
           }}
         >
-          {/* Icono con fondo de color */}
           <div
-            className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-xl"
-            style={{ backgroundColor: `${a.color}18` }}
+            className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+            style={{ backgroundColor: `${color}18` }}
           >
-            {a.emoji}
+            <Icon size={18} color={color} strokeWidth={2} />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-[13px] font-bold">{a.titulo}</div>
-            <div className="text-[10px] opacity-45 mt-0.5">{a.desc}</div>
+            <div className="text-[13px] font-bold">{titulo}</div>
+            <div className="text-[10px] opacity-45 mt-0.5">{desc}</div>
           </div>
-          <span className="opacity-20 text-lg">›</span>
+          <ChevronRight size={16} className="opacity-20 flex-shrink-0" />
         </button>
       ))}
 

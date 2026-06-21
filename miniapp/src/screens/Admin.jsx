@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { Activity, Image, LayoutList, ChevronRight, Play, Pause } from "lucide-react";
 import { getStatus, pauseBot } from "../api.js";
 
 function Skeleton({ className }) {
@@ -94,13 +95,19 @@ export default function Admin() {
               <button
                 onClick={togglePause}
                 disabled={toggling}
-                className={`px-4 py-2 rounded-xl text-[12px] font-bold transition-all active:scale-95 disabled:opacity-40 ${
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-[12px] font-bold transition-all active:scale-95 disabled:opacity-40 ${
                   status.pausado
                     ? "bg-green-400/15 text-green-400"
                     : "bg-amber-400/15 text-amber-400"
                 }`}
               >
-                {toggling ? "..." : status.pausado ? "Reactivar" : "Pausar"}
+                {toggling ? (
+                  "..."
+                ) : status.pausado ? (
+                  <><Play size={13} strokeWidth={2.5} /> Reactivar</>
+                ) : (
+                  <><Pause size={13} strokeWidth={2.5} /> Pausar</>
+                )}
               </button>
             </div>
 
@@ -156,10 +163,11 @@ export default function Admin() {
           >
             <div className="text-[10px] font-bold opacity-40 mb-2">Accesos rápidos</div>
             {[
-              { label: "Configurar portada briefing", cmd: "/setportada briefing" },
-              { label: "Configurar portada semanal",  cmd: "/setportada semanal" },
-              { label: "Ver estado del bot",          cmd: "/estado" },
-            ].map(({ label, cmd }) => (
+              { label: "Portada del briefing",  Icon: Image,      cmd: "/setportada briefing" },
+              { label: "Portada del semanal",   Icon: Image,      cmd: "/setportada semanal"  },
+              { label: "Ver estado del bot",    Icon: Activity,   cmd: "/estado"              },
+              { label: "Historial de señales",  Icon: LayoutList, cmd: "/historial"           },
+            ].map(({ label, Icon, cmd }) => (
               <button
                 key={cmd}
                 onClick={() => {
@@ -167,11 +175,12 @@ export default function Admin() {
                   const botUsername = import.meta.env.VITE_BOT_USERNAME;
                   if (botUsername) window.Telegram?.WebApp?.openTelegramLink(`https://t.me/${botUsername}`);
                 }}
-                className="w-full text-left py-2.5 border-b last:border-0 text-[12px] flex justify-between items-center active:opacity-60"
+                className="w-full text-left py-2.5 border-b last:border-0 flex items-center gap-2.5 active:opacity-60"
                 style={{ borderColor: "rgba(255,255,255,0.05)" }}
               >
-                <span>{label}</span>
-                <span className="opacity-20 text-base">›</span>
+                <Icon size={14} className="opacity-40 flex-shrink-0" />
+                <span className="text-[12px] flex-1">{label}</span>
+                <ChevronRight size={14} className="opacity-20 flex-shrink-0" />
               </button>
             ))}
           </div>

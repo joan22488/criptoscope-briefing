@@ -1,14 +1,15 @@
 import React, { useState } from "react";
+import { TrendingUp, Crosshair, Megaphone, Settings2 } from "lucide-react";
 import Dashboard from "./screens/Dashboard.jsx";
 import Signals from "./screens/Signals.jsx";
 import Publish from "./screens/Publish.jsx";
 import Admin from "./screens/Admin.jsx";
 
 const TABS = [
-  { id: "dashboard", label: "Mercado",  icon: "📊" },
-  { id: "signals",   label: "Señales",  icon: "🎯" },
-  { id: "publish",   label: "Publicar", icon: "📢" },
-  { id: "admin",     label: "Admin",    icon: "⚙️"  },
+  { id: "dashboard", label: "Mercado",  Icon: TrendingUp  },
+  { id: "signals",   label: "Señales",  Icon: Crosshair   },
+  { id: "publish",   label: "Publicar", Icon: Megaphone   },
+  { id: "admin",     label: "Admin",    Icon: Settings2   },
 ];
 
 const SCREENS = { dashboard: Dashboard, signals: Signals, publish: Publish, admin: Admin };
@@ -38,26 +39,28 @@ export default function App() {
           paddingBottom: "env(safe-area-inset-bottom, 0px)",
         }}
       >
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => handleTab(t.id)}
-            className="flex-1 flex flex-col items-center py-2 gap-0.5 transition-opacity duration-150"
-            style={{ opacity: tab === t.id ? 1 : 0.38 }}
-          >
-            <span className="text-xl leading-none">{t.icon}</span>
-            <span
-              className="text-[10px] font-semibold"
-              style={{
-                color: tab === t.id
-                  ? "var(--tg-theme-button-color, #6366f1)"
-                  : "var(--tg-theme-hint-color, #64748b)",
-              }}
+        {TABS.map(({ id, label, Icon }) => {
+          const active = tab === id;
+          const color = active
+            ? "var(--tg-theme-button-color, #6366f1)"
+            : "var(--tg-theme-hint-color, #64748b)";
+          return (
+            <button
+              key={id}
+              onClick={() => handleTab(id)}
+              className="flex-1 flex flex-col items-center py-2 gap-1 transition-all duration-150"
+              style={{ opacity: active ? 1 : 0.45 }}
             >
-              {t.label}
-            </span>
-          </button>
-        ))}
+              <Icon size={20} color={color} strokeWidth={active ? 2.2 : 1.8} />
+              <span
+                className="text-[10px] font-semibold"
+                style={{ color }}
+              >
+                {label}
+              </span>
+            </button>
+          );
+        })}
       </nav>
     </div>
   );
