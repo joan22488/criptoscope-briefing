@@ -71,6 +71,9 @@ const waitingCover = new Map(); // chatId → pid (esperando foto de portada)
 // ── Hilos pendientes (array de tweets para publicar en X como thread real) ──
 const hilosPendientes = new Map(); // pid → string[]
 
+// ── Señales pendientes de revisión (owner aprueba antes de publicar al canal) ──
+const senalesPendientes = new Map(); // pid → mensaje
+
 // ── Alertas de precio (persistentes) ──────────
 const ALERTAS_FILE = "./data/alertas.json";
 function cargarAlertas() {
@@ -687,45 +690,65 @@ async function cmdCalendario(chatId) {
 }
 
 // /estado — estado del sistema
+const BOT_START_TS = Date.now();
 async function cmdEstado(chatId) {
   const ahora = new Date();
   const madridHora = ahora.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Madrid" });
 
-  const nAlertas = alertasPrecios.filter((a) => a.chatId === chatId).length;
+  const nAlertas     = alertasPrecios.filter((a) => a.chatId === chatId).length;
   const nProgramadas = [...programadas.values()].filter((p) => p.chatId === chatId).length;
+  const nSenalesPend = senalesPendientes.size;
+
+  // Uptime
+  const uptimeSec  = Math.floor((Date.now() - BOT_START_TS) / 1000);
+  const uptimeHoras = Math.floor(uptimeSec / 3600);
+  const uptimeMin   = Math.floor((uptimeSec % 3600) / 60);
+  const uptimeStr   = uptimeHoras > 0 ? `${uptimeHoras}h ${uptimeMin}m` : `${uptimeMin}m`;
+
+  // Próxima señal automática (07/11/15/19)
+  const horaNum = parseInt(ahora.toLocaleTimeString("es-ES", { hour: "2-digit", timeZone: "Europe/Madrid" }));
+  const slots = [7, 11, 15, 19];
+  const proxSlot = slots.find((h) => h > horaNum) ?? slots[0];
+  const esMañana = proxSlot <= horaNum;
+
+  // Stats semana (rápido, sin bloquear)
+  const stats = await generarEstadisticasSemana().catch(() => null);
+  const statsStr = stats?.total
+    ? `📊 Señales semana: ${stats.total}  ·  Win rate <b>${stats.winrate}%</b>  ·  Pendientes: ${stats.pendientes}`
+    : `📊 Sin señales registradas esta semana.`;
 
   const msg =
     `⚙️ <b>Estado CriptoScope</b>\n\n` +
-    `🕐 Hora Madrid: <b>${madridHora}</b>\n` +
+    `🕐 Madrid: <b>${madridHora}</b>  ·  Uptime: <b>${uptimeStr}</b>\n` +
     `${pausado ? "⏸ Publicaciones: <b>PAUSADAS</b>" : "▶️ Publicaciones: <b>ACTIVAS</b>"}\n` +
-    `🔔 Alertas de precio activas: <b>${nAlertas}</b>\n` +
-    `⏰ Publicaciones programadas: <b>${nProgramadas}</b>\n\n` +
+    `🔔 Alertas precio activas: <b>${nAlertas}</b>\n` +
+    `⏰ Publicaciones programadas: <b>${nProgramadas}</b>\n` +
+    `📡 Señales en revisión: <b>${nSenalesPend}</b>\n\n` +
+    statsStr + `\n\n` +
     `<b>Automático:</b>\n` +
     `☕ Briefing: 07:00 diario → Telegram + X\n` +
-    `📊 Señales (7 monedas):\n` +
-    `   🌅 07:00 Radar de apertura — sesgo del día y nivel clave\n` +
-    `   📈 11:00 Pulso técnico — momentum 1H RSI/MACD\n` +
-    `   ⚡ 15:00 On-chain y derivados — funding, OI, posicionamiento\n` +
-    `   🌙 19:00 Cierre europeo — balance del día + nivel asiático\n` +
+    `📊 Señales (7 monedas) → privado para revisión:\n` +
+    `   🌅 07:00  📈 11:00  ⚡ 15:00  🌙 19:00\n` +
+    `   Próxima: <b>${proxSlot}:00${esMañana ? " (mañana)" : ""}</b>\n` +
     `📅 Resumen semanal: domingos 09:00\n` +
     `🚨 Monitor eventos: cada 30 min\n` +
-    `🔔 Check alertas precio: cada 5 min\n` +
-    `📰 Monitor RSS: cada 15 min (CoinDesk · CT · The Block · Decrypt · BeInCrypto · The Defiant)\n` +
-    `   Botones: ⚡ Flash · 📝 Hilo · 🐦 Tweet X (directo a X) · 🙈 Ignorar\n` +
-    `🔔 Señales: alerta privada al owner cuando una señal toca TP1/TP2/SL\n` +
-    `🔗 Webhook TradingView: activo en /webhook/tradingview\n\n` +
-    `<b>Publicación manual (preview + botones):</b>\n` +
-    `<code>/flash</code> · <code>/hilo</code> · <code>/analiza</code> · <code>/opinion</code> · <code>/encuesta</code> · <code>/semanal</code>\n` +
-    `<i>Canal / X / Canal+X / 🟡 Binance Square / 📊 CMC Community</i>\n` +
-    `<i>/analiza incluye gráfico de velas 4H + EMA20/50</i>\n\n` +
-    `<b>Privado (solo te responde a ti):</b>\n` +
+    `🔔 Alertas precio: cada 5 min\n` +
+    `📰 Monitor RSS: cada 15 min\n` +
+    `🌙 Recap diario: 22:00\n\n` +
+    `<b>Publicación manual:</b>\n` +
+    `<code>/flash</code> · <code>/hilo</code> · <code>/analiza</code> · <code>/opinion</code>\n` +
+    `<code>/encuesta</code> · <code>/semanal</code>\n\n` +
+    `<b>Consulta privada:</b>\n` +
     `<code>/precio</code> · <code>/quepasa</code> · <code>/senal</code> · <code>/calendario</code>\n` +
+    `<code>/stats</code> · <code>/historial</code>\n\n` +
+    `<b>Alertas y programadas:</b>\n` +
     `<code>/alerta</code> · <code>/alertas</code> · <code>/borralalerta</code>\n` +
     `<code>/programar</code> · <code>/programadas</code> · <code>/cancelar</code>\n\n` +
     `<b>Sistema:</b>\n` +
     `<code>/pausa</code> · <code>/activa</code> · <code>/estado</code> · <code>/ayuda</code>\n\n` +
-    `<i>📒 Todo queda registrado en Notion (Publicaciones · Señales · Briefings)</i>\n` +
-    (process.env.X_PROFILE_URL ? `🐦 Cuenta X: <a href="${process.env.X_PROFILE_URL}">${process.env.X_PROFILE_URL.replace("https://x.com/", "@")}</a>` : "");
+    `<i>📒 Notion: Publicaciones · Señales · Briefings</i>\n` +
+    `🔗 Webhook TradingView: activo\n` +
+    (process.env.X_PROFILE_URL ? `🐦 <a href="${process.env.X_PROFILE_URL}">${process.env.X_PROFILE_URL.replace("https://x.com/", "@")}</a>` : "");
   await reply(chatId, msg);
 }
 
@@ -1248,6 +1271,24 @@ Devuelve SOLO título + salto de línea + cuerpo. Sin comillas, sin etiquetas, s
     );
 
     guardarPublicacionEnNotion({ tipo, titulo, texto: msg, plataforma, conPortada: !!portadas.get(pid), estado: "Formateado" }).catch(() => {});
+  }
+
+  if (data.startsWith("pub_senal:")) {
+    const pid = data.slice(10);
+    const msg = senalesPendientes.get(pid);
+    if (!msg) return reply(chatId, "❌ La señal ya expiró (>90 min) o ya fue publicada.");
+    await quitarBotones();
+    senalesPendientes.delete(pid);
+    await enviarTelegram(msg);
+    await reply(chatId, "✅ Señal publicada en el canal.");
+    guardarPublicacionEnNotion({ tipo: "Señal", titulo: "Señal técnica automática", texto: msg, plataforma: "Canal", estado: "Publicado" }).catch(() => {});
+  }
+
+  if (data.startsWith("del_senal:")) {
+    const pid = data.slice(10);
+    senalesPendientes.delete(pid);
+    await quitarBotones();
+    await reply(chatId, "🗑 Señal descartada.");
   }
 }
 
@@ -1946,6 +1987,7 @@ async function procesarMensaje(msg) {
       case "/encuesta":     await cmdEncuesta(chatId, argStr); break;
       case "/semanal":      await cmdSemanal(chatId); break;
       case "/stats":        await cmdStats(chatId); break;
+      case "/historial":    await cmdHistorial(chatId); break;
       case "/ayuda":
       case "/help":         await cmdAyuda(chatId, argStr); break;
       default:
@@ -1972,6 +2014,63 @@ async function cmdStats(chatId) {
     `⏳ Pendientes: ${stats.pendientes}  ·  Expiradas: ${stats.expiradas}\n\n` +
     `<b>Win rate: ${stats.winrate}%</b>  <i>(${wins}W / ${losses}L)</i>`
   );
+}
+
+// Envía señal al owner con botón de revisión antes de publicar al canal
+export async function enviarSenalParaRevisar(mensaje) {
+  const ownerId = OWNER();
+  if (!ownerId) {
+    // Sin owner configurado → publicar directamente
+    await enviarTelegram(mensaje);
+    return;
+  }
+  const pid = `senal_${Date.now().toString(36)}`;
+  senalesPendientes.set(pid, mensaje);
+  setTimeout(() => senalesPendientes.delete(pid), 90 * 60 * 1000); // expira en 90 min
+
+  await fetch(`${API()}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: ownerId,
+      text: mensaje + `\n\n──────────────\n<i>⏳ Revisión previa. ¿Publico esto en el canal?</i>`,
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+      reply_markup: {
+        inline_keyboard: [[
+          { text: "📢 Publicar en canal", callback_data: `pub_senal:${pid}` },
+          { text: "❌ Descartar", callback_data: `del_senal:${pid}` },
+        ]],
+      },
+    }),
+  });
+}
+
+// /historial — últimas 10 señales con resultado
+async function cmdHistorial(chatId) {
+  const stats = await generarEstadisticasSemana().catch(() => null);
+  if (!stats?.senales?.length) return reply(chatId, "📊 Sin señales registradas esta semana.\n\nUsa /stats para ver el resumen.");
+
+  const ultimas = [...stats.senales]
+    .sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
+    .slice(0, 10);
+
+  let msg = `📋 <b>Historial de señales — últimas ${ultimas.length}</b>\n\n`;
+  for (const s of ultimas) {
+    const fecha = new Date(s.fecha).toLocaleDateString("es-ES", { day: "numeric", month: "short", timeZone: process.env.TIMEZONE || "Europe/Madrid" });
+    const hora  = new Date(s.fecha).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit", timeZone: process.env.TIMEZONE || "Europe/Madrid" });
+    const res   = s.resultado === "PENDIENTE" ? "⏳" : s.resultado === "EXPIRADO" ? "⌛" :
+                  s.resultado?.includes("TP2") ? "✅✅ TP2" : s.resultado?.includes("TP1") ? "✅ TP1" :
+                  s.resultado?.includes("SL")  ? "❌ SL"   : "❓";
+    const op    = s.op === "LONG" ? "🟢 LONG" : s.op === "SHORT" ? "🔴 SHORT" : "⏸";
+    msg += `${res}  <b>${s.symbol}</b> ${op}  <i>${fecha} ${hora}</i>\n`;
+    if (s.entrada) msg += `   Entrada <b>${s.entrada}</b>  TP1 ${s.tp1 || "?"}  SL ${s.sl || "?"}\n`;
+    msg += "\n";
+  }
+
+  const wins = stats.tp1 + stats.tp2;
+  msg += `──────────────\n📊 Semana: ${stats.total} señales  ·  Win rate <b>${stats.winrate}%</b>  <i>(${wins}W / ${stats.sl}L)</i>`;
+  await reply(chatId, msg);
 }
 
 // Recap diario privado al owner — llamado desde index.js a las 22:00
@@ -2037,8 +2136,11 @@ export async function iniciarBot() {
         { command: "programar",    description: "Programar flash/hilo/opinion a una hora" },
         { command: "programadas",  description: "Ver publicaciones programadas pendientes" },
         { command: "cancelar",     description: "Cancelar una publicación programada" },
-        { command: "encuesta",     description: "Generar encuesta para el canal basada en el mercado" },
-        { command: "ayuda",        description: "Guía detallada de todos los comandos" },
+        { command: "encuesta",   description: "Generar encuesta para el canal basada en el mercado" },
+        { command: "semanal",    description: "Resumen semanal con preview + botones" },
+        { command: "stats",      description: "Rendimiento de señales últimos 7 días" },
+        { command: "historial",  description: "Últimas 10 señales con entrada, TP y resultado" },
+        { command: "ayuda",      description: "Guía detallada de todos los comandos" },
       ],
     }),
   }).catch(() => {});

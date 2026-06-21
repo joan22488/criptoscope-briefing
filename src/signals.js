@@ -262,14 +262,15 @@ DATOS: ` + JSON.stringify(datos);
   try {
     return aplicarSanitizacion(JSON.parse(limpio));
   } catch (e) {
-    // Rescue: extract BTC and ETH blocks individually
+    // Rescue: extraer bloque de cada símbolo de forma dinámica
+    const otrosSyms = syms.map((s) => `"${s}"`).join("|");
     const rescatar = (sym) => {
-      const raw = limpio.match(new RegExp(`"${sym}"\\s*:(\\{[\\s\\S]*?)(?="BTC"|"ETH"|"SOL"|$)`))?.[1] || "";
+      const raw = limpio.match(new RegExp(`"${sym}"\\s*:(\\{[\\s\\S]*?)(?=${otrosSyms}|$)`))?.[1] || "";
       const str = (c) => { const m = raw.match(new RegExp(`"${c}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*?)"`)); return m?.[1] || null; };
       const num = (c) => { const m = raw.match(new RegExp(`"${c}"\\s*:\\s*([0-9.]+)`)); return m ? parseFloat(m[1]) : null; };
       return { sesgo: str("sesgo") || "sin datos", op: str("op") || "ESPERAR", por_que: str("por_que") || "", entrada: num("entrada"), tp1: num("tp1"), tp2: num("tp2"), sl: num("sl"), rr: str("rr"), tamano: str("tamano") || "REDUCIDO", cuando: str("cuando") || "", alerta: str("alerta") };
     };
-    return { BTC: rescatar("BTC"), ETH: rescatar("ETH"), SOL: rescatar("SOL") };
+    return Object.fromEntries(syms.map((s) => [s, rescatar(s)]));
   }
 }
 

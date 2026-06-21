@@ -4,6 +4,7 @@
 // ============================================================
 
 import Anthropic from "@anthropic-ai/sdk";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
 import { getNews } from "./coindesk.js";
 
 const client = new Anthropic();
@@ -21,8 +22,23 @@ const KEYWORDS_CRITICAS = [
   "tether", "usdt", "usdc", "depeg",
 ];
 
-// Cache de noticias ya alertadas (evita duplicados en la misma sesión)
-const alertadas = new Set();
+// Cache persistente de noticias ya alertadas — sobrevive reinicios
+const ALERTADAS_FILE = "./data/alertadas.json";
+function cargarAlertadas() {
+  try {
+    if (!existsSync(ALERTADAS_FILE)) return new Map();
+    const entries = JSON.parse(readFileSync(ALERTADAS_FILE, "utf8"));
+    const limite = Date.now() - 24 * 60 * 60 * 1000;
+    return new Map(entries.filter(([, ts]) => ts > limite));
+  } catch { return new Map(); }
+}
+function guardarAlertadas() {
+  try {
+    if (!existsSync("./data")) mkdirSync("./data", { recursive: true });
+    writeFileSync(ALERTADAS_FILE, JSON.stringify([...alertadas.entries()]));
+  } catch {}
+}
+const alertadas = cargarAlertadas(); // Map: key → timestamp
 
 export async function verificarAlertas() {
   try {
@@ -56,8 +72,8 @@ ${nuevas.slice(0, 5).map((n) => `- ${n.titulo}: ${n.resumen?.slice(0, 150)}`).jo
     const resultado = JSON.parse(txt.slice(inicio, fin + 1));
 
     if (resultado.urgente) {
-      // Marcar como alertadas
-      nuevas.forEach((n) => alertadas.add(n.titulo?.toLowerCase().slice(0, 60)));
+      nuevas.forEach((n) => alertadas.set(n.titulo?.toLowerCase().slice(0, 60), Date.now()));
+      guardarAlertadas();
       return `🚨 <b>ALERTA CRIPTOSCOPE</b>\n\n${resultado.alerta}`;
     }
 

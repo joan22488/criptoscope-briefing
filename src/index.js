@@ -12,7 +12,7 @@ import { verificarAlertas } from "./alerts.js";
 import { enviarTelegram } from "./telegram.js";
 import { verificarResultados } from "./tracker.js";
 import { getPrices } from "./coindesk.js";
-import { iniciarBot, isPausado, verificarAlertasPrecios, monitorNoticias, ejecutarRecapDiario } from "./bot.js";
+import { iniciarBot, isPausado, verificarAlertasPrecios, monitorNoticias, ejecutarRecapDiario, enviarSenalParaRevisar } from "./bot.js";
 import { iniciarWebhookServer } from "./webhook.js";
 
 const horario = process.env.CRON_SCHEDULE || "0 7 * * *";
@@ -65,7 +65,7 @@ cron.schedule(
     if (isPausado()) return console.log("⏸ Señales omitidas (pausado)");
     try {
       const { mensaje } = await ejecutarAnalisisTecnico();
-      await enviarTelegram(mensaje);
+      await enviarSenalParaRevisar(mensaje); // → owner revisa antes de publicar al canal
     } catch (e) {
       console.error("❌ Error en análisis técnico:", e.message);
       await alertarOwner(`⚠️ <b>Análisis técnico fallido</b>\n<code>${e.message.slice(0, 300)}</code>`);
