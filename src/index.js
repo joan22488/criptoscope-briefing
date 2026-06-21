@@ -9,6 +9,7 @@ import { ejecutarBriefing } from "./pipeline.js";
 import { ejecutarAnalisisTecnico } from "./signals.js";
 import { ejecutarResumenSemanal } from "./weekly.js";
 import { verificarAlertas } from "./alerts.js";
+import { getEventosMacro, formatearResumenSemana } from "./calendar.js";
 import { enviarTelegram, enviarTelegramConFoto, enviarTelegramConFotoId } from "./telegram.js";
 import { getPortadaFija } from "./portadas_fijas.js";
 import { verificarResultados } from "./tracker.js";
@@ -27,6 +28,7 @@ console.log("  CRIPTOSCOPE - Modo automático");
 console.log(`  Briefing:  ${horario} (${zona})`);
 console.log(`  Señales:   ${horarioSenales} (${zona})`);
 console.log(`  Semanal:   ${horarioSemanal} (${zona})`);
+console.log(`  Macro lun: 0 8 * * 1 (${zona})`);
 console.log(`  Alertas:   ${horarioAlertas}`);
 console.log(`  Bot:       activo (long-polling)`);
 console.log("═══════════════════════════════════════");
@@ -154,6 +156,24 @@ cron.schedule("*/5 * * * *", async () => {
 // Monitor de noticias — cada 15 minutos
 cron.schedule("*/15 * * * *", async () => {
   await monitorNoticias().catch((e) => console.warn("⚠️  Monitor noticias:", e.message));
+}, { timezone: zona });
+
+// Resumen macro semanal al canal — lunes 8:00
+cron.schedule("0 8 * * 1", async () => {
+  if (isPausado()) return console.log("⏸ Macro lunes omitido (pausado)");
+  try {
+    const eventos = await getEventosMacro();
+    const msg = formatearResumenSemana(eventos);
+    if (msg) {
+      await enviarTelegram(msg);
+      console.log("📅 Resumen macro semanal enviado al canal");
+    } else {
+      console.log("📅 Sin eventos macro relevantes esta semana — no se publica");
+    }
+  } catch (e) {
+    console.error("❌ Error en macro lunes:", e.message);
+    await alertarOwner(`⚠️ <b>Macro lunes fallido</b>\n<code>${e.message.slice(0, 300)}</code>`);
+  }
 }, { timezone: zona });
 
 // Recap diario privado al owner — 22:00

@@ -153,9 +153,9 @@ export default function Admin() {
                   className="py-2 border-b last:border-0"
                   style={{ borderColor: "rgba(255,255,255,0.05)" }}
                 >
-                  <div className="text-[12px] font-bold">{e.titulo}</div>
+                  <div className="text-[12px] font-bold">{e.title}</div>
                   <div className="text-[10px] opacity-35 mt-0.5">
-                    {e.cuando} · {e.hora} ET
+                    {e.cuando} · {e.time || "—"} ET
                   </div>
                 </div>
               ))}

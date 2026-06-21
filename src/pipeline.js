@@ -114,7 +114,7 @@ export async function generarBriefing() {
     bloqueMacro = `\n\n─────────────────\n⚠️ <b>Macro a vigilar</b>\n`;
     for (const e of [...(eventosMacro.hoy || []), ...(eventosMacro.manana || [])]) {
       const cuando = eventosMacro.hoy?.includes(e) ? "HOY" : "MAÑANA";
-      bloqueMacro += `• <b>${e.titulo}</b> — ${cuando} ${e.hora} ET\n`;
+      bloqueMacro += `• <b>${e.title}</b> — ${cuando} ${e.time || "?"} ET\n`;
     }
   }
 

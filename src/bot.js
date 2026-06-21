@@ -7,7 +7,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
 import { getMarketContext, getPrices, getFearGreed, getGlobalMarket } from "./coindesk.js";
 import { analizarSymbol, generarSenal, getVelas, calcEMA } from "./signals.js";
-import { getEventosMacro, formatearAlertaMacro } from "./calendar.js";
+import { getEventosMacro, formatearAlertaMacro, formatearResumenSemana } from "./calendar.js";
 import { publicarThread, subirImagenX } from "./twitter-post.js";
 import { enviarTelegram } from "./telegram.js";
 import { ejecutarResumenSemanal } from "./weekly.js";
@@ -707,12 +707,12 @@ async function cmdSenal(chatId, symbolRaw) {
   }
 }
 
-// /calendario — eventos macro próximos (privado)
+// /calendario — resumen macro de toda la semana (privado)
 async function cmdCalendario(chatId) {
   try {
     const eventos = await getEventosMacro();
-    const msg = formatearAlertaMacro(eventos);
-    await reply(chatId, msg || "📅 No hay eventos macro importantes esta semana");
+    const msg = formatearResumenSemana(eventos);
+    await reply(chatId, msg || "📅 No hay eventos macro relevantes esta semana");
   } catch (e) {
     await reply(chatId, `❌ Error obteniendo calendario: ${e.message}`);
   }
