@@ -150,6 +150,16 @@ export async function generarEstadisticasSemana() {
   return { total, longs, shorts, tp1, tp2, sl, pendientes, expiradas, winrate, senales };
 }
 
+export async function obtenerTodasLasSenales(limite = 50) {
+  if (USA_NOTION) {
+    try { return await obtenerSenalesSemana(); } catch { return []; }
+  }
+  const todas = leerSeñalesLocales();
+  return [...todas]
+    .sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
+    .slice(0, limite);
+}
+
 export function formatearEstadisticas(stats) {
   if (!stats || stats.total === 0) return "";
 

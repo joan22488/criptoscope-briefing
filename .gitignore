@@ -2,3 +2,6 @@ node_modules/
 .env
 output/
 *.log
+data/
+dist/
+miniapp/dist/

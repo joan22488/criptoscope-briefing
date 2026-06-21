@@ -60,6 +60,25 @@ const hilosPendientes = new Map(); // pid → string[]
 // ── Señales pendientes de revisión (owner aprueba antes de publicar al canal) ──
 const senalesPendientes = new Map(); // pid → mensaje
 
+// Expuestas para la Mini App API
+export const getSenalesPendientesReview = () =>
+  [...senalesPendientes.entries()].map(([pid, mensaje]) => ({ pid, mensaje }));
+
+export async function publicarSenalPendiente(pid) {
+  const msg = senalesPendientes.get(pid);
+  if (!msg) return false;
+  senalesPendientes.delete(pid);
+  await enviarTelegram(msg);
+  guardarPublicacionEnNotion({ tipo: "Señal", titulo: "Señal técnica automática", texto: msg, plataforma: "Canal", estado: "Publicado" }).catch(() => {});
+  return true;
+}
+
+export function descartarSenalPendiente(pid) {
+  const ok = senalesPendientes.has(pid);
+  senalesPendientes.delete(pid);
+  return ok;
+}
+
 // ── Alertas de precio (persistentes) ──────────
 const ALERTAS_FILE = "./data/alertas.json";
 function cargarAlertas() {

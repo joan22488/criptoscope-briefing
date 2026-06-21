@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CriptoScope — Manual del Sistema</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a1a; background: #fff; font-size: 14px; line-height: 1.7; }
+
+  /* PORTADA */
+  .cover { min-height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; padding: 80px; background: #0a0a0a; color: #fff; page-break-after: always; }
+  .cover-logo { font-size: 11px; letter-spacing: 4px; text-transform: uppercase; color: #888; margin-bottom: 60px; }
+  .cover-title { font-size: 64px; font-weight: 700; line-height: 1.1; margin-bottom: 20px; }
+  .cover-title span { color: #f0a500; }
+  .cover-subtitle { font-size: 20px; color: #aaa; font-weight: 300; margin-bottom: 60px; max-width: 520px; line-height: 1.5; }
+  .cover-meta { display: flex; gap: 40px; }
+  .cover-meta-item { }
+  .cover-meta-item .label { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: #555; margin-bottom: 4px; }
+  .cover-meta-item .value { font-size: 14px; color: #ccc; }
+  .cover-line { width: 60px; height: 3px; background: #f0a500; margin-bottom: 40px; }
+  .cover-badge { display: inline-flex; gap: 8px; margin-top: 60px; }
+  .badge { background: #1a1a1a; border: 1px solid #333; border-radius: 4px; padding: 6px 14px; font-size: 11px; color: #888; letter-spacing: 1px; }
+  .badge.active { border-color: #f0a500; color: #f0a500; }
+
+  /* LAYOUT */
+  .page { padding: 60px 80px; max-width: 900px; margin: 0 auto; }
+  .page-break { page-break-before: always; }
+
+  /* ÍNDICE */
+  .toc { }
+  .toc-title { font-size: 11px; letter-spacing: 3px; text-transform: uppercase; color: #888; margin-bottom: 40px; padding-bottom: 16px; border-bottom: 1px solid #eee; }
+  .toc-section { margin-bottom: 8px; }
+  .toc-section a { display: flex; align-items: baseline; gap: 8px; text-decoration: none; color: #1a1a1a; font-size: 15px; padding: 8px 0; border-bottom: 1px solid #f5f5f5; transition: color 0.15s; }
+  .toc-section a:hover { color: #f0a500; }
+  .toc-section a .num { font-size: 11px; color: #bbb; min-width: 24px; }
+  .toc-section a .dots { flex: 1; border-bottom: 1px dotted #ddd; margin: 0 8px; position: relative; top: -4px; }
+  .toc-section a .page-n { font-size: 12px; color: #bbb; }
+  .toc-sub { padding-left: 36px; }
+  .toc-sub a { font-size: 13px; color: #666; padding: 4px 0; }
+
+  /* SECCIONES */
+  .section-header { margin-bottom: 40px; padding-bottom: 20px; border-bottom: 2px solid #f0a500; }
+  .section-num { font-size: 11px; letter-spacing: 3px; text-transform: uppercase; color: #f0a500; margin-bottom: 8px; }
+  .section-title { font-size: 32px; font-weight: 700; color: #0a0a0a; line-height: 1.2; }
+  .section-desc { font-size: 15px; color: #666; margin-top: 12px; max-width: 600px; }
+
+  h2 { font-size: 20px; font-weight: 600; color: #0a0a0a; margin: 40px 0 16px; }
+  h3 { font-size: 15px; font-weight: 600; color: #333; margin: 28px 0 12px; text-transform: uppercase; letter-spacing: 1px; }
+  p { margin-bottom: 14px; color: #444; }
+
+  /* TABLAS */
+  table { width: 100%; border-collapse: collapse; margin: 20px 0 32px; font-size: 13px; }
+  th { background: #0a0a0a; color: #fff; padding: 10px 14px; text-align: left; font-weight: 500; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; }
+  td { padding: 10px 14px; border-bottom: 1px solid #f0f0f0; color: #444; vertical-align: top; }
+  tr:hover td { background: #fafafa; }
+  td code { background: #f5f5f5; padding: 2px 6px; border-radius: 3px; font-family: 'Courier New', monospace; font-size: 12px; color: #c00; }
+
+  /* BLOQUES */
+  .highlight-box { background: #fff8e6; border-left: 4px solid #f0a500; padding: 16px 20px; margin: 20px 0; border-radius: 0 6px 6px 0; }
+  .highlight-box p { color: #5a4000; margin: 0; font-size: 14px; }
+  .info-box { background: #f0f7ff; border-left: 4px solid #2563eb; padding: 16px 20px; margin: 20px 0; border-radius: 0 6px 6px 0; }
+  .info-box p { color: #1e3a6e; margin: 0; font-size: 14px; }
+
+  /* CARDS DE COMANDOS */
+  .cmd-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0; }
+  .cmd-card { border: 1px solid #eee; border-radius: 8px; padding: 16px; }
+  .cmd-card .cmd-name { font-family: 'Courier New', monospace; font-size: 14px; font-weight: 700; color: #0a0a0a; margin-bottom: 6px; }
+  .cmd-card .cmd-desc { font-size: 12px; color: #666; line-height: 1.5; }
+  .cmd-card .cmd-example { font-family: 'Courier New', monospace; font-size: 11px; color: #888; margin-top: 8px; background: #f9f9f9; padding: 4px 8px; border-radius: 3px; }
+  .cmd-card.pub { border-top: 3px solid #f0a500; }
+  .cmd-card.priv { border-top: 3px solid #2563eb; }
+  .cmd-card.sys { border-top: 3px solid #888; }
+
+  /* ARQUITECTURA */
+  .arch-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 20px 0; }
+  .arch-item { background: #fafafa; border: 1px solid #eee; border-radius: 6px; padding: 14px; }
+  .arch-item .file { font-family: 'Courier New', monospace; font-size: 12px; color: #c00; font-weight: 600; margin-bottom: 4px; }
+  .arch-item .desc { font-size: 11px; color: #777; line-height: 1.4; }
+
+  /* CRON TIMELINE */
+  .timeline { margin: 20px 0; }
+  .timeline-item { display: flex; gap: 20px; padding: 14px 0; border-bottom: 1px solid #f0f0f0; align-items: flex-start; }
+  .timeline-time { font-family: 'Courier New', monospace; font-size: 13px; font-weight: 700; color: #f0a500; min-width: 120px; }
+  .timeline-desc { font-size: 13px; color: #444; }
+  .timeline-desc strong { color: #0a0a0a; }
+
+  /* ENV VARS */
+  .env-group { margin: 24px 0; }
+  .env-group-title { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: #888; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #f0f0f0; }
+  .env-row { display: flex; gap: 16px; padding: 8px 0; border-bottom: 1px solid #f9f9f9; align-items: baseline; }
+  .env-key { font-family: 'Courier New', monospace; font-size: 12px; color: #c00; font-weight: 600; min-width: 220px; }
+  .env-val { font-size: 12px; color: #666; }
+  .env-required { font-size: 10px; background: #fff0e0; color: #c05000; border-radius: 3px; padding: 1px 6px; margin-left: auto; white-space: nowrap; }
+  .env-optional { font-size: 10px; background: #f0f0f0; color: #888; border-radius: 3px; padding: 1px 6px; margin-left: auto; white-space: nowrap; }
+
+  /* COSTES */
+  .cost-total { background: #0a0a0a; color: #fff; padding: 20px 24px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; margin-top: 20px; }
+  .cost-total .label { font-size: 13px; color: #888; }
+  .cost-total .amount { font-size: 28px; font-weight: 700; color: #f0a500; }
+
+  /* FOOTER */
+  .footer { margin-top: 80px; padding-top: 24px; border-top: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+  .footer p { font-size: 11px; color: #bbb; margin: 0; }
+
+  /* PRINT */
+  @media print {
+    body { font-size: 12px; }
+    .cover { min-height: 100vh; }
+    .page { padding: 40px 60px; }
+    .page-break { page-break-before: always; }
+    a { color: inherit; text-decoration: none; }
+    .cmd-grid { grid-template-columns: 1fr 1fr; }
+    .arch-grid { grid-template-columns: repeat(3, 1fr); }
+  }
+</style>
+</head>
+<body>
+
+<!-- PORTADA -->
+<div class="cover">
+  <div class="cover-logo">Sistema de Inteligencia Cripto</div>
+  <div class="cover-line"></div>
+  <div class="cover-title">Cripto<span>Scope</span></div>
+  <div class="cover-subtitle">Plataforma automatizada de análisis, señales técnicas y publicación de contenido cripto mediante inteligencia artificial</div>
+  <div class="cover-meta">
+    <div class="cover-meta-item">
+      <div class="label">Versión</div>
+      <div class="value">2.0 — Junio 2026</div>
+    </div>
+    <div class="cover-meta-item">
+      <div class="label">Plataforma</div>
+      <div class="value">Railway Cloud</div>
+    </div>
+    <div class="cover-meta-item">
+      <div class="label">Motor IA</div>
+      <div class="value">Claude Sonnet 4.6</div>
+    </div>
+  </div>
+  <div class="cover-badge">
+    <span class="badge active">EN PRODUCCIÓN</span>
+    <span class="badge">Node.js ES Modules</span>
+    <span class="badge">Telegram Bot API</span>
+    <span class="badge">OKX · CoinGecko</span>
+  </div>
+</div>
+
+<!-- ÍNDICE -->
+<div class="page page-break">
+  <div class="toc">
+    <div class="toc-title">Contenido</div>
+    <div class="toc-section"><a href="#s1"><span class="num">01</span>Visión general del sistema<span class="dots"></span><span class="page-n">3</span></a></div>
+    <div class="toc-section"><a href="#s2"><span class="num">02</span>Arquitectura y ficheros<span class="dots"></span><span class="page-n">4</span></a></div>
+    <div class="toc-section"><a href="#s3"><span class="num">03</span>Publicación automática<span class="dots"></span><span class="page-n">5</span></a></div>
+    <div class="toc-section"><a href="#s4"><span class="num">04</span>Bot de Telegram — comandos<span class="dots"></span><span class="page-n">6</span></a></div>
+    <div class="toc-section"><a href="#s5"><span class="num">05</span>Análisis técnico (signals.js)<span class="dots"></span><span class="page-n">8</span></a></div>
+    <div class="toc-section"><a href="#s6"><span class="num">06</span>Fuentes de datos<span class="dots"></span><span class="page-n">9</span></a></div>
+    <div class="toc-section"><a href="#s7"><span class="num">07</span>Variables de entorno<span class="dots"></span><span class="page-n">10</span></a></div>
+    <div class="toc-section"><a href="#s8"><span class="num">08</span>Instalación y despliegue<span class="dots"></span><span class="page-n">11</span></a></div>
+    <div class="toc-section"><a href="#s9"><span class="num">09</span>Costes y mantenimiento<span class="dots"></span><span class="page-n">12</span></a></div>
+  </div>
+</div>
+
+<!-- 01 VISIÓN GENERAL -->
+<div class="page page-break" id="s1">
+  <div class="section-header">
+    <div class="section-num">01</div>
+    <div class="section-title">Visión general</div>
+    <div class="section-desc">Un sistema que monitoriza el mercado cripto 24/7, genera análisis con IA y publica automáticamente en Telegram y X.</div>
+  </div>
+
+  <p>CriptoScope es una plataforma completa que combina datos de mercado en tiempo real, análisis técnico multi-timeframe y generación de contenido con inteligencia artificial. El sistema opera de forma autónoma en la nube y puede controlarse íntegramente desde Telegram.</p>
+
+  <h2>Qué hace el sistema</h2>
+  <div class="timeline">
+    <div class="timeline-item">
+      <div class="timeline-time">07:00 diario</div>
+      <div class="timeline-desc"><strong>Briefing matinal completo</strong> — análisis de mercado, noticias destacadas, Fear&Greed, señales técnicas y pregunta para la comunidad. Se publica en Telegram y X como thread.</div>
+    </div>
+    <div class="timeline-item">
+      <div class="timeline-time">07 · 11 · 15 · 19h</div>
+      <div class="timeline-desc"><strong>Señales técnicas BTC/ETH/SOL</strong> — análisis top-down 1D→4H→1H→15m con RSI, MACD, EMA, pivots y funding rate. LONG / SHORT / ESPERAR con entrada, TP y SL.</div>
+    </div>
+    <div class="timeline-item">
+      <div class="timeline-time">Cada 5 min</div>
+      <div class="timeline-desc"><strong>Monitor de alertas de precio</strong> — verifica los niveles guardados con <code>/alerta</code> y notifica en privado cuando se alcanzan.</div>
+    </div>
+    <div class="timeline-item">
+      <div class="timeline-time">Cada 15 min</div>
+      <div class="timeline-desc"><strong>Monitor de noticias RSS</strong> — revisa CoinDesk. Si detecta una noticia con tus keywords la envía en privado con botones para publicar al instante.</div>
+    </div>
+    <div class="timeline-item">
+      <div class="timeline-time">Cada 30 min</div>
+      <div class="timeline-desc"><strong>Alertas de eventos macro</strong> y <strong>verificación de señales pendientes</strong> — backtesting automático contra precio real.</div>
+    </div>
+    <div class="timeline-item">
+      <div class="timeline-time">Domingos 09:00</div>
+      <div class="timeline-desc"><strong>Resumen semanal</strong> — estadísticas de señales, aciertos/fallos, contexto de la semana y outlook para los próximos días.</div>
+    </div>
+    <div class="timeline-item">
+      <div class="timeline-time">Bajo demanda</div>
+      <div class="timeline-desc"><strong>Bot de Telegram</strong> — 16 comandos para publicar contenido, consultas privadas, alertas de precio, encuestas y publicaciones programadas.</div>
+    </div>
+  </div>
+</div>
+
+<!-- 02 ARQUITECTURA -->
+<div class="page page-break" id="s2">
+  <div class="section-header">
+    <div class="section-num">02</div>
+    <div class="section-title">Arquitectura</div>
+    <div class="section-desc">Módulos independientes en Node.js ES Modules. Cada fichero tiene una responsabilidad única.</div>
+  </div>
+
+  <div class="arch-grid">
+    <div class="arch-item"><div class="file">index.js</div><div class="desc">Punto de entrada. Arranca todos los crons y el bot en paralelo.</div></div>
+    <div class="arch-item"><div class="file">bot.js</div><div class="desc">Bot de Telegram. Long-polling, 16 comandos, callbacks de botones.</div></div>
+    <div class="arch-item"><div class="file">pipeline.js</div><div class="desc">Orquesta el briefing matinal: reúne datos, llama a Claude, publica.</div></div>
+    <div class="arch-item"><div class="file">signals.js</div><div class="desc">Análisis técnico top-down. Descarga velas de OKX, calcula indicadores, genera señal con Claude.</div></div>
+    <div class="arch-item"><div class="file">coindesk.js</div><div class="desc">Precios, Fear&Greed, dominancia BTC, gainers/losers vía CoinGecko. Noticias vía RSS.</div></div>
+    <div class="arch-item"><div class="file">weekly.js</div><div class="desc">Resumen semanal con estadísticas de señales del tracker.</div></div>
+    <div class="arch-item"><div class="file">alerts.js</div><div class="desc">Monitor de eventos macro de alto impacto (ForexFactory).</div></div>
+    <div class="arch-item"><div class="file">tracker.js</div><div class="desc">Registro y backtesting de señales. Guarda en Notion o en signals.json.</div></div>
+    <div class="arch-item"><div class="file">calendar.js</div><div class="desc">Calendario económico ForexFactory — CPI, NFP, FOMC, Fed.</div></div>
+    <div class="arch-item"><div class="file">notion.js</div><div class="desc">Integración Notion v5 — briefings y señales en bases de datos.</div></div>
+    <div class="arch-item"><div class="file">telegram.js</div><div class="desc">Envío chunked a Telegram. Split en párrafos → líneas → caracteres.</div></div>
+    <div class="arch-item"><div class="file">twitter-post.js</div><div class="desc">Threads en X vía OAuth 1.0a. CTA de Telegram al final de cada hilo.</div></div>
+    <div class="arch-item"><div class="file">twitter.js</div><div class="desc">Lectura de tweets de cuentas clave vía Nitter RSS (contexto para Claude).</div></div>
+    <div class="arch-item"><div class="file">reddit.js</div><div class="desc">Señales de comunidad vía Hacker News API.</div></div>
+    <div class="arch-item"><div class="file">prompts.js</div><div class="desc">Voz editorial CriptoScope. Plantillas JSON para todos los módulos.</div></div>
+    <div class="arch-item"><div class="file">output.js</div><div class="desc">Guardado local de briefings en archivos.</div></div>
+  </div>
+
+  <div class="info-box">
+    <p><strong>Despliegue:</strong> Railway Cloud (Europe West). Sin puertos expuestos. Restart automático en fallo. El bot corre en long-polling concurrente con los crons mediante <code>iniciarBot()</code> no bloqueante.</p>
+  </div>
+</div>
+
+<!-- 03 PUBLICACIÓN AUTOMÁTICA -->
+<div class="page page-break" id="s3">
+  <div class="section-header">
+    <div class="section-num">03</div>
+    <div class="section-title">Publicación automática</div>
+    <div class="section-desc">Todo lo que el sistema publica sin intervención manual.</div>
+  </div>
+
+  <h2>Briefing matinal (07:00)</h2>
+  <p>El pipeline recoge en paralelo: precios BTC/ETH/SOL, Fear&Greed Index, dominancia BTC, top gainers/losers, liquidaciones 24h, funding rate, noticias de CoinDesk, tweets de cuentas clave, señales de Hacker News y calendario macro. Claude genera un paquete editorial completo con voz de trader: briefing, thread de 5 tweets para X, guion de vídeo y pregunta para la comunidad. Se publica en Telegram con HTML enriquecido y en X como thread real encadenado.</p>
+
+  <h2>Señales técnicas (07 · 11 · 15 · 19h)</h2>
+  <p>Análisis top-down de BTC, ETH y SOL. Se descargan 120 velas de OKX en cada timeframe (1D, 4H, 1H, 15m), se calculan todos los indicadores y Claude genera una señal con entrada, TP1, TP2, SL y ratio R:R. Las señales con entrada definida se registran automáticamente para backtesting.</p>
+
+  <h2>Backtesting automático (cada 30 min)</h2>
+  <p>Cada señal registrada se verifica contra el precio real. Al tocar TP1, TP2 o SL el sistema lo registra en Notion y envía el resultado al canal. Las señales expiran a las 48 horas.</p>
+
+  <h2>Resumen semanal (domingos 09:00)</h2>
+  <p>Estadísticas de la semana: señales emitidas, tasa de acierto, mejor y peor trade, análisis del mercado de la semana y outlook para los próximos días.</p>
+
+  <div class="highlight-box">
+    <p><strong>Control de pausa:</strong> todos los crons respetan <code>isPausado()</code>. Con <code>/pausa</code> se detienen todas las publicaciones automáticas sin apagar el servidor. El bot sigue respondiendo comandos privados.</p>
+  </div>
+</div>
+
+<!-- 04 BOT DE TELEGRAM -->
+<div class="page page-break" id="s4">
+  <div class="section-header">
+    <div class="section-num">04</div>
+    <div class="section-title">Bot de Telegram</div>
+    <div class="section-desc">16 comandos accesibles desde el chat privado con el bot. Sin necesidad de abrir ninguna app adicional.</div>
+  </div>
+
+  <h3>Publican en canal + X</h3>
+  <div class="cmd-grid">
+    <div class="cmd-card pub">
+      <div class="cmd-name">/flash &lt;tema&gt;</div>
+      <div class="cmd-desc">Alerta urgente al canal y X. Claude analiza el tema con precio actual y Fear&Greed.</div>
+      <div class="cmd-example">/flash BlackRock compra 10.000 BTC</div>
+    </div>
+    <div class="cmd-card pub">
+      <div class="cmd-name">/hilo &lt;tema | URL&gt;</div>
+      <div class="cmd-desc">Thread de 5 tweets. Si pasas una URL, descarga y lee el artículo real antes de generar.</div>
+      <div class="cmd-example">/hilo qué es el halving<br>/hilo https://coindesk.com/...</div>
+    </div>
+    <div class="cmd-card pub">
+      <div class="cmd-name">/analiza &lt;coin&gt;</div>
+      <div class="cmd-desc">Análisis técnico completo de cualquier par. Top-down 1D→4H→1H→15m. Publica en canal.</div>
+      <div class="cmd-example">/analiza AVAX · /analiza DOGE</div>
+    </div>
+    <div class="cmd-card pub">
+      <div class="cmd-name">/opinion &lt;noticia&gt;</div>
+      <div class="cmd-desc">CriptoScope opina sobre un hecho con perspectiva de trader. Canal + X.</div>
+      <div class="cmd-example">/opinion Ethereum ETF aprobado</div>
+    </div>
+    <div class="cmd-card pub">
+      <div class="cmd-name">/encuesta [tema]</div>
+      <div class="cmd-desc">Genera una encuesta nativa de Telegram basada en el mercado actual. Preview con botones para aprobar, regenerar o cancelar.</div>
+      <div class="cmd-example">/encuesta · /encuesta BTC esta semana</div>
+    </div>
+  </div>
+
+  <h3>Solo responden en privado</h3>
+  <div class="cmd-grid">
+    <div class="cmd-card priv">
+      <div class="cmd-name">/precio &lt;coin&gt;</div>
+      <div class="cmd-desc">Precio actual con máx/mín 24h y volumen. No publica nada.</div>
+      <div class="cmd-example">/precio BTC · /precio ETH</div>
+    </div>
+    <div class="cmd-card priv">
+      <div class="cmd-name">/quepasa</div>
+      <div class="cmd-desc">Resumen del mercado ahora en 3-4 frases directas. Solo para ti.</div>
+      <div class="cmd-example">/quepasa</div>
+    </div>
+    <div class="cmd-card priv">
+      <div class="cmd-name">/senal &lt;coin&gt;</div>
+      <div class="cmd-desc">Señal técnica privada idéntica a /analiza pero sin publicar en el canal.</div>
+      <div class="cmd-example">/senal ETH · /senal SOL</div>
+    </div>
+    <div class="cmd-card priv">
+      <div class="cmd-name">/calendario</div>
+      <div class="cmd-desc">Eventos macro de la semana: Fed, CPI, NFP, FOMC con fecha y hora Madrid.</div>
+      <div class="cmd-example">/calendario</div>
+    </div>
+    <div class="cmd-card priv">
+      <div class="cmd-name">/alerta &lt;coin&gt; &lt;precio&gt;</div>
+      <div class="cmd-desc">Aviso privado cuando la coin llegue al nivel. Persiste aunque el servidor se reinicie.</div>
+      <div class="cmd-example">/alerta BTC 70000 · /alerta ETH &lt;1800</div>
+    </div>
+    <div class="cmd-card priv">
+      <div class="cmd-name">/alertas · /borralalerta</div>
+      <div class="cmd-desc">Lista las alertas activas o elimina una por número.</div>
+      <div class="cmd-example">/alertas · /borralalerta 1</div>
+    </div>
+    <div class="cmd-card priv">
+      <div class="cmd-name">/programar &lt;tipo&gt; &lt;HH:MM&gt; &lt;tema&gt;</div>
+      <div class="cmd-desc">Programa un flash, hilo u opinión para que se publique a una hora exacta (Madrid).</div>
+      <div class="cmd-example">/programar flash 18:00 BlackRock</div>
+    </div>
+    <div class="cmd-card priv">
+      <div class="cmd-name">/programadas · /cancelar</div>
+      <div class="cmd-desc">Lista publicaciones pendientes o cancela una por ID.</div>
+      <div class="cmd-example">/programadas · /cancelar 3</div>
+    </div>
+  </div>
+
+  <h3>Análisis de fotos (sin comando)</h3>
+  <p>Manda una captura de pantalla de cualquier noticia al bot. Claude verifica la credibilidad (VERIFICADA / PROBABLE / DUDOSA / FALSA), genera un análisis al estilo CriptoScope y te ofrece publicarlo en canal + X o guardarlo solo para ti. Si mandas una foto de un comentario con el pie "responde", Claude te redacta una respuesta directa sin publicarla.</p>
+
+  <h3>Monitor automático de noticias</h3>
+  <p>Cada 15 minutos el sistema revisa CoinDesk RSS. Cuando detecta una noticia con tus keywords configuradas, te la envía en privado con tres botones: <strong>⚡ Publicar flash</strong>, <strong>📝 Hacer hilo</strong> o <strong>🙈 Ignorar</strong>. Un clic y el contenido se genera y publica sin escribir nada más.</p>
+
+  <h3>Sistema</h3>
+  <div class="cmd-grid">
+    <div class="cmd-card sys">
+      <div class="cmd-name">/estado</div>
+      <div class="cmd-desc">Estado completo: hora Madrid, publicaciones activas/pausadas, alertas activas, programadas pendientes y próximos crons.</div>
+    </div>
+    <div class="cmd-card sys">
+      <div class="cmd-name">/pausa · /activa</div>
+      <div class="cmd-desc">Pausa o reanuda todas las publicaciones automáticas. El bot sigue respondiendo comandos privados.</div>
+    </div>
+    <div class="cmd-card sys">
+      <div class="cmd-name">/ayuda [comando]</div>
+      <div class="cmd-desc">Guía completa con detalle de cada comando. /ayuda flash para explicación extendida.</div>
+    </div>
+  </div>
+</div>
+
+<!-- 05 ANÁLISIS TÉCNICO -->
+<div class="page page-break" id="s5">
+  <div class="section-header">
+    <div class="section-num">05</div>
+    <div class="section-title">Análisis técnico</div>
+    <div class="section-desc">Metodología top-down multi-timeframe implementada en signals.js.</div>
+  </div>
+
+  <h2>Metodología top-down</h2>
+  <table>
+    <tr><th>Timeframe</th><th>Rol</th><th>Indicadores</th></tr>
+    <tr><td><strong>1D</strong></td><td>Filtra la tendencia macro. Si el Daily está bajista, no se buscan LONGs.</td><td>RSI 14, EMA 20/50, MACD, divergencias</td></tr>
+    <tr><td><strong>4H</strong></td><td>Confirma estructura. Pivots calculados aquí (R1, R2, S1, S2).</td><td>RSI 14, EMA 20/50, MACD, niveles pivot</td></tr>
+    <tr><td><strong>1H</strong></td><td>Valida RSI/MACD. Las divergencias en 1H/4H reducen el tamaño de posición.</td><td>RSI 14, MACD 12/26/9, divergencias RSI y MACD</td></tr>
+    <tr><td><strong>15m</strong></td><td>Gatillo de entrada. Precio de referencia para la señal.</td><td>RSI 14, EMA 20/50, soporte/resistencia local</td></tr>
+  </table>
+
+  <h2>Indicadores calculados</h2>
+  <table>
+    <tr><th>Indicador</th><th>Parámetros</th><th>Zonas clave</th></tr>
+    <tr><td>RSI</td><td>Período 14</td><td>OB &gt;70 · OS &lt;30 · Reset 40-60</td></tr>
+    <tr><td>MACD</td><td>12 / 26 / 9</td><td>Cruce señal, posición respecto a cero, dirección histograma</td></tr>
+    <tr><td>EMA</td><td>20 y 50 períodos</td><td>Precio sobre/bajo EMA, cruce de EMAs</td></tr>
+    <tr><td>Pivots</td><td>Últimas 20 velas 4H</td><td>Pivot, R1, R2, S1, S2</td></tr>
+    <tr><td>Divergencias RSI</td><td>Ventana 20 velas</td><td>Alcista / bajista</td></tr>
+    <tr><td>Divergencias MACD</td><td>Ventana 10 velas</td><td>Agotamiento de tendencia</td></tr>
+    <tr><td>Funding rate</td><td>OKX perpetuos</td><td>Sesgo del mercado de derivados</td></tr>
+  </table>
+
+  <h2>Salida de la señal</h2>
+  <table>
+    <tr><th>Campo</th><th>Descripción</th></tr>
+    <tr><td><code>op</code></td><td>LONG / SHORT / ESPERAR</td></tr>
+    <tr><td><code>sesgo</code></td><td>Frase directa del contexto de mercado</td></tr>
+    <tr><td><code>entrada</code></td><td>Nivel de precio de entrada</td></tr>
+    <tr><td><code>tp1 · tp2</code></td><td>Dos objetivos de beneficio</td></tr>
+    <tr><td><code>sl</code></td><td>Stop loss</td></tr>
+    <tr><td><code>rr</code></td><td>Ratio riesgo/beneficio (mínimo 1:1.5)</td></tr>
+    <tr><td><code>tamano</code></td><td>NORMAL o REDUCIDO (si hay divergencia en 1H/4H)</td></tr>
+    <tr><td><code>cuando</code></td><td>Condición o nivel para activar la entrada</td></tr>
+  </table>
+
+  <div class="highlight-box">
+    <p>Las velas provienen de OKX API pública (<code>/api/v5/market/candles</code>). Binance devuelve HTTP 451 desde Railway (restricción geográfica). OKX no tiene restricciones y su API es gratuita sin necesidad de cuenta.</p>
+  </div>
+</div>
+
+<!-- 06 FUENTES DE DATOS -->
+<div class="page page-break" id="s6">
+  <div class="section-header">
+    <div class="section-num">06</div>
+    <div class="section-title">Fuentes de datos</div>
+    <div class="section-desc">Todas las fuentes son gratuitas salvo CoinGecko (plan Demo gratuito con API key).</div>
+  </div>
+
+  <table>
+    <tr><th>Dato</th><th>Fuente</th><th>Endpoint</th><th>Coste</th></tr>
+    <tr><td>Precios BTC/ETH/SOL</td><td>CoinGecko Demo API</td><td>/simple/price</td><td>Gratis</td></tr>
+    <tr><td>Gainers / Losers 24h</td><td>CoinGecko Demo API</td><td>/coins/markets</td><td>Gratis</td></tr>
+    <tr><td>Dominancia BTC + market cap</td><td>CoinGecko Demo API</td><td>/global</td><td>Gratis</td></tr>
+    <tr><td>Fear & Greed Index</td><td>alternative.me</td><td>/fng/</td><td>Gratis</td></tr>
+    <tr><td>Velas 1D / 4H / 1H / 15m</td><td>OKX API pública</td><td>/market/candles</td><td>Gratis</td></tr>
+    <tr><td>Funding rate perpetuos</td><td>OKX API pública</td><td>/public/funding-rate</td><td>Gratis</td></tr>
+    <tr><td>Open Interest</td><td>OKX API pública</td><td>/public/open-interest</td><td>Gratis</td></tr>
+    <tr><td>Noticias cripto</td><td>CoinDesk RSS</td><td>RSS feed</td><td>Gratis</td></tr>
+    <tr><td>Tweets de cuentas clave</td><td>Nitter RSS</td><td>Varios mirrors</td><td>Gratis</td></tr>
+    <tr><td>Señales de comunidad</td><td>Hacker News API</td><td>/topstories</td><td>Gratis</td></tr>
+    <tr><td>Calendario económico</td><td>ForexFactory RSS</td><td>ff_calendar_thisweek.xml</td><td>Gratis</td></tr>
+  </table>
+
+  <div class="info-box">
+    <p><strong>CoinGecko Demo API:</strong> 10.000 créditos/mes. El sistema usa aproximadamente 64 créditos/mes con 3 llamadas paralelas en el briefing matinal. Límite de velocidad: 100 llamadas/minuto. Requiere header <code>x-cg-demo-api-key</code>.</p>
+  </div>
+
+  <h2>Notas técnicas</h2>
+  <p><strong>OKX devuelve velas newest-first.</strong> Se aplica <code>.reverse()</code> para obtener orden cronológico antes de calcular indicadores.</p>
+  <p><strong>Parser JSON de dos capas.</strong> Claude a veces devuelve JSON con formato incorrecto. El sistema extrae primero el bloque <code>{...}</code> y si falla aplica regex campo a campo.</p>
+  <p><strong>Chunking de Telegram.</strong> Los mensajes se dividen en trozos de máximo 4000 caracteres respetando primero párrafos (<code>\n\n</code>), luego líneas (<code>\n</code>) y por caracteres como último recurso.</p>
+  <p><strong>Notion SDK v5.</strong> La versión 5 eliminó <code>databases.query()</code>. Se usa <code>notion.request()</code> directamente contra la REST API.</p>
+</div>
+
+<!-- 07 VARIABLES DE ENTORNO -->
+<div class="page page-break" id="s7">
+  <div class="section-header">
+    <div class="section-num">07</div>
+    <div class="section-title">Variables de entorno</div>
+    <div class="section-desc">Configuración completa del sistema. Las obligatorias son las mínimas para arrancar.</div>
+  </div>
+
+  <div class="env-group">
+    <div class="env-group-title">Obligatorias</div>
+    <div class="env-row"><span class="env-key">ANTHROPIC_API_KEY</span><span class="env-val">console.anthropic.com → API Keys</span><span class="env-required">requerida</span></div>
+    <div class="env-row"><span class="env-key">TELEGRAM_BOT_TOKEN</span><span class="env-val">@BotFather en Telegram → /newbot</span><span class="env-required">requerida</span></div>
+    <div class="env-row"><span class="env-key">TELEGRAM_CHAT_ID</span><span class="env-val">ID del canal (con prefijo -100). Reenviar mensaje a @userinfobot</span><span class="env-required">requerida</span></div>
+  </div>
+
+  <div class="env-group">
+    <div class="env-group-title">Recomendadas</div>
+    <div class="env-row"><span class="env-key">COINGECKO_API_KEY</span><span class="env-val">coingecko.com/en/developers → plan Demo gratuito</span><span class="env-optional">recomendada</span></div>
+    <div class="env-row"><span class="env-key">TELEGRAM_OWNER_ID</span><span class="env-val">Tu chat ID personal. Escríbele a @userinfobot para obtenerlo</span><span class="env-optional">recomendada</span></div>
+    <div class="env-row"><span class="env-key">MONITOR_KEYWORDS</span><span class="env-val">Keywords para el monitor RSS, separadas por coma. Default: ETF,BlackRock,SEC...</span><span class="env-optional">opcional</span></div>
+  </div>
+
+  <div class="env-group">
+    <div class="env-group-title">X / Twitter</div>
+    <div class="env-row"><span class="env-key">X_API_KEY</span><span class="env-val">developer.twitter.com → Consumer Key</span><span class="env-optional">opcional</span></div>
+    <div class="env-row"><span class="env-key">X_API_SECRET</span><span class="env-val">Consumer Secret</span><span class="env-optional">opcional</span></div>
+    <div class="env-row"><span class="env-key">X_ACCESS_TOKEN</span><span class="env-val">Access Token (generar en la misma sesión que el par anterior)</span><span class="env-optional">opcional</span></div>
+    <div class="env-row"><span class="env-key">X_ACCESS_SECRET</span><span class="env-val">Access Token Secret</span><span class="env-optional">opcional</span></div>
+  </div>
+
+  <div class="env-group">
+    <div class="env-group-title">Notion</div>
+    <div class="env-row"><span class="env-key">NOTION_TOKEN</span><span class="env-val">notion.so/my-integrations → crear integración</span><span class="env-optional">opcional</span></div>
+    <div class="env-row"><span class="env-key">NOTION_BRIEFINGS_DB</span><span class="env-val">ID de la base de datos de briefings (desde URL de Notion)</span><span class="env-optional">opcional</span></div>
+    <div class="env-row"><span class="env-key">NOTION_SIGNALS_DB</span><span class="env-val">ID de la base de datos de señales técnicas</span><span class="env-optional">opcional</span></div>
+  </div>
+
+  <div class="env-group">
+    <div class="env-group-title">Configuración</div>
+    <div class="env-row"><span class="env-key">CLAUDE_MODEL</span><span class="env-val">claude-sonnet-4-6 (default)</span><span class="env-optional">opcional</span></div>
+    <div class="env-row"><span class="env-key">TIMEZONE</span><span class="env-val">Europe/Madrid (default)</span><span class="env-optional">opcional</span></div>
+    <div class="env-row"><span class="env-key">TELEGRAM_CANAL_URL</span><span class="env-val">URL pública del canal para el CTA en threads de X</span><span class="env-optional">opcional</span></div>
+    <div class="env-row"><span class="env-key">CRON_SCHEDULE</span><span class="env-val">0 7 * * * (briefing matinal)</span><span class="env-optional">opcional</span></div>
+    <div class="env-row"><span class="env-key">SIGNALS_SCHEDULE</span><span class="env-val">0 7,11,15,19 * * * (señales 4 veces al día)</span><span class="env-optional">opcional</span></div>
+    <div class="env-row"><span class="env-key">WEEKLY_SCHEDULE</span><span class="env-val">0 9 * * 0 (resumen domingos)</span><span class="env-optional">opcional</span></div>
+  </div>
+</div>
+
+<!-- 08 INSTALACIÓN -->
+<div class="page page-break" id="s8">
+  <div class="section-header">
+    <div class="section-num">08</div>
+    <div class="section-title">Instalación y despliegue</div>
+    <div class="section-desc">Pasos para montar el sistema desde cero o republicarlo en un nuevo entorno.</div>
+  </div>
+
+  <h2>1. Preparar el entorno local</h2>
+  <table>
+    <tr><th>Paso</th><th>Comando</th></tr>
+    <tr><td>Clonar repo</td><td><code>git clone &lt;url&gt; &amp;&amp; cd criptoscope-briefing</code></td></tr>
+    <tr><td>Instalar dependencias</td><td><code>npm install</code></td></tr>
+    <tr><td>Crear .env</td><td><code>cp .env.example .env</code> y rellenar las variables</td></tr>
+    <tr><td>Probar briefing</td><td><code>npm run once</code></td></tr>
+    <tr><td>Probar señales</td><td><code>npm run signals</code></td></tr>
+    <tr><td>Modo producción</td><td><code>npm start</code> (crons + bot)</td></tr>
+  </table>
+
+  <h2>2. Crear el bot de Telegram</h2>
+  <p>Busca <code>@BotFather</code> en Telegram → <code>/newbot</code> → elige nombre y username → copia el token en <code>TELEGRAM_BOT_TOKEN</code>. Crea el canal, añade el bot como administrador con permisos de publicar. Para obtener el ID del canal: reenvía un mensaje del canal a <code>@userinfobot</code>. Para tu ID personal: escríbele directamente a <code>@userinfobot</code>.</p>
+
+  <h2>3. Despliegue en Railway</h2>
+  <table>
+    <tr><th>Paso</th><th>Comando</th></tr>
+    <tr><td>Instalar CLI</td><td><code>npm install -g @railway/cli</code></td></tr>
+    <tr><td>Login</td><td><code>railway login</code></td></tr>
+    <tr><td>Vincular proyecto</td><td><code>railway link</code> → seleccionar proyecto</td></tr>
+    <tr><td>Subir variables</td><td><code>railway variables set KEY=value</code></td></tr>
+    <tr><td>Desplegar</td><td><code>railway up --service &lt;nombre-servicio&gt;</code></td></tr>
+  </table>
+
+  <div class="highlight-box">
+    <p><strong>Configuración recomendada Railway:</strong> Region Europe West · Restart policy: On failure · Sin puertos expuestos. Para despliegues futuros basta con ejecutar <code>railway up --service adaptable-happiness</code> desde la carpeta del proyecto.</p>
+  </div>
+
+  <h2>4. Scripts npm</h2>
+  <table>
+    <tr><th>Script</th><th>Qué hace</th></tr>
+    <tr><td><code>npm start</code></td><td>Modo producción: crons activos + bot en long-polling</td></tr>
+    <tr><td><code>npm run once</code></td><td>Ejecuta el briefing una vez y sale</td></tr>
+    <tr><td><code>npm run signals</code></td><td>Ejecuta solo el análisis técnico y sale</td></tr>
+    <tr><td><code>npm run weekly</code></td><td>Ejecuta solo el resumen semanal y sale</td></tr>
+  </table>
+</div>
+
+<!-- 09 COSTES -->
+<div class="page page-break" id="s9">
+  <div class="section-header">
+    <div class="section-num">09</div>
+    <div class="section-title">Costes y mantenimiento</div>
+    <div class="section-desc">Estimación mensual con uso normal del sistema en producción.</div>
+  </div>
+
+  <table>
+    <tr><th>Servicio</th><th>Plan</th><th>Uso estimado</th><th>Coste/mes</th></tr>
+    <tr><td>Claude API (Anthropic)</td><td>Pay per use</td><td>1 briefing/día + 4 señales/día + comandos bot</td><td>~$3–8</td></tr>
+    <tr><td>Railway</td><td>Hobby</td><td>Servidor 24/7, Europe West</td><td>$5</td></tr>
+    <tr><td>CoinGecko</td><td>Demo (gratis)</td><td>~64 créditos/mes de 10.000 disponibles</td><td>$0</td></tr>
+    <tr><td>X / Twitter API</td><td>Pay Per Use</td><td>~30–60 tweets/mes (briefings + comandos)</td><td>~$1–2</td></tr>
+    <tr><td>Notion</td><td>Free</td><td>Briefings + señales técnicas</td><td>$0</td></tr>
+    <tr><td>OKX API</td><td>Pública</td><td>Ilimitado, sin cuenta necesaria</td><td>$0</td></tr>
+    <tr><td>ForexFactory RSS</td><td>Pública</td><td>Sin límites conocidos</td><td>$0</td></tr>
+    <tr><td>alternative.me</td><td>Pública</td><td>Fear&Greed, sin límites</td><td>$0</td></tr>
+  </table>
+
+  <div class="cost-total">
+    <div>
+      <div class="label">Coste total estimado</div>
+      <div style="font-size:12px; color:#555; margin-top:4px;">Sistema completo en producción · uso normal</div>
+    </div>
+    <div class="amount">$9–15 / mes</div>
+  </div>
+
+  <h2>Mantenimiento habitual</h2>
+  <table>
+    <tr><th>Tarea</th><th>Frecuencia</th><th>Cómo</th></tr>
+    <tr><td>Revisar señales activas</td><td>Diaria</td><td><code>/estado</code> en el bot o Notion</td></tr>
+    <tr><td>Ajustar keywords monitor noticias</td><td>Según necesidad</td><td>Variable <code>MONITOR_KEYWORDS</code> en Railway</td></tr>
+    <tr><td>Verificar créditos CoinGecko</td><td>Mensual</td><td>Dashboard coingecko.com/en/developers</td></tr>
+    <tr><td>Actualizar código</td><td>Según necesidad</td><td><code>railway up --service adaptable-happiness</code></td></tr>
+    <tr><td>Revisar logs Railway</td><td>Según necesidad</td><td>Dashboard Railway → Deployments → Logs</td></tr>
+  </table>
+
+  <div class="footer">
+    <p>CriptoScope — Manual del Sistema v2.0</p>
+    <p>Junio 2026 · Confidencial</p>
+  </div>
+</div>
+
+</body>
+</html>
