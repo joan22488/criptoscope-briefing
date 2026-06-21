@@ -974,7 +974,8 @@ async function procesarCallback(callback) {
       const fileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${fileJson.result.file_path}`;
       const imgRes = await fetch(fileUrl);
       const buffer = Buffer.from(await imgRes.arrayBuffer());
-      return await subirImagenX(buffer, "image/jpeg");
+      const bufferConLogo = await aplicarLogo(buffer);
+      return await subirImagenX(bufferConLogo, "image/png");
     } catch (e) {
       console.warn("⚠️ No se pudo subir portada a X:", e.message);
       return null;
