@@ -645,8 +645,8 @@ async function cmdPrecio(chatId, coin) {
   );
 }
 
-// /quepasa — resumen del mercado ahora mismo (privado)
-async function cmdQuePasa(chatId) {
+// /quepasa — resumen del mercado ahora mismo + botones de publicación
+async function cmdQuePasa(chatId, portadaFileId = null) {
   await reply(chatId, "🔍 Revisando el mercado...");
   const [precios, fearGreed, globalMarket] = await Promise.all([
     getPrices().catch(() => ({})),
@@ -664,7 +664,12 @@ async function cmdQuePasa(chatId) {
     }],
   });
 
-  await reply(chatId, `📡 <b>Mercado ahora</b>\n\n${response.content[0].text.trim()}`);
+  const msg = `📡 <b>MERCADO AHORA | CriptoScope</b>\n\n${limpiarDashes(response.content[0].text.trim())}\n\n<i>Análisis educativo · no es consejo financiero</i>`;
+  const pid = Date.now().toString(36);
+  pendingPublish.set(pid, msg);
+  if (portadaFileId) portadas.set(pid, portadaFileId);
+  setTimeout(() => { pendingPublish.delete(pid); portadas.delete(pid); }, 30 * 60 * 1000);
+  await mostrarBotonesPublicacion(chatId, pid, msg);
 }
 
 // /senal <SYMBOL> — señal técnica privada sin publicar
@@ -1355,7 +1360,8 @@ async function cmdAyuda(chatId, cmd) {
       ejemplo: "/quepasa",
       detalle:
         "Claude revisa BTC, ETH, SOL, Fear&Greed Index y dominancia BTC en tiempo real y te da un resumen de 3-4 frases: qué domina el mercado, si hay momentum o no, y qué vigilar ahora mismo.\n\n" +
-        "Consulta privada — no publica en el canal. Perfecto para cuando llevas horas sin mirar el mercado y quieres ponerte al día en segundos.",
+        "Muestra botones para publicar en canal o en X, igual que /flash o /hilo. También puedes añadir portada.\n\n" +
+        "📸 <b>Con portada:</b> manda una foto con <code>/quepasa</code> en el pie.",
     },
     senal: {
       titulo: "🔒 /senal — Señal técnica privada",
@@ -2057,7 +2063,7 @@ async function procesarMensaje(msg) {
     }
 
     // ¿Foto con comando en el pie → usar como portada del contenido generado?
-    const cmdPortada = cap.match(/^\/?(flash|hilo|opinion|analiza)\s+(.+)/i);
+    const cmdPortada = cap.match(/^\/?(flash|hilo|opinion|analiza|quepasa)\s*(.*)/i);
     if (cmdPortada) {
       const tipo = cmdPortada[1].toLowerCase();
       const argPortada = cmdPortada[2].trim();
@@ -2067,6 +2073,7 @@ async function procesarMensaje(msg) {
         else if (tipo === "hilo") await cmdHilo(chatId, argPortada, fileId);
         else if (tipo === "opinion") await cmdOpinion(chatId, argPortada, fileId);
         else if (tipo === "analiza") await cmdAnaliza(chatId, argPortada, fileId);
+        else if (tipo === "quepasa") await cmdQuePasa(chatId, fileId);
       } catch (e) {
         await reply(chatId, `❌ Error: ${e.message}`);
       }
