@@ -52,6 +52,32 @@ export async function subirImagenX(buffer, mimeType = "image/jpeg") {
   return mediaId;
 }
 
+// Publica un único tweet con hashtags automáticos (para briefing y señales)
+export async function publicarTweetUnico(texto, { mediaId } = {}) {
+  if (!process.env.X_API_KEY) {
+    console.log("ℹ️  X posting no configurado — saltando");
+    return null;
+  }
+
+  const client   = getClient();
+  const rwClient = client.readWrite;
+  const limpiar  = (t) => t.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
+
+  const hashtags = generarHashtagsBriefing([texto]);
+  const cuerpo   = limpiar(texto);
+
+  // Reservar espacio para los hashtags al final
+  const espacio      = 280 - hashtags.length - 2; // 2 = "\n\n"
+  const cuerpoFinal  = cuerpo.length <= espacio ? cuerpo : cuerpo.slice(0, espacio - 3).replace(/\s+\S*$/, "...");
+  const tweetFinal   = `${cuerpoFinal}\n\n${hashtags}`;
+
+  const payload = mediaId ? { media: { media_ids: [mediaId] } } : undefined;
+  const result  = await rwClient.v2.tweet(tweetFinal, payload);
+
+  console.log(`✅ Tweet publicado en X`);
+  return result.data.id;
+}
+
 export async function publicarThread(tweets, { mediaId } = {}) {
   if (!process.env.X_API_KEY) {
     console.log("ℹ️  X posting no configurado — saltando");

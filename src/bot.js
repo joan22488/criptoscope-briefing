@@ -8,7 +8,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
 import { getMarketContext, getPrices, getFearGreed, getGlobalMarket } from "./coindesk.js";
 import { analizarSymbol, generarSenal, getVelas, calcEMA } from "./signals.js";
 import { getEventosMacro, formatearAlertaMacro, formatearResumenSemana } from "./calendar.js";
-import { publicarThread, subirImagenX } from "./twitter-post.js";
+import { publicarThread, publicarTweetUnico, subirImagenX } from "./twitter-post.js";
 import { enviarTelegram } from "./telegram.js";
 import { ejecutarResumenSemanal } from "./weekly.js";
 import { guardarPublicacionEnNotion } from "./notion.js";
@@ -391,9 +391,7 @@ async function cmdAnaliza(chatId, symbolRaw, portadaFileId = null) {
     const pid = Date.now().toString(36);
     pendingPublish.set(pid, msg);
     if (portadaFileId) portadas.set(pid, portadaFileId);
-    setTimeout(() => { pendingPublish.delete(pid); portadas.delete(pid); hilosPendientes.delete(pid); }, 30 * 60 * 1000);
-
-    generarMiniHiloX(msg).then((tweets) => { if (tweets?.length) hilosPendientes.set(pid, tweets); }).catch(() => {});
+    setTimeout(() => { pendingPublish.delete(pid); portadas.delete(pid); }, 30 * 60 * 1000);
 
     // Gráfico de velas 4H con EMA20/EMA50/volumen via quickchart.io
     if (datos.velas4h?.length) {
@@ -642,10 +640,7 @@ PROHIBIDO: guiones medios o largos (– o —), 🚀💎🙌, clickbait, consejo
   const pid = Date.now().toString(36);
   pendingPublish.set(pid, msg);
   if (portadaFileId) portadas.set(pid, portadaFileId);
-  setTimeout(() => { pendingPublish.delete(pid); portadas.delete(pid); hilosPendientes.delete(pid); }, 30 * 60 * 1000);
-
-  // Generar mini-hilo para X en paralelo (no bloquea la preview)
-  generarMiniHiloX(msg).then((tweets) => { if (tweets?.length) hilosPendientes.set(pid, tweets); }).catch(() => {});
+  setTimeout(() => { pendingPublish.delete(pid); portadas.delete(pid); }, 30 * 60 * 1000);
 
   await mostrarBotonesPublicacion(chatId, pid, msg);
 }
@@ -692,9 +687,7 @@ async function cmdQuePasa(chatId, portadaFileId = null) {
   const pid = Date.now().toString(36);
   pendingPublish.set(pid, msg);
   if (portadaFileId) portadas.set(pid, portadaFileId);
-  setTimeout(() => { pendingPublish.delete(pid); portadas.delete(pid); hilosPendientes.delete(pid); }, 30 * 60 * 1000);
-
-  generarMiniHiloX(msg).then((tweets) => { if (tweets?.length) hilosPendientes.set(pid, tweets); }).catch(() => {});
+  setTimeout(() => { pendingPublish.delete(pid); portadas.delete(pid); }, 30 * 60 * 1000);
 
   await mostrarBotonesPublicacion(chatId, pid, msg);
 }
@@ -1048,65 +1041,37 @@ async function procesarCallback(callback) {
     }
   };
 
-  // Tweet único para /flash — urgente, impacto inmediato, máximo 270 chars
+  // Genera UN tweet para X — aprovecha los 270-280 chars al máximo con el ángulo más potente
   const generarTweetX = async (texto) => {
     const limpio = texto.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
     try {
       const res = await client.messages.create({
         model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
-        max_tokens: 300,
+        max_tokens: 400,
         messages: [{
           role: "user",
-          content: `Eres el redactor de X/Twitter de CriptoScope.
+          content: `Eres el redactor de X/Twitter de CriptoScope, análisis cripto en español.
 
-Contenido:
-${limpio.slice(0, 1500)}
+Contenido del análisis:
+${limpio.slice(0, 2000)}
 
-Escribe UN tweet de alerta urgente. Formato: 1 frase de gancho (el dato o hecho más impactante, ≤110 chars) + salto de línea + 1 frase de contexto/implicación (≤150 chars). Total: 240-270 caracteres.
-1 emoji al inicio del gancho si refuerza el impacto (🚨⚠️📊🔴🟢). Sin HTML. Sin guiones largos. Sin links. Sin "canal de Telegram".
+Escribe UN único tweet de 260-278 caracteres. No es un resumen: elige el ángulo MÁS POTENTE del análisis y desarróllalo completamente. Aprovecha cada carácter.
 
-Devuelve SOLO las dos frases. Sin comillas, sin etiquetas.`,
+Estructura (todo en un bloque continuo con salto de línea en el medio):
+— GANCHO (90-110 chars): el dato más impactante, la paradoja o el hecho que crea tensión. Para el scroll. NO empieces con "Hoy", "El mercado", el nombre de la coin ni "CriptoScope". 1 emoji si refuerza (🚨📊⚠️🔴🟢).
+— DESARROLLO (160-170 chars): qué implica ese dato para el precio, qué patrón hay detrás, nivel clave a vigilar. Datos concretos. Termina con una pregunta corta a la comunidad O con una afirmación que invite a debatir.
+
+Sin HTML. Sin guiones largos (– o —). Sin links. Sin mencionar "canal de Telegram".
+
+Devuelve SOLO el tweet. Sin comillas, sin etiquetas, sin explicaciones.`,
         }],
       });
-      const tweet = res.content[0].text.trim();
+      const tweet = limpiarDashes(res.content[0].text.trim());
       return tweet.length <= 280 ? tweet : tweet.slice(0, 277).replace(/\s+\S*$/, "...");
     } catch {
       const lineas = limpio.split("\n").filter((l) => l.length > 30 && /[a-záéíóúñ]/.test(l) && !["CriptoScope", "consejo financiero", "FLASH", "ALERTA"].some((e) => l.toUpperCase().includes(e)));
       const fb = lineas[0] || limpio;
       return fb.length <= 280 ? fb : fb.slice(0, 277).replace(/\s+\S*$/, "...");
-    }
-  };
-
-  // Mini-hilo de 3 tweets para análisis (/opinion, /analiza, /quepasa)
-  // Hook → análisis → nivel/pregunta
-  const generarMiniHiloX = async (texto) => {
-    const limpio = texto.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
-    try {
-      const res = await client.messages.create({
-        model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
-        max_tokens: 600,
-        messages: [{
-          role: "user",
-          content: `Eres el redactor de X/Twitter de CriptoScope, cuenta de análisis cripto en español.
-
-Contenido del análisis:
-${limpio.slice(0, 2500)}
-
-Genera un mini-hilo de 3 tweets. Sin HTML. Sin guiones largos (– o —). Sin links. Cada tweet entre 210-275 caracteres.
-
-Tweet 1 — HOOK: El dato o conclusión más impactante para parar el scroll. Empieza con el número clave, la paradoja o el hecho más llamativo. PROHIBIDO empezar con: "Hoy", "El mercado", el nombre de la coin, "CriptoScope". 1 emoji al inicio si refuerza (🚨📊⚠️🔴🟢). Crea una brecha de información: el lector necesita leer el 2.
-Tweet 2 — ANÁLISIS: El por qué. Qué implica para el precio, qué patrón hay detrás, qué está pasando realmente. Datos concretos. Voz directa.
-Tweet 3 — NIVEL O PREGUNTA: El nivel exacto a vigilar y por qué es clave. O una pregunta concreta que la comunidad pueda responder en 5 palabras (elección forzada, predicción de precio, sí/no con contexto).
-
-Devuelve SOLO JSON: {"tweets": ["tweet1", "tweet2", "tweet3"]}`,
-        }],
-      });
-      const txt = res.content[0].text;
-      const json = txt.slice(txt.indexOf("{"), txt.lastIndexOf("}") + 1);
-      const parsed = JSON.parse(json);
-      return parsed.tweets?.map((t) => limpiarDashes(t.trim()).slice(0, 280)) || null;
-    } catch {
-      return null;
     }
   };
 
@@ -1133,19 +1098,17 @@ Devuelve SOLO JSON: {"tweets": ["tweet1", "tweet2", "tweet3"]}`,
     if (destino === "x" || destino === "ambos") {
       const mediaId = fileId ? await subirPortadaAX(fileId) : null;
       const hashtags = extraerHashtags(msg);
-      let tweetsX;
-      if (hilosPendientes.has(pid)) {
-        // Hilo: publicar los tweets originales como thread real en X (sin pasar por generarTweetX)
-        tweetsX = hilosPendientes.get(pid).map((t) => t.trim());
-        // Añadir hashtags al último tweet del hilo
-        tweetsX[tweetsX.length - 1] += `\n\n${hashtags}`;
-      } else {
-        // Flash, opinión, analiza, semanal: generar tweet nativo con título+cuerpo
-        const contenido = await generarTweetX(msg);
-        tweetsX = [`${contenido}\n\n${hashtags}`];
-      }
       try {
-        await publicarThread(tweetsX, { mediaId });
+        if (hilosPendientes.has(pid)) {
+          // /hilo: thread educativo real en X
+          const tweetsX = hilosPendientes.get(pid).map((t) => t.trim());
+          tweetsX[tweetsX.length - 1] += `\n\n${hashtags}`;
+          await publicarThread(tweetsX, { mediaId });
+        } else {
+          // Flash, opinión, analiza, quepasa: un único tweet maximizado
+          const contenido = await generarTweetX(msg);
+          await publicarTweetUnico(contenido, { mediaId });
+        }
       } catch (e) {
         const detalle = e?.data ? ` (${JSON.stringify(e.data)})` : "";
         errorX = `${e.message}${detalle}`;
@@ -1275,11 +1238,10 @@ Devuelve SOLO JSON: {"tweets": ["tweet1", "tweet2", "tweet3"]}`,
 
     await reply(chatId, "🐦 Generando tweet para X...");
     const contenido = await generarTweetX(titulo);
-    const hashtags = extraerHashtags(titulo);
-    const tweetFinal = `${contenido}\n\n${hashtags}`;
 
     try {
-      await publicarThread([tweetFinal]);
+      await publicarTweetUnico(contenido);
+      const tweetFinal = contenido;
       guardarPublicacionEnNotion({
         tipo: "Flash",
         titulo,

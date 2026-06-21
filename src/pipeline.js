@@ -10,7 +10,7 @@ import { enviarTelegram, enviarTelegramConFoto, enviarTelegramConFotoId } from "
 import { guardarPaquete } from "./output.js";
 import { getEventosMacro } from "./calendar.js";
 import { guardarBriefingEnNotion, guardarPublicacionEnNotion } from "./notion.js";
-import { publicarThread } from "./twitter-post.js";
+import { publicarTweetUnico } from "./twitter-post.js";
 import { generarChartBarras, aplicarLogo } from "./media.js";
 import { getPortadaFija } from "./portadas_fijas.js";
 
@@ -150,16 +150,16 @@ export async function ejecutarBriefing() {
     }
   }
 
-  // PASO 3c: Publicar thread en X (si configurado)
+  // PASO 3c: Publicar en X (si configurado)
   let xPublicado = false;
-  if (process.env.X_API_KEY && paquete.thread?.length) {
-    console.log("🐦 Publicando thread en X...");
+  if (process.env.X_API_KEY && paquete.tweet_x) {
+    console.log("🐦 Publicando en X...");
     try {
-      await publicarThread(paquete.thread);
+      await publicarTweetUnico(paquete.tweet_x);
       xPublicado = true;
-      console.log("   ✓ Thread publicado en X");
+      console.log("   ✓ Tweet publicado en X");
     } catch (e) {
-      console.warn("⚠️ Error publicando thread en X:", e.message);
+      console.warn("⚠️ Error publicando en X:", e.message);
       if (e.data) console.warn("   Detalle X:", JSON.stringify(e.data));
       if (process.env.TELEGRAM_OWNER_ID) {
         await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
@@ -167,7 +167,7 @@ export async function ejecutarBriefing() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             chat_id: process.env.TELEGRAM_OWNER_ID,
-            text: `⚠️ <b>Briefing: error al publicar thread en X</b>\n${e.message}`,
+            text: `⚠️ <b>Briefing: error al publicar en X</b>\n${e.message}`,
             parse_mode: "HTML",
           }),
         }).catch(() => {});
