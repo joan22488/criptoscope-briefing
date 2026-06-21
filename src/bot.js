@@ -1532,7 +1532,14 @@ async function cmdAyuda(chatId, cmd) {
     `──────────────\n` +
     `<b>⚙️ Sistema</b>\n` +
     `<code>/stats</code> — Rendimiento señales 7 días\n` +
-    `<code>/estado</code> · <code>/pausa</code> · <code>/activa</code> · <code>/ayuda</code>`;
+    `<code>/estado</code> · <code>/pausa</code> · <code>/activa</code> · <code>/ayuda</code>\n\n` +
+    `──────────────\n` +
+    `<b>🖼 Portadas fijas (admin)</b>\n` +
+    `<code>/setportada briefing</code> — Fijar portada del briefing diario\n` +
+    `<code>/setportada semanal</code> — Fijar portada del resumen semanal\n` +
+    `<code>/clearportada briefing</code> — Volver a portada auto-generada\n` +
+    `<code>/clearportada semanal</code> — Volver a portada auto-generada\n` +
+    `<i>Manda la foto después de ejecutar /setportada</i>`;
 
   await reply(chatId, menu);
 }
