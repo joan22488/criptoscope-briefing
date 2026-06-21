@@ -106,8 +106,8 @@ export async function obtenerSenalesPendientes() {
   if (!process.env.NOTION_SIGNALS_DB) return [];
   const notion = getClient();
 
-  const res = await notion.databases.query({
-    database_id: process.env.NOTION_SIGNALS_DB,
+  const res = await notion.dataSources.query({
+    data_source_id: process.env.NOTION_SIGNALS_DB,
     filter: { property: "Resultado", select: { equals: "PENDIENTE" } },
   });
 
@@ -142,8 +142,8 @@ export async function obtenerSenalesSemana() {
   const hace7d = new Date();
   hace7d.setDate(hace7d.getDate() - 7);
 
-  const res = await notion.databases.query({
-    database_id: process.env.NOTION_SIGNALS_DB,
+  const res = await notion.dataSources.query({
+    data_source_id: process.env.NOTION_SIGNALS_DB,
     filter: { property: "Fecha", date: { on_or_after: hace7d.toISOString().split("T")[0] } },
   });
 
