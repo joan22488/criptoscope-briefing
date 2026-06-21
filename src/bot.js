@@ -14,6 +14,7 @@ import { ejecutarResumenSemanal } from "./weekly.js";
 import { guardarPublicacionEnNotion } from "./notion.js";
 import { generarEstadisticasSemana } from "./tracker.js";
 import { aplicarLogo, fetchGraficoBuffer } from "./media.js";
+import { ejecutarBriefing } from "./pipeline.js";
 
 const client = new Anthropic();
 const API = () => `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}`;
@@ -1810,6 +1811,18 @@ async function cmdCancelar(chatId, argStr) {
   await reply(chatId, `🗑 Publicación #${id} cancelada: ${p.descripcion}`);
 }
 
+// /briefing — lanza el briefing matinal completo ahora mismo (solo owner)
+async function cmdBriefingManual(chatId) {
+  if (String(chatId) !== String(OWNER())) return reply(chatId, "❌ Solo el owner puede ejecutar esto.");
+  await reply(chatId, "☕ Lanzando briefing completo al canal...");
+  try {
+    await ejecutarBriefing();
+    await reply(chatId, "✅ Briefing publicado en el canal.");
+  } catch (e) {
+    await reply(chatId, `❌ Error en el briefing: ${e.message}`);
+  }
+}
+
 // /semanal — resumen semanal bajo demanda con gráfico auto + preview + botones
 async function cmdSemanal(chatId) {
   await reply(chatId, "📊 Generando resumen semanal...");
@@ -2014,6 +2027,7 @@ async function procesarMensaje(msg) {
       case "/cancelar":     await cmdCancelar(chatId, argStr); break;
       case "/encuesta":     await cmdEncuesta(chatId, argStr); break;
       case "/semanal":      await cmdSemanal(chatId); break;
+      case "/briefing":     await cmdBriefingManual(chatId); break;
       case "/stats":        await cmdStats(chatId); break;
       case "/historial":    await cmdHistorial(chatId); break;
       case "/ayuda":
