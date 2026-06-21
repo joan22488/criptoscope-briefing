@@ -6,11 +6,50 @@ import { getMarketContext } from "./coindesk.js";
 import { getTweetsRelevantes } from "./twitter.js";
 import { getRedditSignals } from "./reddit.js";
 import { generarPaqueteDiario } from "./claude.js";
-import { enviarTelegram } from "./telegram.js";
+import { enviarTelegram, enviarTelegramConFoto } from "./telegram.js";
 import { guardarPaquete } from "./output.js";
 import { getEventosMacro } from "./calendar.js";
 import { guardarBriefingEnNotion, guardarPublicacionEnNotion } from "./notion.js";
 import { publicarThread } from "./twitter-post.js";
+import { generarChartBarras, aplicarLogo } from "./media.js";
+
+async function generarPortadaBriefing(contexto) {
+  try {
+    const gl = contexto.gainersLosers;
+    const precios = contexto.precios || {};
+
+    let coins = [];
+    if (gl) {
+      coins = [
+        ...gl.ganadores.map((g) => ({ label: `$${g.simbolo}`, value: parseFloat(g.cambio) })),
+        ...gl.perdedores.map((p) => ({ label: `$${p.simbolo}`, value: parseFloat(p.cambio) })),
+      ];
+    }
+
+    // Añadir BTC/ETH/SOL si no están ya presentes
+    const existentes = new Set(coins.map((c) => c.label));
+    for (const [id, d] of Object.entries(precios)) {
+      const label = `$${id.replace("-USD", "")}`;
+      if (!existentes.has(label) && d.cambio24h_pct != null) {
+        coins.push({ label, value: parseFloat(d.cambio24h_pct.toFixed(2)) });
+      }
+    }
+
+    if (!coins.length) return null;
+
+    // Top 6 ganadores + top 6 perdedores (máx 12 barras)
+    const sorted  = [...coins].sort((a, b) => b.value - a.value);
+    const top     = sorted.slice(0, 6);
+    const bottom  = sorted.slice(-Math.min(6, Math.max(0, sorted.length - top.length)));
+    const seleccion = [...new Map([...top, ...bottom].map((c) => [c.label, c])).values()];
+
+    const buf = await generarChartBarras(seleccion);
+    return buf ? aplicarLogo(buf) : null;
+  } catch (e) {
+    console.warn("⚠️ Portada briefing no generada:", e.message);
+    return null;
+  }
+}
 
 export async function ejecutarBriefing() {
   const inicio = Date.now();
@@ -129,7 +168,14 @@ export async function ejecutarBriefing() {
     : "";
 
   const xLink = process.env.X_PROFILE_URL ? `\n\n🐦 <a href="${process.env.X_PROFILE_URL}">Síguenos en X</a>` : "";
-  await enviarTelegram(cabecera + paquete.briefing + bloqueSentimiento + bloqueGainers + bloqueMacro + bloquePalabra + pie + xLink);
+  const textoCompleto = cabecera + paquete.briefing + bloqueSentimiento + bloqueGainers + bloqueMacro + bloquePalabra + pie + xLink;
+
+  const portadaBuffer = await generarPortadaBriefing(contexto);
+  if (portadaBuffer) {
+    await enviarTelegramConFoto(textoCompleto, portadaBuffer);
+  } else {
+    await enviarTelegram(textoCompleto);
+  }
 
   guardarPublicacionEnNotion({
     tipo: "Briefing",

@@ -45,6 +45,39 @@ export async function enviarTelegram(texto, { silencioso = false } = {}) {
   }
 }
 
+const CAPTION_MAX = 1020;
+
+function truncarCaption(texto, max = CAPTION_MAX) {
+  if (texto.length <= max) return texto;
+  const SUFIJO = " [...]";
+  const disponible = max - SUFIJO.length;
+  const recorte = texto.slice(0, disponible);
+  const umbral = disponible * 0.55;
+  const pos = Math.max(
+    recorte.lastIndexOf("\n\n") > umbral ? recorte.lastIndexOf("\n\n") : -1,
+    recorte.lastIndexOf(". ")  > umbral ? recorte.lastIndexOf(". ") + 1 : -1,
+    recorte.lastIndexOf("\n")  > umbral ? recorte.lastIndexOf("\n")  : -1,
+  );
+  return (pos > 0 ? recorte.slice(0, pos) : recorte).trimEnd() + SUFIJO;
+}
+
+/** Envía foto + texto como un único mensaje al canal. Trunca el caption a 1020 chars. */
+export async function enviarTelegramConFoto(texto, fotoBuffer) {
+  const caption = truncarCaption(texto);
+  const form = new FormData();
+  form.append("chat_id", process.env.TELEGRAM_CHAT_ID);
+  form.append("photo", new Blob([fotoBuffer], { type: "image/png" }), "portada.png");
+  form.append("caption", caption);
+  form.append("parse_mode", "HTML");
+
+  const res  = await fetch(`${TG_BASE()}/sendPhoto`, { method: "POST", body: form, signal: AbortSignal.timeout(30000) });
+  const data = await res.json();
+  if (!data.ok) {
+    console.warn("⚠️ enviarTelegramConFoto: sendPhoto falló:", data.description, "— enviando texto sin foto");
+    await enviarTelegram(texto);
+  }
+}
+
 /** Trocea texto largo respetando párrafos, líneas y como último recurso caracteres */
 function trocear(texto, max) {
   if (texto.length <= max) return [texto];

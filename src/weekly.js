@@ -6,18 +6,51 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getPrices, getFearGreed, getGlobalMarket, getNews, getGainersLosers } from "./coindesk.js";
 import { INSTRUCCIONES_RESUMEN_SEMANAL, VOZ_CRIPTOSCOPE } from "./prompts.js";
 import { generarEstadisticasSemana, formatearEstadisticas } from "./tracker.js";
+import { getVelas } from "./signals.js";
+import { generarChartLinea, aplicarLogo } from "./media.js";
 
 const client = new Anthropic();
+
+async function generarGraficoSemanal() {
+  const specs = [
+    { symbol: "BTCUSDT", label: "BTC", color: "#F7931A" },
+    { symbol: "ETHUSDT", label: "ETH", color: "#627EEA" },
+    { symbol: "SOLUSDT", label: "SOL", color: "#9945FF" },
+  ];
+
+  const resultados = await Promise.all(
+    specs.map(async ({ symbol, label, color }) => {
+      try {
+        const velas = await getVelas(symbol, "1d", 8);
+        if (!velas?.length) return null;
+        const base = velas[0].close;
+        const data  = velas.map((v) => parseFloat(((v.close - base) / base * 100).toFixed(2)));
+        const etiquetas = velas.map((v) =>
+          new Date(v.time).toLocaleDateString("es-ES", { weekday: "short", day: "numeric" })
+        );
+        return { label, data, color, etiquetas };
+      } catch { return null; }
+    })
+  );
+
+  const validos = resultados.filter(Boolean);
+  if (!validos.length) return null;
+
+  const labels = validos[0].etiquetas;
+  const buf = await generarChartLinea(validos, labels);
+  return buf ? aplicarLogo(buf) : null;
+}
 
 export async function ejecutarResumenSemanal() {
   console.log("📅 Generando resumen semanal CriptoScope...");
 
-  const [precios, fearGreed, globalMarket, noticias, gainersLosers] = await Promise.all([
+  const [precios, fearGreed, globalMarket, noticias, gainersLosers, chartBuffer] = await Promise.all([
     getPrices(),
     getFearGreed(),
     getGlobalMarket(),
     getNews(30),
     getGainersLosers(),
+    generarGraficoSemanal().catch((e) => { console.warn("⚠️ Gráfico semanal no generado:", e.message); return null; }),
   ]);
 
   const contexto = { precios, fearGreed, globalMarket, noticias: noticias.slice(0, 15), gainersLosers };
@@ -82,8 +115,8 @@ ${INSTRUCCIONES_RESUMEN_SEMANAL}`,
     pie +
     xLink;
 
-  console.log(`   ✓ Resumen semanal generado: ${paquete.titular}`);
-  return { mensaje, paquete };
+  console.log(`   ✓ Resumen semanal generado: ${paquete.titular}${chartBuffer ? " + gráfico" : ""}`);
+  return { mensaje, paquete, chartBuffer };
 }
 
 function obtenerRangoSemana() {

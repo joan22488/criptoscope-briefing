@@ -5,9 +5,6 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
-import { fileURLToPath } from "url";
-import { dirname, join } from "path";
-import sharp from "sharp";
 import { getMarketContext, getPrices, getFearGreed, getGlobalMarket } from "./coindesk.js";
 import { analizarSymbol, generarSenal, getVelas, calcEMA } from "./signals.js";
 import { getEventosMacro, formatearAlertaMacro } from "./calendar.js";
@@ -16,32 +13,7 @@ import { enviarTelegram } from "./telegram.js";
 import { ejecutarResumenSemanal } from "./weekly.js";
 import { guardarPublicacionEnNotion } from "./notion.js";
 import { generarEstadisticasSemana } from "./tracker.js";
-
-// ── Logo overlay ──────────────────────────────────────────────
-const __dir = dirname(fileURLToPath(import.meta.url));
-const LOGO_PATH = join(__dir, "../assets/logo.png");
-
-async function aplicarLogo(imgBuffer, logoWidthPct = 0.18) {
-  try {
-    const base   = sharp(imgBuffer);
-    const { width, height } = await base.metadata();
-    const logoW  = Math.round(width * logoWidthPct);
-    const logo   = await sharp(LOGO_PATH)
-      .resize(logoW, null, { fit: "inside" })
-      .png()
-      .toBuffer();
-    const logoMeta = await sharp(logo).metadata();
-    const left = width  - logoMeta.width  - 14;
-    const top  = height - logoMeta.height - 14;
-    return await base
-      .composite([{ input: logo, left, top, blend: "over" }])
-      .png()
-      .toBuffer();
-  } catch (e) {
-    console.warn("⚠️ Logo overlay fallido:", e.message);
-    return imgBuffer; // devuelve original si falla
-  }
-}
+import { aplicarLogo, fetchGraficoBuffer } from "./media.js";
 
 const client = new Anthropic();
 const API = () => `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}`;
@@ -59,6 +31,17 @@ export const isPausado = () => pausado;
 
 // Almacén temporal para mensajes pendientes de publicar (callback de botones)
 const pendingPublish = new Map();
+
+// ── Rate limiting — evita spam de comandos costosos ──
+const cooldowns = new Map(); // `${chatId}:${cmd}` → timestamp
+function checkCooldown(chatId, cmd, segundos) {
+  const key = `${chatId}:${cmd}`;
+  const ultimo = cooldowns.get(key) || 0;
+  const restante = Math.ceil((ultimo + segundos * 1000 - Date.now()) / 1000);
+  if (restante > 0) return restante;
+  cooldowns.set(key, Date.now());
+  return 0;
+}
 
 // ── Publicaciones programadas ──────────────────
 const programadas = new Map(); // id → { descripcion, timer }
@@ -186,39 +169,63 @@ const xFooter = () => process.env.X_PROFILE_URL
   ? `\n\n🐦 <a href="${process.env.X_PROFILE_URL}">Síguenos en X</a>`
   : "";
 
+// Trunca texto para encajar en el límite de caption de Telegram (1024 chars).
+// Corta en el último párrafo o frase completa; añade footer al final.
+function truncarCaption(texto, footer = "") {
+  const MAX = 1020; // margen respecto al límite oficial de 1024
+  if ((texto + footer).length <= MAX) return texto + footer;
+  const SUFIJO = " [...]";
+  const disponible = MAX - footer.length - SUFIJO.length;
+  const recorte = texto.slice(0, disponible);
+  const umbral = disponible * 0.55;
+  const pos = Math.max(
+    recorte.lastIndexOf("\n\n") > umbral ? recorte.lastIndexOf("\n\n") : -1,
+    recorte.lastIndexOf(". ")  > umbral ? recorte.lastIndexOf(". ") + 1 : -1,
+    recorte.lastIndexOf("\n")  > umbral ? recorte.lastIndexOf("\n")  : -1,
+  );
+  return (pos > 0 ? recorte.slice(0, pos) : recorte).trimEnd() + SUFIJO + footer;
+}
+
 async function publicarCanal(texto, portadaFileId = null) {
+  const footer = xFooter();
+
   if (portadaFileId) {
+    const caption = truncarCaption(texto, footer);
     try {
-      // Descargar imagen de Telegram, aplicar logo y resubir como multipart
+      // Descargar imagen de Telegram, aplicar logo, enviar foto+texto como UN mensaje
       const fileInfoRes = await fetch(`${API()}/getFile?file_id=${encodeURIComponent(portadaFileId)}`, { signal: AbortSignal.timeout(10000) });
       const fileInfo = await fileInfoRes.json();
       if (!fileInfo.ok) throw new Error(fileInfo.description || "getFile falló");
       const imgRes = await fetch(`https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${fileInfo.result.file_path}`, { signal: AbortSignal.timeout(20000) });
       if (!imgRes.ok) throw new Error(`Descarga imagen HTTP ${imgRes.status}`);
-      const imgBuf   = Buffer.from(await imgRes.arrayBuffer());
-      const imgLogo  = await aplicarLogo(imgBuf);
+      const imgLogo = await aplicarLogo(Buffer.from(await imgRes.arrayBuffer()));
       const form = new FormData();
       form.append("chat_id", process.env.TELEGRAM_CHAT_ID);
       form.append("photo", new Blob([imgLogo], { type: "image/png" }), "portada.png");
+      form.append("caption", caption);
+      form.append("parse_mode", "HTML");
       const res  = await fetch(`${API()}/sendPhoto`, { method: "POST", body: form, signal: AbortSignal.timeout(25000) });
       const json = await res.json();
       if (!json.ok) throw new Error(json.description || JSON.stringify(json));
+      return; // foto + texto en un solo mensaje ✅
     } catch (e) {
-      console.warn("⚠️ Portada con logo fallida, usando file_id original:", e.message);
-      // Fallback: enviar sin logo con el file_id original
+      console.warn("⚠️ Portada integrada fallida, probando con file_id original:", e.message);
+      // Fallback: file_id original con caption
       const res  = await fetch(`${API()}/sendPhoto`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: process.env.TELEGRAM_CHAT_ID, photo: portadaFileId }),
+        body: JSON.stringify({ chat_id: process.env.TELEGRAM_CHAT_ID, photo: portadaFileId, caption, parse_mode: "HTML" }),
       });
       const json = await res.json();
       if (!json.ok) {
-        console.warn("⚠️ sendPhoto fallback falló:", JSON.stringify(json));
-        throw new Error(`sendPhoto falló: ${json.description || JSON.stringify(json)}`);
+        console.warn("⚠️ sendPhoto fallback también falló, enviando solo texto:", JSON.stringify(json));
+        await enviarTelegram(texto + footer);
       }
+      return;
     }
   }
-  await enviarTelegram(texto + xFooter());
+
+  await enviarTelegram(texto + footer);
 }
 
 // ──────────────────────────────────────────────
@@ -456,24 +463,6 @@ function buildChartConfig(nombreOrDatos, velas, ema20arr, ema50arr, tfLabel = "4
       },
     },
   };
-}
-
-// Usa POST para obtener la imagen PNG del gráfico
-// Comprueba Content-Type (no el status) porque quickchart puede devolver 400 + PNG válido
-async function fetchGraficoBuffer(chartConfig) {
-  if (!chartConfig) return null;
-  const res = await fetch("https://quickchart.io/chart", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chart: chartConfig, width: 800, height: 420, backgroundColor: "#1e1e2e", format: "png", version: 4 }),
-    signal: AbortSignal.timeout(15000),
-  });
-  const ct = res.headers.get("content-type") || "";
-  if (!ct.includes("image")) {
-    const errBody = await res.text().catch(() => "");
-    throw new Error(`quickchart ${res.status}: ${errBody.replace(/<[^>]*>/g, "").slice(0, 150)}`);
-  }
-  return Buffer.from(await res.arrayBuffer());
 }
 
 // Compatibilidad: wrapper GET para /analiza (30 velas — URL corta, sigue funcionando)
@@ -1821,14 +1810,29 @@ async function cmdCancelar(chatId, argStr) {
   await reply(chatId, `🗑 Publicación #${id} cancelada: ${p.descripcion}`);
 }
 
-// /semanal — resumen semanal bajo demanda con preview + botones
+// /semanal — resumen semanal bajo demanda con gráfico auto + preview + botones
 async function cmdSemanal(chatId) {
   await reply(chatId, "📊 Generando resumen semanal...");
   try {
-    const { mensaje } = await ejecutarResumenSemanal();
+    const { mensaje, chartBuffer } = await ejecutarResumenSemanal();
     const pid = Date.now().toString(36);
     pendingPublish.set(pid, mensaje);
-    setTimeout(() => pendingPublish.delete(pid), 30 * 60 * 1000);
+    setTimeout(() => { pendingPublish.delete(pid); portadas.delete(pid); }, 30 * 60 * 1000);
+
+    if (chartBuffer) {
+      try {
+        const form = new FormData();
+        form.append("chat_id", chatId.toString());
+        form.append("photo", new Blob([chartBuffer], { type: "image/png" }), "semanal.png");
+        form.append("caption", "📈 Evolución semanal BTC · ETH · SOL");
+        const photoRes  = await fetch(`${API()}/sendPhoto`, { method: "POST", body: form, signal: AbortSignal.timeout(20000) });
+        const photoJson = await photoRes.json();
+        if (photoJson.ok) portadas.set(pid, photoJson.result.photo.at(-1).file_id);
+      } catch (e) {
+        console.warn("⚠️ No pude enviar gráfico semanal:", e.message);
+      }
+    }
+
     await mostrarBotonesPublicacion(chatId, pid, mensaje);
   } catch (e) {
     await reply(chatId, `❌ No pude generar el resumen semanal: ${e.message}`);
@@ -1964,16 +1968,40 @@ async function procesarMensaje(msg) {
 
   try {
     switch (cmd.toLowerCase().split("@")[0]) {
-      case "/flash":      await cmdFlash(chatId, argStr); break;
-      case "/hilo":       await cmdHilo(chatId, argStr); break;
-      case "/analiza":    await cmdAnaliza(chatId, argStr); break;
+      case "/flash": {
+        const cd = checkCooldown(chatId, "flash", 30);
+        if (cd) { await reply(chatId, `⏳ Espera ${cd}s antes de lanzar otro flash.`); break; }
+        await cmdFlash(chatId, argStr); break;
+      }
+      case "/hilo": {
+        const cd = checkCooldown(chatId, "hilo", 60);
+        if (cd) { await reply(chatId, `⏳ Espera ${cd}s antes de generar otro hilo.`); break; }
+        await cmdHilo(chatId, argStr); break;
+      }
+      case "/analiza": {
+        const cd = checkCooldown(chatId, "analiza", 45);
+        if (cd) { await reply(chatId, `⏳ Espera ${cd}s antes de lanzar otro análisis.`); break; }
+        await cmdAnaliza(chatId, argStr); break;
+      }
       case "/grafico":
-      case "/grafica":   await cmdGrafico(chatId, argStr); break;
-      case "/opinion":    await cmdOpinion(chatId, argStr); break;
+      case "/grafica": {
+        const cd = checkCooldown(chatId, "grafico", 20);
+        if (cd) { await reply(chatId, `⏳ Espera ${cd}s antes de pedir otro gráfico.`); break; }
+        await cmdGrafico(chatId, argStr); break;
+      }
+      case "/opinion": {
+        const cd = checkCooldown(chatId, "opinion", 45);
+        if (cd) { await reply(chatId, `⏳ Espera ${cd}s antes de generar otra opinión.`); break; }
+        await cmdOpinion(chatId, argStr); break;
+      }
       case "/precio":     await cmdPrecio(chatId, argStr); break;
       case "/quepasa":    await cmdQuePasa(chatId); break;
       case "/senal":
-      case "/señal":      await cmdSenal(chatId, argStr); break;
+      case "/señal": {
+        const cd = checkCooldown(chatId, "senal", 30);
+        if (cd) { await reply(chatId, `⏳ Espera ${cd}s antes de pedir otra señal.`); break; }
+        await cmdSenal(chatId, argStr); break;
+      }
       case "/calendario": await cmdCalendario(chatId); break;
       case "/estado":     await cmdEstado(chatId); break;
       case "/pausa":      await cmdPausa(chatId); break;

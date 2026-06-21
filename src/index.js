@@ -9,7 +9,7 @@ import { ejecutarBriefing } from "./pipeline.js";
 import { ejecutarAnalisisTecnico } from "./signals.js";
 import { ejecutarResumenSemanal } from "./weekly.js";
 import { verificarAlertas } from "./alerts.js";
-import { enviarTelegram } from "./telegram.js";
+import { enviarTelegram, enviarTelegramConFoto } from "./telegram.js";
 import { verificarResultados } from "./tracker.js";
 import { getPrices } from "./coindesk.js";
 import { iniciarBot, isPausado, verificarAlertasPrecios, monitorNoticias, ejecutarRecapDiario, enviarSenalParaRevisar } from "./bot.js";
@@ -80,8 +80,12 @@ cron.schedule(
   async () => {
     if (isPausado()) return console.log("⏸ Semanal omitido (pausado)");
     try {
-      const { mensaje } = await ejecutarResumenSemanal();
-      await enviarTelegram(mensaje);
+      const { mensaje, chartBuffer } = await ejecutarResumenSemanal();
+      if (chartBuffer) {
+        await enviarTelegramConFoto(mensaje, chartBuffer);
+      } else {
+        await enviarTelegram(mensaje);
+      }
     } catch (e) {
       console.error("❌ Error en resumen semanal:", e.message);
       await alertarOwner(`⚠️ <b>Resumen semanal fallido</b>\n<code>${e.message.slice(0, 300)}</code>`);
