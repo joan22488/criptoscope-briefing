@@ -992,28 +992,34 @@ async function procesarCallback(callback) {
     return;
   }
 
-  // Detecta monedas en el texto y devuelve hashtags (máx 3)
+  // Genera hashtags relevantes para el post (máx 5, siempre en español primero)
   const extraerHashtags = (texto) => {
+    const base = ["#Bitcoin", "#Cripto"]; // siempre presentes
+
     const monedas = [
-      ["#BTC", ["BTC", "Bitcoin", "bitcoin"]],
-      ["#ETH", ["ETH", "Ethereum", "ethereum"]],
-      ["#SOL", ["SOL", "Solana", "solana"]],
-      ["#XRP", ["XRP", "Ripple", "ripple"]],
-      ["#BNB", ["BNB", "Binance"]],
-      ["#AVAX", ["AVAX", "Avalanche"]],
-      ["#DOGE", ["DOGE", "Dogecoin"]],
-      ["#ADA", ["ADA", "Cardano"]],
-      ["#DOT", ["DOT", "Polkadot"]],
-      ["#LINK", ["LINK", "Chainlink"]],
-      ["#SUI", ["SUI"]],
-      ["#TON", ["TON", "Toncoin"]],
+      ["#BTC",      ["BTC", "Bitcoin"]],
+      ["#Ethereum", ["ETH", "Ethereum"]],
+      ["#Solana",   ["SOL", "Solana"]],
+      ["#XRP",      ["XRP", "Ripple"]],
+      ["#BNB",      ["BNB", "Binance"]],
+      ["#DOGE",     ["DOGE", "Dogecoin"]],
+      ["#AVAX",     ["AVAX", "Avalanche"]],
+      ["#SUI",      ["SUI"]],
+      ["#TON",      ["TON", "Toncoin"]],
+      ["#Cardano",  ["ADA", "Cardano"]],
     ];
-    const tags = [];
-    for (const [tag, keywords] of monedas) {
-      if (keywords.some((k) => texto.includes(k))) tags.push(tag);
-      if (tags.length >= 3) break;
+    const macro = [
+      ["#Fed",      ["Fed ", "FOMC", "Powell", "Federal Reserve"]],
+      ["#CPI",      ["CPI", "IPC", "inflación", "inflacion"]],
+      ["#ETF",      ["ETF", "spot ETF"]],
+      ["#Macro",    ["macro", "NFP", "empleo", "PIB", "GDP"]],
+    ];
+
+    const tags = [...base];
+    for (const [tag, keywords] of [...monedas, ...macro]) {
+      if (tags.length >= 5) break;
+      if (keywords.some((k) => texto.includes(k)) && !tags.includes(tag)) tags.push(tag);
     }
-    tags.push("#Crypto");
     return tags.join(" ");
   };
 

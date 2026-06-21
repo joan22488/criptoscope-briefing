@@ -7,6 +7,30 @@
 
 import { TwitterApi } from "twitter-api-v2";
 
+// Hashtags para el thread del briefing: base fija + contextuales según contenido
+function generarHashtagsBriefing(tweets) {
+  const texto = tweets.join(" ").toLowerCase();
+  const tags  = ["#Bitcoin", "#BTC", "#Cripto"]; // base siempre
+
+  const contextuales = [
+    ["#Ethereum",  ["ethereum", " eth "]],
+    ["#Solana",    ["solana", " sol "]],
+    ["#XRP",       [" xrp ", "ripple"]],
+    ["#ETF",       ["etf"]],
+    ["#Fed",       ["fed ", "fomc", "powell", "federal reserve"]],
+    ["#CPI",       ["cpi", "inflaci"]],
+    ["#Macro",     ["macro", "nfp", "empleo", "gdp", "pib"]],
+    ["#Análisis",  []], // siempre añadir como tag editorial
+  ];
+
+  for (const [tag, keywords] of contextuales) {
+    if (tags.length >= 6) break;
+    if (!keywords.length || keywords.some((k) => texto.includes(k))) tags.push(tag);
+  }
+
+  return tags.join(" ");
+}
+
 function getClient() {
   const { X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_SECRET } = process.env;
   if (!X_API_KEY || !X_API_SECRET || !X_ACCESS_TOKEN || !X_ACCESS_SECRET) {
@@ -54,9 +78,10 @@ export async function publicarThread(tweets, { mediaId } = {}) {
     await new Promise((r) => setTimeout(r, 1000));
   }
 
-  // Último tweet: CTA con enlace al canal de Telegram
-  const canal = process.env.TELEGRAM_CANAL_URL || "https://t.me/criptoscopespain";
-  const cta = `Este briefing se publica cada mañana antes de que abra el mercado europeo.\nSignals, alertas de precio y análisis sin hype en el canal:\n${canal}`;
+  // Último tweet: CTA + hashtags
+  const canal    = process.env.TELEGRAM_CANAL_URL || "https://t.me/criptoscopespain";
+  const hashtags = generarHashtagsBriefing(tweets);
+  const cta = `Briefing así cada mañana a las 7h, antes de que abra Europa.\nSeñales técnicas, alertas en tiempo real y análisis sin hype 👇\n${canal}\n\n${hashtags}`;
   await rwClient.v2.tweet(cta, { reply: { in_reply_to_tweet_id: ultimoId } });
 
   console.log(`✅ Thread publicado en X — ${tweets.length + 1} tweets (+ CTA Telegram)`);
