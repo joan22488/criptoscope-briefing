@@ -15,6 +15,7 @@ import { guardarPublicacionEnNotion } from "./notion.js";
 import { generarEstadisticasSemana } from "./tracker.js";
 import { aplicarLogo, fetchGraficoBuffer } from "./media.js";
 import { ejecutarBriefing, generarBriefing } from "./pipeline.js";
+import { getPortadaFija, setPortadaFija, clearPortadaFija } from "./portadas_fijas.js";
 
 const client = new Anthropic();
 const API = () => `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}`;
@@ -49,8 +50,9 @@ const programadas = new Map(); // id → { descripcion, timer }
 let progContador = 1;
 
 // ── Portadas pendientes ────────────────────────
-const portadas = new Map();    // pid → fileId de la foto portada
-const waitingCover = new Map(); // chatId → pid (esperando foto de portada)
+const portadas = new Map();         // pid → fileId de la foto portada
+const waitingCover = new Map();     // chatId → pid (esperando foto de portada)
+const waitingPortadaFija = new Map(); // chatId → tipo "briefing"|"semanal" (esperando foto para portada fija)
 
 // ── Hilos pendientes (array de tweets para publicar en X como thread real) ──
 const hilosPendientes = new Map(); // pid → string[]
@@ -189,7 +191,9 @@ function truncarCaption(texto, footer = "") {
 
 async function publicarCanal(texto, portadaFileId = null) {
   const footer   = xFooter();
-  const completo = texto + footer;
+  // Evitar duplicar el link de X si el texto ya lo incluye (viene de generarBriefing/semanal)
+  const xUrl     = process.env.X_PROFILE_URL;
+  const completo = (xUrl && texto.includes(xUrl)) ? texto : texto + footer;
   const CAPTION_MAX = 1020;
   const cabe = completo.length <= CAPTION_MAX;
 
@@ -1822,7 +1826,29 @@ async function cmdCancelar(chatId, argStr) {
   await reply(chatId, `🗑 Publicación #${id} cancelada: ${p.descripcion}`);
 }
 
-// /briefing — genera el briefing con portada auto y muestra preview + botones (solo owner)
+// /setportada [briefing|semanal] — fija una portada permanente (solo owner)
+async function cmdSetPortada(chatId, tipo) {
+  if (String(chatId) !== String(OWNER())) return reply(chatId, "❌ Solo el owner puede hacer esto.");
+  const t = (tipo || "").trim().toLowerCase();
+  if (t !== "briefing" && t !== "semanal") {
+    return reply(chatId, "❓ Uso: /setportada briefing  o  /setportada semanal\n\nTras ejecutarlo, manda la foto que quieras fijar como portada.");
+  }
+  waitingPortadaFija.set(chatId, t);
+  await reply(chatId, `📸 Mándame la foto que quieres fijar como portada del <b>${t}</b>.\n\nSe le aplicará el logo automáticamente y quedará guardada.`);
+}
+
+// /clearportada [briefing|semanal] — elimina la portada fija (vuelve a la auto-generada)
+async function cmdClearPortada(chatId, tipo) {
+  if (String(chatId) !== String(OWNER())) return reply(chatId, "❌ Solo el owner puede hacer esto.");
+  const t = (tipo || "").trim().toLowerCase();
+  if (t !== "briefing" && t !== "semanal") {
+    return reply(chatId, "❓ Uso: /clearportada briefing  o  /clearportada semanal");
+  }
+  clearPortadaFija(t);
+  await reply(chatId, `🗑 Portada fija del <b>${t}</b> eliminada. Se usará la portada automática.`);
+}
+
+// /briefing — genera el briefing con portada auto (o fija) y muestra preview + botones (solo owner)
 async function cmdBriefingManual(chatId) {
   if (String(chatId) !== String(OWNER())) return reply(chatId, "❌ Solo el owner puede ejecutar esto.");
   await reply(chatId, "☕ Generando briefing...");
@@ -1832,7 +1858,18 @@ async function cmdBriefingManual(chatId) {
     pendingPublish.set(pid, texto);
     setTimeout(() => { pendingPublish.delete(pid); portadas.delete(pid); }, 30 * 60 * 1000);
 
-    if (portadaBuffer) {
+    const portadaFijaId = getPortadaFija("briefing");
+
+    if (portadaFijaId) {
+      // Portada fija configurada → usarla directamente (ya tiene logo)
+      portadas.set(pid, portadaFijaId);
+      await fetch(`${API()}/sendPhoto`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: chatId.toString(), photo: portadaFijaId, caption: "📌 Portada fija — puedes cambiarla con /setportada briefing" }),
+      });
+    } else if (portadaBuffer) {
+      // Portada auto-generada
       try {
         const form = new FormData();
         form.append("chat_id", chatId.toString());
@@ -1852,7 +1889,7 @@ async function cmdBriefingManual(chatId) {
   }
 }
 
-// /semanal — resumen semanal bajo demanda con gráfico auto + preview + botones
+// /semanal — resumen semanal con gráfico auto (o portada fija) + preview + botones
 async function cmdSemanal(chatId) {
   await reply(chatId, "📊 Generando resumen semanal...");
   try {
@@ -1861,7 +1898,16 @@ async function cmdSemanal(chatId) {
     pendingPublish.set(pid, mensaje);
     setTimeout(() => { pendingPublish.delete(pid); portadas.delete(pid); }, 30 * 60 * 1000);
 
-    if (chartBuffer) {
+    const portadaFijaId = getPortadaFija("semanal");
+
+    if (portadaFijaId) {
+      portadas.set(pid, portadaFijaId);
+      await fetch(`${API()}/sendPhoto`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: chatId.toString(), photo: portadaFijaId, caption: "📌 Portada fija — puedes cambiarla con /setportada semanal" }),
+      });
+    } else if (chartBuffer) {
       try {
         const form = new FormData();
         form.append("chat_id", chatId.toString());
@@ -1963,6 +2009,34 @@ async function procesarMensaje(msg) {
     const cap = (msg.caption || "").trim();
     const fileId = msg.photo[msg.photo.length - 1].file_id;
 
+    // ¿Estamos esperando una portada FIJA (para briefing o semanal)?
+    if (waitingPortadaFija.has(chatId)) {
+      const tipo = waitingPortadaFija.get(chatId);
+      waitingPortadaFija.delete(chatId);
+      await reply(chatId, "⏳ Aplicando logo y guardando portada fija...");
+      try {
+        const fileInfoRes = await fetch(`${API()}/getFile?file_id=${encodeURIComponent(fileId)}`, { signal: AbortSignal.timeout(10000) });
+        const fileInfo    = await fileInfoRes.json();
+        const imgRes      = await fetch(`https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${fileInfo.result.file_path}`, { signal: AbortSignal.timeout(20000) });
+        const imgConLogo  = await aplicarLogo(Buffer.from(await imgRes.arrayBuffer()));
+        // Re-subir para obtener file_id de la versión con logo
+        const form = new FormData();
+        form.append("chat_id", chatId.toString());
+        form.append("photo", new Blob([imgConLogo], { type: "image/png" }), "portada_fija.png");
+        form.append("caption", `✅ Portada fija para <b>${tipo}</b> guardada con logo.\n\n<code>Para Railway (persistencia entre redeploys):\n${tipo === "briefing" ? "BRIEFING" : "SEMANAL"}_PORTADA_FILE_ID = &lt;file_id abajo&gt;</code>`);
+        form.append("parse_mode", "HTML");
+        const uploadRes  = await fetch(`${API()}/sendPhoto`, { method: "POST", body: form, signal: AbortSignal.timeout(25000) });
+        const uploadJson = await uploadRes.json();
+        if (!uploadJson.ok) throw new Error(uploadJson.description);
+        const nuevoFileId = uploadJson.result.photo.at(-1).file_id;
+        setPortadaFija(tipo, nuevoFileId);
+        await reply(chatId, `✅ Portada fija guardada.\n\n<b>File ID</b> (guárdalo en Railway si quieres que persista):\n<code>${nuevoFileId}</code>`);
+      } catch (e) {
+        await reply(chatId, `❌ No pude guardar la portada fija: ${e.message}`);
+      }
+      return;
+    }
+
     // ¿Estamos esperando una portada para un contenido pendiente?
     if (waitingCover.has(chatId)) {
       const pid = waitingCover.get(chatId);
@@ -2057,6 +2131,8 @@ async function procesarMensaje(msg) {
       case "/encuesta":     await cmdEncuesta(chatId, argStr); break;
       case "/semanal":      await cmdSemanal(chatId); break;
       case "/briefing":     await cmdBriefingManual(chatId); break;
+      case "/setportada":   await cmdSetPortada(chatId, argStr); break;
+      case "/clearportada": await cmdClearPortada(chatId, argStr); break;
       case "/stats":        await cmdStats(chatId); break;
       case "/historial":    await cmdHistorial(chatId); break;
       case "/ayuda":

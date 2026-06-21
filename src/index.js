@@ -9,7 +9,8 @@ import { ejecutarBriefing } from "./pipeline.js";
 import { ejecutarAnalisisTecnico } from "./signals.js";
 import { ejecutarResumenSemanal } from "./weekly.js";
 import { verificarAlertas } from "./alerts.js";
-import { enviarTelegram, enviarTelegramConFoto } from "./telegram.js";
+import { enviarTelegram, enviarTelegramConFoto, enviarTelegramConFotoId } from "./telegram.js";
+import { getPortadaFija } from "./portadas_fijas.js";
 import { verificarResultados } from "./tracker.js";
 import { getPrices } from "./coindesk.js";
 import { iniciarBot, isPausado, verificarAlertasPrecios, monitorNoticias, ejecutarRecapDiario, enviarSenalParaRevisar } from "./bot.js";
@@ -81,7 +82,10 @@ cron.schedule(
     if (isPausado()) return console.log("⏸ Semanal omitido (pausado)");
     try {
       const { mensaje, chartBuffer } = await ejecutarResumenSemanal();
-      if (chartBuffer) {
+      const portadaFijaId = getPortadaFija("semanal");
+      if (portadaFijaId) {
+        await enviarTelegramConFotoId(mensaje, portadaFijaId);
+      } else if (chartBuffer) {
         await enviarTelegramConFoto(mensaje, chartBuffer);
       } else {
         await enviarTelegram(mensaje);

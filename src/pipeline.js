@@ -6,12 +6,13 @@ import { getMarketContext } from "./coindesk.js";
 import { getTweetsRelevantes } from "./twitter.js";
 import { getRedditSignals } from "./reddit.js";
 import { generarPaqueteDiario } from "./claude.js";
-import { enviarTelegram, enviarTelegramConFoto } from "./telegram.js";
+import { enviarTelegram, enviarTelegramConFoto, enviarTelegramConFotoId } from "./telegram.js";
 import { guardarPaquete } from "./output.js";
 import { getEventosMacro } from "./calendar.js";
 import { guardarBriefingEnNotion, guardarPublicacionEnNotion } from "./notion.js";
 import { publicarThread } from "./twitter-post.js";
 import { generarChartBarras, aplicarLogo } from "./media.js";
+import { getPortadaFija } from "./portadas_fijas.js";
 
 async function generarPortadaBriefing(contexto) {
   try {
@@ -176,7 +177,10 @@ export async function ejecutarBriefing() {
 
   // PASO 3d: Publicar briefing en Telegram
   console.log("📤 Enviando a Telegram...");
-  if (portadaBuffer) {
+  const portadaFijaId = getPortadaFija("briefing");
+  if (portadaFijaId) {
+    await enviarTelegramConFotoId(texto, portadaFijaId);
+  } else if (portadaBuffer) {
     await enviarTelegramConFoto(texto, portadaBuffer);
   } else {
     await enviarTelegram(texto);

@@ -62,7 +62,29 @@ function truncarCaption(texto, max = CAPTION_MAX) {
 }
 
 /**
- * Envía foto + texto al canal con lógica inteligente:
+ * Envía foto desde un file_id de Telegram ya almacenado (portada fija).
+ * Misma lógica smart: si cabe → 1 mensaje; si no → foto con título + texto completo aparte.
+ */
+export async function enviarTelegramConFotoId(texto, fileId) {
+  const cabe = texto.length <= CAPTION_MAX;
+  const caption = cabe
+    ? texto
+    : texto.split("\n").filter(Boolean).slice(0, 2).join("\n").slice(0, 300);
+
+  const res  = await fetch(`${TG_BASE()}/sendPhoto`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: process.env.TELEGRAM_CHAT_ID, photo: fileId, caption, parse_mode: "HTML" }),
+    signal: AbortSignal.timeout(20000),
+  });
+  const data = await res.json();
+  if (!data.ok) console.warn("⚠️ enviarTelegramConFotoId fallido:", data.description);
+
+  if (!cabe) await enviarTelegram(texto);
+}
+
+/**
+ * Envía foto desde buffer (portada generada) con lógica inteligente:
  * - Si el texto cabe en el caption (≤1020 chars) → UN solo mensaje foto+texto
  * - Si el texto es largo → foto con solo el título como caption + texto completo como mensaje siguiente
  */
