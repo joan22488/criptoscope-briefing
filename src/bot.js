@@ -391,7 +391,9 @@ async function cmdAnaliza(chatId, symbolRaw, portadaFileId = null) {
     const pid = Date.now().toString(36);
     pendingPublish.set(pid, msg);
     if (portadaFileId) portadas.set(pid, portadaFileId);
-    setTimeout(() => { pendingPublish.delete(pid); portadas.delete(pid); }, 30 * 60 * 1000);
+    setTimeout(() => { pendingPublish.delete(pid); portadas.delete(pid); hilosPendientes.delete(pid); }, 30 * 60 * 1000);
+
+    generarMiniHiloX(msg).then((tweets) => { if (tweets?.length) hilosPendientes.set(pid, tweets); }).catch(() => {});
 
     // Gráfico de velas 4H con EMA20/EMA50/volumen via quickchart.io
     if (datos.velas4h?.length) {
@@ -640,7 +642,10 @@ PROHIBIDO: guiones medios o largos (– o —), 🚀💎🙌, clickbait, consejo
   const pid = Date.now().toString(36);
   pendingPublish.set(pid, msg);
   if (portadaFileId) portadas.set(pid, portadaFileId);
-  setTimeout(() => { pendingPublish.delete(pid); portadas.delete(pid); }, 30 * 60 * 1000);
+  setTimeout(() => { pendingPublish.delete(pid); portadas.delete(pid); hilosPendientes.delete(pid); }, 30 * 60 * 1000);
+
+  // Generar mini-hilo para X en paralelo (no bloquea la preview)
+  generarMiniHiloX(msg).then((tweets) => { if (tweets?.length) hilosPendientes.set(pid, tweets); }).catch(() => {});
 
   await mostrarBotonesPublicacion(chatId, pid, msg);
 }
@@ -687,7 +692,10 @@ async function cmdQuePasa(chatId, portadaFileId = null) {
   const pid = Date.now().toString(36);
   pendingPublish.set(pid, msg);
   if (portadaFileId) portadas.set(pid, portadaFileId);
-  setTimeout(() => { pendingPublish.delete(pid); portadas.delete(pid); }, 30 * 60 * 1000);
+  setTimeout(() => { pendingPublish.delete(pid); portadas.delete(pid); hilosPendientes.delete(pid); }, 30 * 60 * 1000);
+
+  generarMiniHiloX(msg).then((tweets) => { if (tweets?.length) hilosPendientes.set(pid, tweets); }).catch(() => {});
+
   await mostrarBotonesPublicacion(chatId, pid, msg);
 }
 
@@ -1040,7 +1048,7 @@ async function procesarCallback(callback) {
     }
   };
 
-  // Genera un tweet nativo para X usando Claude — formato y tono propios de Twitter
+  // Tweet único para /flash — urgente, impacto inmediato, máximo 270 chars
   const generarTweetX = async (texto) => {
     const limpio = texto.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
     try {
@@ -1049,33 +1057,56 @@ async function procesarCallback(callback) {
         max_tokens: 300,
         messages: [{
           role: "user",
-          content: `Eres el redactor de X/Twitter de CriptoScope, cuenta de análisis cripto en español.
+          content: `Eres el redactor de X/Twitter de CriptoScope.
 
-Contenido del canal de Telegram:
-
+Contenido:
 ${limpio.slice(0, 1500)}
 
-Escribe UN tweet con este formato EXACTO (dos bloques separados por salto de línea):
+Escribe UN tweet de alerta urgente. Formato: 1 frase de gancho (el dato o hecho más impactante, ≤110 chars) + salto de línea + 1 frase de contexto/implicación (≤150 chars). Total: 240-270 caracteres.
+1 emoji al inicio del gancho si refuerza el impacto (🚨⚠️📊🔴🟢). Sin HTML. Sin guiones largos. Sin links. Sin "canal de Telegram".
 
-LÍNEA 1 — TÍTULO: frase de gancho (≤100 chars). Dato impactante, pregunta provocadora o afirmación fuerte. 1 emoji al inicio si encaja.
-LÍNEA 2 — CUERPO: 1-2 datos o ideas clave del análisis (≤140 chars). Sin repetir el título.
-
-Reglas:
-- NO menciones "canal de Telegram" ni pongas links
-- PROHIBIDO guiones medios o largos (– o —). Sin etiquetas HTML.
-- Total máximo 240 caracteres entre título y cuerpo
-- Máximo 2 emojis en todo el tweet
-
-Devuelve SOLO título + salto de línea + cuerpo. Sin comillas, sin etiquetas, sin explicaciones.`,
+Devuelve SOLO las dos frases. Sin comillas, sin etiquetas.`,
         }],
       });
       const tweet = res.content[0].text.trim();
-      return tweet.length <= 270 ? tweet : tweet.slice(0, 267).replace(/\s+\S*$/, "...");
+      return tweet.length <= 280 ? tweet : tweet.slice(0, 277).replace(/\s+\S*$/, "...");
     } catch {
-      // Fallback: primera línea con contenido real
       const lineas = limpio.split("\n").filter((l) => l.length > 30 && /[a-záéíóúñ]/.test(l) && !["CriptoScope", "consejo financiero", "FLASH", "ALERTA"].some((e) => l.toUpperCase().includes(e)));
       const fb = lineas[0] || limpio;
-      return fb.length <= 270 ? fb : fb.slice(0, 267).replace(/\s+\S*$/, "...");
+      return fb.length <= 280 ? fb : fb.slice(0, 277).replace(/\s+\S*$/, "...");
+    }
+  };
+
+  // Mini-hilo de 3 tweets para análisis (/opinion, /analiza, /quepasa)
+  // Hook → análisis → nivel/pregunta
+  const generarMiniHiloX = async (texto) => {
+    const limpio = texto.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
+    try {
+      const res = await client.messages.create({
+        model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
+        max_tokens: 600,
+        messages: [{
+          role: "user",
+          content: `Eres el redactor de X/Twitter de CriptoScope, cuenta de análisis cripto en español.
+
+Contenido del análisis:
+${limpio.slice(0, 2500)}
+
+Genera un mini-hilo de 3 tweets. Sin HTML. Sin guiones largos (– o —). Sin links. Cada tweet entre 210-275 caracteres.
+
+Tweet 1 — HOOK: El dato o conclusión más impactante para parar el scroll. Empieza con el número clave, la paradoja o el hecho más llamativo. PROHIBIDO empezar con: "Hoy", "El mercado", el nombre de la coin, "CriptoScope". 1 emoji al inicio si refuerza (🚨📊⚠️🔴🟢). Crea una brecha de información: el lector necesita leer el 2.
+Tweet 2 — ANÁLISIS: El por qué. Qué implica para el precio, qué patrón hay detrás, qué está pasando realmente. Datos concretos. Voz directa.
+Tweet 3 — NIVEL O PREGUNTA: El nivel exacto a vigilar y por qué es clave. O una pregunta concreta que la comunidad pueda responder en 5 palabras (elección forzada, predicción de precio, sí/no con contexto).
+
+Devuelve SOLO JSON: {"tweets": ["tweet1", "tweet2", "tweet3"]}`,
+        }],
+      });
+      const txt = res.content[0].text;
+      const json = txt.slice(txt.indexOf("{"), txt.lastIndexOf("}") + 1);
+      const parsed = JSON.parse(json);
+      return parsed.tweets?.map((t) => limpiarDashes(t.trim()).slice(0, 280)) || null;
+    } catch {
+      return null;
     }
   };
 
