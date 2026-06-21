@@ -14,7 +14,7 @@ import { ejecutarResumenSemanal } from "./weekly.js";
 import { guardarPublicacionEnNotion } from "./notion.js";
 import { generarEstadisticasSemana } from "./tracker.js";
 import { aplicarLogo, fetchGraficoBuffer } from "./media.js";
-import { ejecutarBriefing } from "./pipeline.js";
+import { ejecutarBriefing, generarBriefing } from "./pipeline.js";
 
 const client = new Anthropic();
 const API = () => `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}`;
@@ -188,12 +188,18 @@ function truncarCaption(texto, footer = "") {
 }
 
 async function publicarCanal(texto, portadaFileId = null) {
-  const footer = xFooter();
+  const footer   = xFooter();
+  const completo = texto + footer;
+  const CAPTION_MAX = 1020;
+  const cabe = completo.length <= CAPTION_MAX;
 
   if (portadaFileId) {
-    const caption = truncarCaption(texto, footer);
+    // Caption: texto completo si cabe, o solo el título (2 primeras líneas) si es largo
+    const caption = cabe
+      ? completo
+      : texto.split("\n").filter(Boolean).slice(0, 2).join("\n").slice(0, 300);
+
     try {
-      // Descargar imagen de Telegram, aplicar logo, enviar foto+texto como UN mensaje
       const fileInfoRes = await fetch(`${API()}/getFile?file_id=${encodeURIComponent(portadaFileId)}`, { signal: AbortSignal.timeout(10000) });
       const fileInfo = await fileInfoRes.json();
       if (!fileInfo.ok) throw new Error(fileInfo.description || "getFile falló");
@@ -208,10 +214,11 @@ async function publicarCanal(texto, portadaFileId = null) {
       const res  = await fetch(`${API()}/sendPhoto`, { method: "POST", body: form, signal: AbortSignal.timeout(25000) });
       const json = await res.json();
       if (!json.ok) throw new Error(json.description || JSON.stringify(json));
-      return; // foto + texto en un solo mensaje ✅
     } catch (e) {
-      console.warn("⚠️ Portada integrada fallida, probando con file_id original:", e.message);
-      // Fallback: file_id original con caption
+      console.warn("⚠️ Portada con logo fallida, usando file_id original:", e.message);
+      const caption = cabe
+        ? completo
+        : texto.split("\n").filter(Boolean).slice(0, 2).join("\n").slice(0, 300);
       const res  = await fetch(`${API()}/sendPhoto`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -219,14 +226,18 @@ async function publicarCanal(texto, portadaFileId = null) {
       });
       const json = await res.json();
       if (!json.ok) {
-        console.warn("⚠️ sendPhoto fallback también falló, enviando solo texto:", JSON.stringify(json));
-        await enviarTelegram(texto + footer);
+        console.warn("⚠️ sendPhoto fallback también falló, enviando solo texto");
+        await enviarTelegram(completo);
+        return;
       }
-      return;
     }
+
+    // Si el texto era largo, enviarlo completo en el siguiente mensaje
+    if (!cabe) await enviarTelegram(completo);
+    return;
   }
 
-  await enviarTelegram(texto + footer);
+  await enviarTelegram(completo);
 }
 
 // ──────────────────────────────────────────────
@@ -1811,15 +1822,33 @@ async function cmdCancelar(chatId, argStr) {
   await reply(chatId, `🗑 Publicación #${id} cancelada: ${p.descripcion}`);
 }
 
-// /briefing — lanza el briefing matinal completo ahora mismo (solo owner)
+// /briefing — genera el briefing con portada auto y muestra preview + botones (solo owner)
 async function cmdBriefingManual(chatId) {
   if (String(chatId) !== String(OWNER())) return reply(chatId, "❌ Solo el owner puede ejecutar esto.");
-  await reply(chatId, "☕ Lanzando briefing completo al canal...");
+  await reply(chatId, "☕ Generando briefing...");
   try {
-    await ejecutarBriefing();
-    await reply(chatId, "✅ Briefing publicado en el canal.");
+    const { texto, portadaBuffer } = await generarBriefing();
+    const pid = Date.now().toString(36);
+    pendingPublish.set(pid, texto);
+    setTimeout(() => { pendingPublish.delete(pid); portadas.delete(pid); }, 30 * 60 * 1000);
+
+    if (portadaBuffer) {
+      try {
+        const form = new FormData();
+        form.append("chat_id", chatId.toString());
+        form.append("photo", new Blob([portadaBuffer], { type: "image/png" }), "briefing.png");
+        form.append("caption", "📊 Portada generada automáticamente — puedes cambiarla antes de publicar");
+        const photoRes  = await fetch(`${API()}/sendPhoto`, { method: "POST", body: form, signal: AbortSignal.timeout(20000) });
+        const photoJson = await photoRes.json();
+        if (photoJson.ok) portadas.set(pid, photoJson.result.photo.at(-1).file_id);
+      } catch (e) {
+        console.warn("⚠️ No pude enviar portada del briefing:", e.message);
+      }
+    }
+
+    await mostrarBotonesPublicacion(chatId, pid, texto);
   } catch (e) {
-    await reply(chatId, `❌ Error en el briefing: ${e.message}`);
+    await reply(chatId, `❌ Error generando el briefing: ${e.message}`);
   }
 }
 

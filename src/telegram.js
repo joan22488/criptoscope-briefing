@@ -61,9 +61,17 @@ function truncarCaption(texto, max = CAPTION_MAX) {
   return (pos > 0 ? recorte.slice(0, pos) : recorte).trimEnd() + SUFIJO;
 }
 
-/** Envía foto + texto como un único mensaje al canal. Trunca el caption a 1020 chars. */
+/**
+ * Envía foto + texto al canal con lógica inteligente:
+ * - Si el texto cabe en el caption (≤1020 chars) → UN solo mensaje foto+texto
+ * - Si el texto es largo → foto con solo el título como caption + texto completo como mensaje siguiente
+ */
 export async function enviarTelegramConFoto(texto, fotoBuffer) {
-  const caption = truncarCaption(texto);
+  const cabe = texto.length <= CAPTION_MAX;
+  const caption = cabe
+    ? texto
+    : texto.split("\n").filter(Boolean).slice(0, 2).join("\n").slice(0, 300);
+
   const form = new FormData();
   form.append("chat_id", process.env.TELEGRAM_CHAT_ID);
   form.append("photo", new Blob([fotoBuffer], { type: "image/png" }), "portada.png");
@@ -73,9 +81,11 @@ export async function enviarTelegramConFoto(texto, fotoBuffer) {
   const res  = await fetch(`${TG_BASE()}/sendPhoto`, { method: "POST", body: form, signal: AbortSignal.timeout(30000) });
   const data = await res.json();
   if (!data.ok) {
-    console.warn("⚠️ enviarTelegramConFoto: sendPhoto falló:", data.description, "— enviando texto sin foto");
-    await enviarTelegram(texto);
+    console.warn("⚠️ enviarTelegramConFoto: sendPhoto falló:", data.description);
   }
+
+  // Si el texto no cabía en el caption, enviarlo completo como mensaje siguiente
+  if (!cabe) await enviarTelegram(texto);
 }
 
 /** Trocea texto largo respetando párrafos, líneas y como último recurso caracteres */

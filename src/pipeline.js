@@ -51,11 +51,12 @@ async function generarPortadaBriefing(contexto) {
   }
 }
 
-export async function ejecutarBriefing() {
+// Genera el briefing completo (datos + Claude + texto + portada) sin publicar.
+// Devuelve { texto, portadaBuffer, paquete, contexto } para publicar o previsualizar.
+export async function generarBriefing() {
   const inicio = Date.now();
   console.log("🚀 Iniciando briefing CriptoScope...");
 
-  // PASO 1: Recopilar todo en paralelo
   console.log("📡 Obteniendo datos de mercado, tweets y Reddit...");
   const [contexto, tweets, reddit, eventosMacro] = await Promise.all([
     getMarketContext(),
@@ -71,10 +72,69 @@ export async function ejecutarBriefing() {
   contexto.reddit = reddit;
   contexto.eventosMacro = eventosMacro;
 
-  // PASO 2: Claude genera el paquete del día
   console.log("🧠 Generando briefing + guion + thread con Claude...");
   const paquete = await generarPaqueteDiario(contexto);
   console.log(`   ✓ Titular: ${paquete.titular}`);
+
+  const cabecera = `<b>☕ CRIPTOSCOPE | Briefing Matinal</b>\n<b>${paquete.titular}</b>\n\n`;
+
+  const gl  = contexto.gainersLosers;
+  const fg  = contexto.sentimiento?.fearGreed;
+  const gm  = contexto.mercadoGlobal;
+  const liq = contexto.sentimiento?.liquidaciones;
+  const fgEmoji = fg ? (fg.valor >= 75 ? "🟢" : fg.valor >= 55 ? "🟡" : fg.valor >= 35 ? "🟠" : "🔴") : "";
+
+  let liqLinea = "";
+  if (liq && liq.total_usd > 0) {
+    const totalM  = (liq.total_usd / 1e6).toFixed(1);
+    const longsM  = (liq.longs_liq_usd / 1e6).toFixed(1);
+    const shortsM = (liq.shorts_liq_usd / 1e6).toFixed(1);
+    const liqEmoji = liq.sesgo === "caza de longs" ? "🔴" : liq.sesgo === "caza de shorts" ? "🟢" : "⚪";
+    liqLinea = `${liqEmoji} <b>Liquidaciones 24h:</b> $${totalM}M  ·  Longs $${longsM}M  ·  Shorts $${shortsM}M  <i>(${liq.sesgo})</i>\n`;
+  }
+
+  const bloqueSentimiento = (fg || gm || liq)
+    ? `\n\n─────────────────\n` +
+      (fg ? `${fgEmoji} <b>Fear & Greed:</b> ${fg.valor} — ${fg.clasificacion}` + (fg.ayer ? ` (ayer ${fg.ayer})` : "") + "\n" : "") +
+      (gm ? `<b>Dominancia BTC:</b> ${gm.dominancia_btc}%  ·  ETH ${gm.dominancia_eth}%\n` : "") +
+      liqLinea
+    : "";
+
+  const bloqueGainers = gl
+    ? `\n\n─────────────────\n` +
+      `<b>📈 Ganadores 24h</b>\n` +
+      `${gl.ganadores.map((g) => `$${g.simbolo} <b>+${g.cambio}%</b>`).join("  ·  ")}\n` +
+      `<b>📉 Perdedores 24h</b>\n` +
+      `${gl.perdedores.map((p) => `$${p.simbolo} <b>${p.cambio}%</b>`).join("  ·  ")}`
+    : "";
+
+  let bloqueMacro = "";
+  if (eventosMacro.hoy?.length || eventosMacro.manana?.length) {
+    bloqueMacro = `\n\n─────────────────\n⚠️ <b>Macro a vigilar</b>\n`;
+    for (const e of [...(eventosMacro.hoy || []), ...(eventosMacro.manana || [])]) {
+      const cuando = eventosMacro.hoy?.includes(e) ? "HOY" : "MAÑANA";
+      bloqueMacro += `• <b>${e.titulo}</b> — ${cuando} ${e.hora} ET\n`;
+    }
+  }
+
+  const bloquePalabra = paquete.palabra_del_dia
+    ? `\n\n─────────────────\n📚 <b>Concepto del día</b>\n${paquete.palabra_del_dia}`
+    : "";
+
+  const pie   = paquete.pregunta_comunidad ? `\n\n💬 <b>Pregunta del día:</b> ${paquete.pregunta_comunidad}` : "";
+  const xLink = process.env.X_PROFILE_URL ? `\n\n🐦 <a href="${process.env.X_PROFILE_URL}">Síguenos en X</a>` : "";
+
+  const texto = cabecera + paquete.briefing + bloqueSentimiento + bloqueGainers + bloqueMacro + bloquePalabra + pie + xLink;
+  const portadaBuffer = await generarPortadaBriefing(contexto);
+
+  const seg = ((Date.now() - inicio) / 1000).toFixed(1);
+  console.log(`   ✓ Briefing generado en ${seg}s${portadaBuffer ? " + portada" : ""}`);
+  return { texto, portadaBuffer, paquete, contexto };
+}
+
+export async function ejecutarBriefing() {
+  const inicio = Date.now();
+  const { texto, portadaBuffer, paquete, contexto } = await generarBriefing();
 
   // PASO 3a: Guardar archivos locales
   await guardarPaquete(paquete);
@@ -116,65 +176,10 @@ export async function ejecutarBriefing() {
 
   // PASO 3d: Publicar briefing en Telegram
   console.log("📤 Enviando a Telegram...");
-  const cabecera = `<b>☕ CRIPTOSCOPE | Briefing Matinal</b>\n<b>${paquete.titular}</b>\n\n`;
-
-  const gl = contexto.gainersLosers;
-  const fg = contexto.sentimiento?.fearGreed;
-  const gm = contexto.mercadoGlobal;
-  const liq = contexto.sentimiento?.liquidaciones;
-
-  const fgEmoji = fg ? (fg.valor >= 75 ? "🟢" : fg.valor >= 55 ? "🟡" : fg.valor >= 35 ? "🟠" : "🔴") : "";
-
-  let liqLinea = "";
-  if (liq && liq.total_usd > 0) {
-    const totalM = (liq.total_usd / 1e6).toFixed(1);
-    const longsM = (liq.longs_liq_usd / 1e6).toFixed(1);
-    const shortsM = (liq.shorts_liq_usd / 1e6).toFixed(1);
-    const liqEmoji = liq.sesgo === "caza de longs" ? "🔴" : liq.sesgo === "caza de shorts" ? "🟢" : "⚪";
-    liqLinea = `${liqEmoji} <b>Liquidaciones 24h:</b> $${totalM}M  ·  Longs $${longsM}M  ·  Shorts $${shortsM}M  <i>(${liq.sesgo})</i>\n`;
-  }
-
-  const bloqueSentimiento = (fg || gm || liq)
-    ? `\n\n─────────────────\n` +
-      (fg ? `${fgEmoji} <b>Fear & Greed:</b> ${fg.valor} — ${fg.clasificacion}` + (fg.ayer ? ` (ayer ${fg.ayer})` : "") + "\n" : "") +
-      (gm ? `<b>Dominancia BTC:</b> ${gm.dominancia_btc}%  ·  ETH ${gm.dominancia_eth}%\n` : "") +
-      liqLinea
-    : "";
-
-  const bloqueGainers = gl
-    ? `\n\n─────────────────\n` +
-      `<b>📈 Ganadores 24h</b>\n` +
-      `${gl.ganadores.map((g) => `$${g.simbolo} <b>+${g.cambio}%</b>`).join("  ·  ")}\n` +
-      `<b>📉 Perdedores 24h</b>\n` +
-      `${gl.perdedores.map((p) => `$${p.simbolo} <b>${p.cambio}%</b>`).join("  ·  ")}`
-    : "";
-
-  // Bloque macro: alertar si hay eventos hoy o mañana
-  let bloqueMacro = "";
-  if (eventosMacro.hoy?.length || eventosMacro.manana?.length) {
-    bloqueMacro = `\n\n─────────────────\n⚠️ <b>Macro a vigilar</b>\n`;
-    for (const e of [...(eventosMacro.hoy || []), ...(eventosMacro.manana || [])]) {
-      const cuando = eventosMacro.hoy?.includes(e) ? "HOY" : "MAÑANA";
-      bloqueMacro += `• <b>${e.titulo}</b> — ${cuando} ${e.hora} ET\n`;
-    }
-  }
-
-  const bloquePalabra = paquete.palabra_del_dia
-    ? `\n\n─────────────────\n📚 <b>Concepto del día</b>\n${paquete.palabra_del_dia}`
-    : "";
-
-  const pie = paquete.pregunta_comunidad
-    ? `\n\n💬 <b>Pregunta del día:</b> ${paquete.pregunta_comunidad}`
-    : "";
-
-  const xLink = process.env.X_PROFILE_URL ? `\n\n🐦 <a href="${process.env.X_PROFILE_URL}">Síguenos en X</a>` : "";
-  const textoCompleto = cabecera + paquete.briefing + bloqueSentimiento + bloqueGainers + bloqueMacro + bloquePalabra + pie + xLink;
-
-  const portadaBuffer = await generarPortadaBriefing(contexto);
   if (portadaBuffer) {
-    await enviarTelegramConFoto(textoCompleto, portadaBuffer);
+    await enviarTelegramConFoto(texto, portadaBuffer);
   } else {
-    await enviarTelegram(textoCompleto);
+    await enviarTelegram(texto);
   }
 
   guardarPublicacionEnNotion({
@@ -182,7 +187,7 @@ export async function ejecutarBriefing() {
     titulo: paquete.titular || "Briefing matinal",
     texto: paquete.briefing,
     plataforma: xPublicado ? "Canal+X" : "Canal",
-    conPortada: false,
+    conPortada: !!portadaBuffer,
     estado: "Publicado",
   }).catch(() => {});
 
