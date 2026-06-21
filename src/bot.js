@@ -390,7 +390,8 @@ async function cmdHilo(chatId, tema, portadaFileId = null) {
 // /analiza <SYMBOL> — análisis técnico on-demand de cualquier par
 async function cmdAnaliza(chatId, symbolRaw, portadaFileId = null) {
   if (!symbolRaw) return reply(chatId, "❓ Uso: /analiza BTC · /analiza ETH · /analiza SOL · /analiza AVAX");
-  const symbol = symbolRaw.toUpperCase().replace("USDT", "").replace("/USDT", "").replace("/USD", "") + "USDT";
+  const coin = symbolRaw.trim().split(/\s+/)[0]; // ignorar argumentos extra como timeframe
+  const symbol = coin.toUpperCase().replace("USDT", "").replace("/USDT", "").replace("/USD", "") + "USDT";
   await reply(chatId, `📊 Analizando ${symbol.replace("USDT", "")}...`);
 
   try {
