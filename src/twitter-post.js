@@ -43,12 +43,12 @@ export async function publicarThread(tweets, { mediaId } = {}) {
 
   // Primer tweet (con imagen si hay mediaId)
   const primerPayload = mediaId ? { media: { media_ids: [mediaId] } } : undefined;
-  const primerTweet = await rwClient.v2.tweet(limpiar(tweets[0]).slice(0, 270), primerPayload);
+  const primerTweet = await rwClient.v2.tweet(limpiar(tweets[0]).slice(0, 280), primerPayload);
   let ultimoId = primerTweet.data.id;
 
   // Resto como replies en cadena
   for (let i = 1; i < tweets.length; i++) {
-    const texto = limpiar(tweets[i]).slice(0, 270);
+    const texto = limpiar(tweets[i]).slice(0, 280);
     const reply = await rwClient.v2.tweet(texto, { reply: { in_reply_to_tweet_id: ultimoId } });
     ultimoId = reply.data.id;
     await new Promise((r) => setTimeout(r, 1000));
@@ -56,7 +56,7 @@ export async function publicarThread(tweets, { mediaId } = {}) {
 
   // Último tweet: CTA con enlace al canal de Telegram
   const canal = process.env.TELEGRAM_CANAL_URL || "https://t.me/criptoscopespain";
-  const cta = `📊 Análisis diario, señales técnicas y alertas en tiempo real en nuestro canal de Telegram 👇\n${canal}`;
+  const cta = `Este briefing se publica cada mañana antes de que abra el mercado europeo.\nSignals, alertas de precio y análisis sin hype en el canal:\n${canal}`;
   await rwClient.v2.tweet(cta, { reply: { in_reply_to_tweet_id: ultimoId } });
 
   console.log(`✅ Thread publicado en X — ${tweets.length + 1} tweets (+ CTA Telegram)`);

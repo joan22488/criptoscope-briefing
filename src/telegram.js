@@ -62,14 +62,35 @@ function truncarCaption(texto, max = CAPTION_MAX) {
 }
 
 /**
+ * Separa el texto en caption (lo que va en la foto) y restoTexto (el mensaje siguiente).
+ * Si cabe todo en caption, restoTexto es null.
+ * Si no cabe, caption = primeras 2 líneas, restoTexto = todo lo que viene DESPUÉS para no repetir el título.
+ */
+function partirTextoParaFoto(texto, cabe) {
+  if (cabe) return { caption: texto, restoTexto: null };
+
+  const lineas = texto.split("\n");
+  // Localizar el índice de la 2ª línea no vacía (que será el final del caption)
+  let noVacias = 0;
+  let cortarEn = lineas.length;
+  for (let i = 0; i < lineas.length; i++) {
+    if (lineas[i].trim()) {
+      noVacias++;
+      if (noVacias === 2) { cortarEn = i + 1; break; }
+    }
+  }
+  const caption   = lineas.slice(0, cortarEn).join("\n").slice(0, CAPTION_MAX);
+  const restoTexto = lineas.slice(cortarEn).join("\n").trimStart() || null;
+  return { caption, restoTexto };
+}
+
+/**
  * Envía foto desde un file_id de Telegram ya almacenado (portada fija).
- * Misma lógica smart: si cabe → 1 mensaje; si no → foto con título + texto completo aparte.
+ * Si el texto cabe en caption → 1 mensaje. Si no → foto con título + resto sin repetir.
  */
 export async function enviarTelegramConFotoId(texto, fileId) {
   const cabe = texto.length <= CAPTION_MAX;
-  const caption = cabe
-    ? texto
-    : texto.split("\n").filter(Boolean).slice(0, 2).join("\n").slice(0, 300);
+  const { caption, restoTexto } = partirTextoParaFoto(texto, cabe);
 
   const res  = await fetch(`${TG_BASE()}/sendPhoto`, {
     method: "POST",
@@ -80,7 +101,7 @@ export async function enviarTelegramConFotoId(texto, fileId) {
   const data = await res.json();
   if (!data.ok) console.warn("⚠️ enviarTelegramConFotoId fallido:", data.description);
 
-  if (!cabe) await enviarTelegram(texto);
+  if (!cabe && restoTexto) await enviarTelegram(restoTexto);
 }
 
 /**
@@ -90,9 +111,7 @@ export async function enviarTelegramConFotoId(texto, fileId) {
  */
 export async function enviarTelegramConFoto(texto, fotoBuffer) {
   const cabe = texto.length <= CAPTION_MAX;
-  const caption = cabe
-    ? texto
-    : texto.split("\n").filter(Boolean).slice(0, 2).join("\n").slice(0, 300);
+  const { caption, restoTexto } = partirTextoParaFoto(texto, cabe);
 
   const form = new FormData();
   form.append("chat_id", process.env.TELEGRAM_CHAT_ID);
@@ -106,8 +125,8 @@ export async function enviarTelegramConFoto(texto, fotoBuffer) {
     console.warn("⚠️ enviarTelegramConFoto: sendPhoto falló:", data.description);
   }
 
-  // Si el texto no cabía en el caption, enviarlo completo como mensaje siguiente
-  if (!cabe) await enviarTelegram(texto);
+  // Si el texto no cabía en el caption, enviar el resto (sin repetir el título)
+  if (!cabe && restoTexto) await enviarTelegram(restoTexto);
 }
 
 /** Trocea texto largo respetando párrafos, líneas y como último recurso caracteres */
