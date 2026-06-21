@@ -757,6 +757,7 @@ async function cmdEstado(chatId) {
     statsStr + `\n\n` +
     `<b>Automático:</b>\n` +
     `☕ Briefing: 07:00 diario → Telegram + X\n` +
+    `📅 Macro semana: lunes 08:00 → canal\n` +
     `📊 Señales (7 monedas) → privado para revisión:\n` +
     `   🌅 07:00  📈 11:00  ⚡ 15:00  🌙 19:00\n` +
     `   Próxima: <b>${proxSlot}:00${esMañana ? " (mañana)" : ""}</b>\n` +
@@ -1399,8 +1400,9 @@ async function cmdAyuda(chatId, cmd) {
       uso: "/calendario",
       ejemplo: "/calendario",
       detalle:
-        "Muestra los eventos macroeconómicos de alto impacto de la semana: Fed, CPI, NFP, FOMC, datos de empleo... con fecha y hora exacta en Madrid.\n\n" +
-        "El sistema ya los incluye automáticamente en el briefing matinal, pero puedes consultarlos aquí en cualquier momento. Útil antes de abrir posiciones para saber si hay riesgo de volatilidad macro.",
+        "Muestra los eventos macroeconómicos de alto impacto de <b>toda la semana</b>: Fed, CPI, NFP, FOMC, datos de empleo... agrupados por día, con hora exacta en ET.\n\n" +
+        "Datos de ForexFactory JSON (alta precisión). El bot incluye los eventos del día en el briefing matinal, y cada <b>lunes a las 08:00</b> publica automáticamente el resumen completo de la semana en el canal.\n\n" +
+        "Útil antes de abrir posiciones para saber si hay riesgo de volatilidad macro.",
     },
     estado: {
       titulo: "⚙️ /estado — Estado del sistema",
@@ -1410,6 +1412,7 @@ async function cmdAyuda(chatId, cmd) {
         "Te muestra el estado completo: hora de Madrid, publicaciones activas/pausadas, alertas activas, publicaciones programadas y próximos automáticos.\n\n" +
         "Automáticos diarios:\n" +
         "☕ 07:00 Briefing matinal → canal + X\n" +
+        "📅 Lunes 08:00 Macro semana → canal\n" +
         "🌅 07:00 Radar de apertura — sesgo del día (4H)\n" +
         "📈 11:00 Pulso técnico — momentum 1H\n" +
         "⚡ 15:00 On-chain y derivados — funding y OI\n" +

@@ -8,13 +8,14 @@ Sistema que monitoriza el mercado cripto 24/7, genera análisis con IA (Claude) 
 
 | Cuándo | Qué publica |
 |--------|-------------|
-| 07:00 diario | ☕ Briefing matinal → Telegram + thread de 5 tweets en X (si `X_API_KEY` configurado) |
+| 07:00 diario | ☕ Briefing matinal → Telegram + 1 tweet en X (si `X_API_KEY` configurado) |
 | 07:00 | 🌅 Radar de apertura — sesgo del día y nivel clave 4H → Telegram |
 | 11:00 | 📈 Pulso técnico — momentum 1H RSI/MACD → Telegram |
 | 15:00 | ⚡ On-chain y derivados — funding rate, OI, posicionamiento → Telegram |
 | 19:00 | 🌙 Cierre europeo — balance del día + nivel sesión asiática → Telegram |
 | Cada 30 min | 🚨 Monitor de alertas de alto impacto |
 | Cada 30 min | ✅ Verificación automática de resultados de señales |
+| Lunes 08:00 | 📅 Macro de la semana → canal (ForexFactory JSON, eventos alto impacto) |
 | Domingos 09:00 | 📅 Resumen semanal con estadísticas de señales |
 | Bajo demanda | 🤖 Bot de Telegram con comandos en cualquier momento |
 
@@ -38,7 +39,7 @@ src/
 ├── tracker.js        # Backtesting y estadísticas de señales
 ├── notion.js         # Integración Notion (briefings + señales)
 ├── telegram.js       # Envío a Telegram con chunking automático
-├── twitter-post.js   # Publicación de threads en X
+├── twitter-post.js   # Publicación en X (tweet único + threads para /hilo)
 ├── prompts.js        # Voz editorial CriptoScope + plantillas JSON
 └── output.js         # Guardado local de archivos
 ```
@@ -59,7 +60,7 @@ src/
 | Noticias cripto | CoinDesk RSS | Gratis |
 | Tweets de cuentas clave | Nitter RSS (fallback múltiple) | Gratis |
 | Señales de comunidad | Hacker News API | Gratis |
-| Calendario económico | ForexFactory RSS | Gratis |
+| Calendario económico | ForexFactory JSON | Gratis |
 
 ---
 
@@ -158,6 +159,23 @@ Cada 15 min el sistema revisa **6 fuentes RSS en paralelo**: CoinDesk · Cointel
 | `/pausa` | Pausar todas las publicaciones automáticas |
 | `/activa` | Reanudar publicaciones |
 | `/ayuda` | Guía completa. `/ayuda <comando>` para detalle de cada uno |
+
+---
+
+## Telegram Mini App (panel de administración)
+
+Panel web embebido en Telegram para gestionar el bot sin escribir comandos:
+
+- **Señales pendientes** — aprueba o descarta señales técnicas con un tap
+- **Estado del bot** — activo/pausado, alertas activas, próximas ejecuciones
+- **Portadas fijas** — fija o limpia la portada del briefing y del resumen semanal
+- **Macro de la semana** — eventos macroeconómicos agrupados por día
+
+**Stack:** React + Vite · Lucide React icons · Telegram WebApp SDK
+
+**Despliegue:** Vercel (`miniapp/`) → `MINIAPP_URL=https://criptoscope-briefing.vercel.app`
+
+**Registrar en BotFather:** `/newapp` → apunta a la URL de Vercel. Acceso desde el bot con el botón del menú.
 
 ---
 
