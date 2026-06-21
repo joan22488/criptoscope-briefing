@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { Send, Trash2 } from "lucide-react";
 import { getSignals, aprobarSenal, descartarSenal } from "../api.js";
 
 function Skeleton({ className }) {
@@ -86,7 +87,7 @@ export default function Signals() {
       await aprobarSenal(pid);
       await load();
     } catch (e) {
-      alert("Error al publicar: " + e.message);
+      window.Telegram?.WebApp?.showAlert?.("Error al publicar: " + e.message);
     } finally {
       setActionPid(null);
     }
@@ -150,16 +151,16 @@ export default function Signals() {
                 <button
                   onClick={() => handleAprobar(pid)}
                   disabled={actionPid === pid}
-                  className="flex-1 py-2 rounded-lg text-[12px] font-bold bg-green-400/10 text-green-400 active:bg-green-400/20 disabled:opacity-40"
+                  className="flex-1 py-2 rounded-lg text-[12px] font-bold bg-green-400/10 text-green-400 active:bg-green-400/20 disabled:opacity-40 flex items-center justify-center gap-1.5"
                 >
-                  {actionPid === pid ? "..." : "📢 Publicar"}
+                  {actionPid === pid ? "..." : <><Send size={12} strokeWidth={2.5} /> Publicar</>}
                 </button>
                 <button
                   onClick={() => handleDescartar(pid)}
                   disabled={actionPid === pid}
-                  className="flex-1 py-2 rounded-lg text-[12px] font-bold bg-red-400/10 text-red-400 active:bg-red-400/20 disabled:opacity-40"
+                  className="flex-1 py-2 rounded-lg text-[12px] font-bold bg-red-400/10 text-red-400 active:bg-red-400/20 disabled:opacity-40 flex items-center justify-center gap-1.5"
                 >
-                  🗑 Descartar
+                  <Trash2 size={12} strokeWidth={2.5} /> Descartar
                 </button>
               </div>
             </div>

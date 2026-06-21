@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Activity, Image, LayoutList, ChevronRight, Play, Pause } from "lucide-react";
+import { Activity, Image, LayoutList, ChevronRight, Play, Pause, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { getStatus, pauseBot } from "../api.js";
 
 function Skeleton({ className }) {
@@ -85,11 +85,14 @@ export default function Admin() {
               <div>
                 <div className="text-[13px] font-bold">Estado del bot</div>
                 <div
-                  className={`text-[11px] font-bold mt-0.5 ${
+                  className={`text-[11px] font-bold mt-0.5 flex items-center gap-1 ${
                     status.pausado ? "text-amber-400" : "text-green-400"
                   }`}
                 >
-                  {status.pausado ? "⏸ Pausado" : "🟢 Activo"}
+                  {status.pausado
+                    ? <><Pause size={10} strokeWidth={2.5} /> Pausado</>
+                    : <><CheckCircle2 size={10} strokeWidth={2.5} /> Activo</>
+                  }
                 </div>
               </div>
               <button
@@ -126,9 +129,10 @@ export default function Admin() {
               </div>
               <div>
                 <span className="opacity-35">Portadas</span>
-                <span className="ml-1.5 font-semibold">
-                  {status.portadas?.briefing ? "✅" : "—"} B ·{" "}
-                  {status.portadas?.semanal  ? "✅" : "—"} S
+                <span className="ml-1.5 font-semibold flex items-center gap-1">
+                  <span className={`inline-block w-1.5 h-1.5 rounded-full ${status.portadas?.briefing ? "bg-green-400" : "bg-white/20"}`} /> B
+                  <span className="opacity-20 mx-0.5">·</span>
+                  <span className={`inline-block w-1.5 h-1.5 rounded-full ${status.portadas?.semanal ? "bg-green-400" : "bg-white/20"}`} /> S
                 </span>
               </div>
             </div>
@@ -140,7 +144,9 @@ export default function Admin() {
               className="rounded-xl p-3"
               style={{ backgroundColor: "var(--tg-theme-secondary-bg-color, #1a1a24)" }}
             >
-              <div className="text-[10px] font-bold opacity-40 mb-2">⚠️ Macro a vigilar</div>
+              <div className="text-[10px] font-bold opacity-40 mb-2 flex items-center gap-1">
+                <AlertTriangle size={10} strokeWidth={2.5} /> Macro a vigilar
+              </div>
               {macroEventos.map((e, i) => (
                 <div
                   key={i}
