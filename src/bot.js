@@ -217,10 +217,24 @@ async function publicarCanal(texto, portadaFileId = null) {
   const cabe = completo.length <= CAPTION_MAX;
 
   if (portadaFileId) {
-    // Caption: texto completo si cabe, o solo el título (2 primeras líneas) si es largo
-    const caption = cabe
-      ? completo
-      : texto.split("\n").filter(Boolean).slice(0, 2).join("\n").slice(0, 300);
+    // Calcular caption y restoTexto sin duplicar el encabezado
+    let caption, restoTexto;
+    if (cabe) {
+      caption = completo;
+      restoTexto = null;
+    } else {
+      const lineas = completo.split("\n");
+      let noVacias = 0;
+      let cortarEn = lineas.length;
+      for (let i = 0; i < lineas.length; i++) {
+        if (lineas[i].trim()) {
+          noVacias++;
+          if (noVacias === 2) { cortarEn = i + 1; break; }
+        }
+      }
+      caption = lineas.slice(0, cortarEn).join("\n").slice(0, CAPTION_MAX);
+      restoTexto = lineas.slice(cortarEn).join("\n").trimStart() || null;
+    }
 
     try {
       const fileInfoRes = await fetch(`${API()}/getFile?file_id=${encodeURIComponent(portadaFileId)}`, { signal: AbortSignal.timeout(10000) });
@@ -239,9 +253,6 @@ async function publicarCanal(texto, portadaFileId = null) {
       if (!json.ok) throw new Error(json.description || JSON.stringify(json));
     } catch (e) {
       console.warn("⚠️ Portada con logo fallida, usando file_id original:", e.message);
-      const caption = cabe
-        ? completo
-        : texto.split("\n").filter(Boolean).slice(0, 2).join("\n").slice(0, 300);
       const res  = await fetch(`${API()}/sendPhoto`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -255,8 +266,8 @@ async function publicarCanal(texto, portadaFileId = null) {
       }
     }
 
-    // Si el texto era largo, enviarlo completo en el siguiente mensaje
-    if (!cabe) await enviarTelegram(completo);
+    // Enviar solo el resto del texto (sin repetir el encabezado que ya fue caption)
+    if (restoTexto) await enviarTelegram(restoTexto);
     return;
   }
 
