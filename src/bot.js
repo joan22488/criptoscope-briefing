@@ -64,12 +64,55 @@ const senalesPendientes = new Map(); // pid → mensaje
 export const getSenalesPendientesReview = () =>
   [...senalesPendientes.entries()].map(([pid, mensaje]) => ({ pid, mensaje }));
 
+// Genera un tweet adaptado para X desde el texto de una señal técnica
+async function generarTweetDeSenal(msgSenal) {
+  const limpio = msgSenal.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
+  try {
+    const res = await client.messages.create({
+      model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
+      max_tokens: 300,
+      messages: [{
+        role: "user",
+        content: `Eres el redactor de X de CriptoScope (análisis cripto en español).
+
+Señal técnica:
+${limpio.slice(0, 1500)}
+
+Escribe UN tweet de 210-240 caracteres. Resalta el dato más potente: dirección, nivel clave y razón técnica concisa.
+
+Ejemplo de formato:
+🟢 BTC LONG. Entrada $104.500. TP $107K / SL $103K. R:R 1.8x.
+RSI 1H saliendo de sobreventa con MACD cruzando. Nivel $104K aguanta.
+
+PROHIBIDO: guiones (– o —), HTML, links, menciones.
+Devuelve SOLO el tweet, sin comillas ni etiquetas.`,
+      }],
+    });
+    return limpiarDashes(res.content[0].text.trim());
+  } catch {
+    const lineas = limpio.split("\n").filter((l) => l.trim().length > 15 && !l.includes("──"));
+    return lineas.slice(0, 3).join(" ").slice(0, 230);
+  }
+}
+
 export async function publicarSenalPendiente(pid) {
   const msg = senalesPendientes.get(pid);
   if (!msg) return false;
   senalesPendientes.delete(pid);
   await enviarTelegram(msg);
-  guardarPublicacionEnNotion({ tipo: "Señal", titulo: "Señal técnica automática", texto: msg, plataforma: "Canal", estado: "Publicado" }).catch(() => {});
+
+  let xPublicado = false;
+  if (process.env.X_API_KEY) {
+    try {
+      const tweet = await generarTweetDeSenal(msg);
+      await publicarTweetUnico(tweet);
+      xPublicado = true;
+    } catch (e) {
+      console.warn("⚠️ Error publicando señal en X:", e.message);
+    }
+  }
+
+  guardarPublicacionEnNotion({ tipo: "Señal", titulo: "Señal técnica automática", texto: msg, plataforma: xPublicado ? "Canal+X" : "Canal", estado: "Publicado" }).catch(() => {});
   return true;
 }
 
@@ -217,24 +260,9 @@ async function publicarCanal(texto, portadaFileId = null) {
   const cabe = completo.length <= CAPTION_MAX;
 
   if (portadaFileId) {
-    // Calcular caption y restoTexto sin duplicar el encabezado
-    let caption, restoTexto;
-    if (cabe) {
-      caption = completo;
-      restoTexto = null;
-    } else {
-      const lineas = completo.split("\n");
-      let noVacias = 0;
-      let cortarEn = lineas.length;
-      for (let i = 0; i < lineas.length; i++) {
-        if (lineas[i].trim()) {
-          noVacias++;
-          if (noVacias === 2) { cortarEn = i + 1; break; }
-        }
-      }
-      caption = lineas.slice(0, cortarEn).join("\n").slice(0, CAPTION_MAX);
-      restoTexto = lineas.slice(cortarEn).join("\n").trimStart() || null;
-    }
+    // Si cabe: foto + texto completo en caption. Si no: foto sola + texto completo aparte.
+    const caption    = cabe ? completo : "";
+    const restoTexto = cabe ? null : completo;
 
     try {
       const fileInfoRes = await fetch(`${API()}/getFile?file_id=${encodeURIComponent(portadaFileId)}`, { signal: AbortSignal.timeout(10000) });
@@ -1321,8 +1349,20 @@ Devuelve SOLO el tweet. Sin comillas, sin etiquetas, sin explicaciones.`,
     await quitarBotones();
     senalesPendientes.delete(pid);
     await enviarTelegram(msg);
-    await reply(chatId, "✅ Señal publicada en el canal.");
-    guardarPublicacionEnNotion({ tipo: "Señal", titulo: "Señal técnica automática", texto: msg, plataforma: "Canal", estado: "Publicado" }).catch(() => {});
+
+    let xPublicado = false;
+    if (process.env.X_API_KEY) {
+      try {
+        const tweet = await generarTweetDeSenal(msg);
+        await publicarTweetUnico(tweet);
+        xPublicado = true;
+      } catch (e) {
+        console.warn("⚠️ Error publicando señal en X:", e.message);
+      }
+    }
+
+    await reply(chatId, xPublicado ? "✅ Señal publicada en el canal y en X." : "✅ Señal publicada en el canal.");
+    guardarPublicacionEnNotion({ tipo: "Señal", titulo: "Señal técnica automática", texto: msg, plataforma: xPublicado ? "Canal+X" : "Canal", estado: "Publicado" }).catch(() => {});
   }
 
   if (data.startsWith("del_senal:")) {

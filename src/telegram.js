@@ -62,26 +62,13 @@ function truncarCaption(texto, max = CAPTION_MAX) {
 }
 
 /**
- * Separa el texto en caption (lo que va en la foto) y restoTexto (el mensaje siguiente).
- * Si cabe todo en caption, restoTexto es null.
- * Si no cabe, caption = primeras 2 líneas, restoTexto = todo lo que viene DESPUÉS para no repetir el título.
+ * Separa el texto en caption y restoTexto para envío con foto.
+ * Si cabe (≤1020 chars): foto + texto completo en un mensaje.
+ * Si no cabe: foto sola (sin caption) + texto completo aparte, sin duplicar el título.
  */
 function partirTextoParaFoto(texto, cabe) {
   if (cabe) return { caption: texto, restoTexto: null };
-
-  const lineas = texto.split("\n");
-  // Localizar el índice de la 2ª línea no vacía (que será el final del caption)
-  let noVacias = 0;
-  let cortarEn = lineas.length;
-  for (let i = 0; i < lineas.length; i++) {
-    if (lineas[i].trim()) {
-      noVacias++;
-      if (noVacias === 2) { cortarEn = i + 1; break; }
-    }
-  }
-  const caption   = lineas.slice(0, cortarEn).join("\n").slice(0, CAPTION_MAX);
-  const restoTexto = lineas.slice(cortarEn).join("\n").trimStart() || null;
-  return { caption, restoTexto };
+  return { caption: "", restoTexto: texto };
 }
 
 /**
