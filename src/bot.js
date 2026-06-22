@@ -1083,15 +1083,22 @@ async function procesarCallback(callback) {
   };
 
   // Genera UN tweet para X — aprovecha los 270-280 chars al máximo con el ángulo más potente
+  // Si el input es un titular corto (<160 chars), usa prompt de interpretación de noticia
   const generarTweetX = async (texto) => {
     const limpio = texto.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
-    try {
-      const res = await client.messages.create({
-        model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
-        max_tokens: 400,
-        messages: [{
-          role: "user",
-          content: `Eres el redactor de X/Twitter de CriptoScope, análisis cripto en español.
+    const esTitulo = limpio.length < 160;
+    const prompt = esTitulo
+      ? `Eres analista de X de CriptoScope (cripto en español).
+
+Titular de noticia: "${limpio}"
+
+Escribe UN tweet de 230-255 caracteres. NO resumas la noticia: interpreta qué SIGNIFICA para el mercado. Qué puede mover el precio, qué paradoja hay, o qué riesgo oculto implica. Si hay un número concreto en el titular, úsalo.
+
+1 emoji relevante al inicio (🚨⚠️🔴🟢💥🎯). Termina con una pregunta directa a la comunidad o una afirmación que invite al debate.
+
+Sin HTML. Sin guiones largos (– o —). Sin links. Sin hashtags. Sin mencionar "canal de Telegram".
+Devuelve SOLO el tweet. Sin comillas ni etiquetas.`
+      : `Eres el redactor de X/Twitter de CriptoScope, análisis cripto en español.
 
 Contenido del análisis:
 ${limpio.slice(0, 2000)}
@@ -1102,10 +1109,14 @@ Estructura (todo en un bloque continuo con salto de línea en el medio):
 — GANCHO (90-110 chars): el dato más impactante, la paradoja o el hecho que crea tensión. Para el scroll. NO empieces con "Hoy", "El mercado", el nombre de la coin ni "CriptoScope". 1 emoji si refuerza (🚨📊⚠️🔴🟢).
 — DESARROLLO (160-170 chars): qué implica ese dato para el precio, qué patrón hay detrás, nivel clave a vigilar. Datos concretos. Termina con una pregunta corta a la comunidad O con una afirmación que invite a debatir.
 
-Sin HTML. Sin guiones largos (– o —). Sin links. Sin mencionar "canal de Telegram".
+Sin HTML. Sin guiones largos (– o —). Sin links. Sin hashtags. Sin mencionar "canal de Telegram".
 
-Devuelve SOLO el tweet. Sin comillas, sin etiquetas, sin explicaciones.`,
-        }],
+Devuelve SOLO el tweet. Sin comillas, sin etiquetas, sin explicaciones.`;
+    try {
+      const res = await client.messages.create({
+        model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
+        max_tokens: 400,
+        messages: [{ role: "user", content: prompt }],
       });
       const tweet = limpiarDashes(res.content[0].text.trim());
       return tweet.length <= 280 ? tweet : tweet.slice(0, 277).replace(/\s+\S*$/, "...");
@@ -1278,20 +1289,32 @@ Devuelve SOLO el tweet. Sin comillas, sin etiquetas, sin explicaciones.`,
     }
 
     await reply(chatId, "🐦 Generando tweet para X...");
-    const contenido = await generarTweetX(titulo);
+
+    // Auto-imagen: gráfico BTC 4H como contexto visual para el tweet de noticia
+    let mediaId = null;
+    try {
+      const velas = await getVelas("BTCUSDT", "4h", 30);
+      const slice = velas.slice(-30);
+      const ema20s = calcEMA(slice, 20);
+      const ema50s = calcEMA(slice, 50);
+      const chartConfig = buildChartConfig("BTC", slice, ema20s, ema50s, "4H");
+      const buf = await fetchGraficoBuffer(chartConfig);
+      if (buf) mediaId = await subirImagenX(await aplicarLogo(buf), "image/png");
+    } catch (e) { console.warn("⚠️ Auto-imagen BTC en news_tweet:", e.message); }
+
+    const tweetFinal = await generarTweetX(titulo);
 
     try {
-      await publicarTweetUnico(contenido);
-      const tweetFinal = contenido;
+      await publicarTweetUnico(tweetFinal, { mediaId });
       guardarPublicacionEnNotion({
         tipo: "Flash",
         titulo,
         texto: tweetFinal,
         plataforma: "X",
-        conPortada: false,
+        conPortada: !!mediaId,
         estado: "Publicado",
       }).catch(() => {});
-      await reply(chatId, `✅ Tweet publicado en X:\n\n<code>${tweetFinal.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</code>`);
+      await reply(chatId, `✅ Tweet publicado en X${mediaId ? " (con gráfico BTC 4H)" : ""}:\n\n<code>${tweetFinal.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</code>`);
     } catch (e) {
       guardarPublicacionEnNotion({
         tipo: "Flash",
