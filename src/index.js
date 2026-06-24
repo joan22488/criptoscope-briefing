@@ -16,6 +16,8 @@ import { verificarResultados } from "./tracker.js";
 import { getPrices } from "./coindesk.js";
 import { iniciarBot, isPausado, verificarAlertasPrecios, monitorNoticias, ejecutarRecapDiario, enviarSenalParaRevisar } from "./bot.js";
 import { iniciarWebhookServer } from "./webhook.js";
+import { publicarTweetUnico } from "./twitter-post.js";
+import { ejecutarEditorial } from "./editorial.js";
 
 const horario = process.env.CRON_SCHEDULE || "0 7 * * *";
 const horarioSenales = process.env.SIGNALS_SCHEDULE || "0 7,11,15,19 * * *";
@@ -30,6 +32,7 @@ console.log(`  Señales:   ${horarioSenales} (${zona})`);
 console.log(`  Semanal:   ${horarioSemanal} (${zona})`);
 console.log(`  Macro lun: 0 8 * * 1 (${zona})`);
 console.log(`  Alertas:   ${horarioAlertas}`);
+console.log(`  Editorial: lun 16:30 · mar 10:00 · mié 12:00 · sáb 11:00 · dom 18:00`);
 console.log(`  Bot:       activo (long-polling)`);
 console.log("═══════════════════════════════════════");
 
@@ -108,8 +111,14 @@ cron.schedule(
       if (!isPausado()) {
         const alerta = await verificarAlertas();
         if (alerta) {
-          console.log("🚨 Alerta de evento detectada — enviando a Telegram");
+          console.log("🚨 Alerta de evento detectada — enviando a Telegram y X");
           await enviarTelegram(alerta);
+          // Publicar en X sin el header de Telegram
+          const HEADER_TG = "🚨 <b>ALERTA CRIPTOSCOPE</b>\n\n";
+          const alertaX = alerta.startsWith(HEADER_TG) ? alerta.slice(HEADER_TG.length) : alerta;
+          await publicarTweetUnico(alertaX).catch((e) =>
+            console.warn("⚠️  Alerta en X:", e.message)
+          );
         }
       }
     } catch (e) {
@@ -174,6 +183,34 @@ cron.schedule("0 8 * * 1", async () => {
     console.error("❌ Error en macro lunes:", e.message);
     await alertarOwner(`⚠️ <b>Macro lunes fallido</b>\n<code>${e.message.slice(0, 300)}</code>`);
   }
+}, { timezone: zona });
+
+// ── Pipeline editorial autónomo (guion semanal X) ─────────────
+// Lunes 16:30 · Martes 10:00 · Miércoles 12:00 · Sábado 11:00 · Domingo 18:00
+// Envía borrador al owner → publica en X tras EDITORIAL_DELAY_MIN minutos
+cron.schedule("30 16 * * 1", async () => {   // Lunes — flujo ETF
+  if (isPausado()) return;
+  await ejecutarEditorial().catch((e) => alertarOwner(`⚠️ Editorial lunes: ${e.message}`));
+}, { timezone: zona });
+
+cron.schedule("0 10 * * 2", async () => {    // Martes — institucional
+  if (isPausado()) return;
+  await ejecutarEditorial().catch((e) => alertarOwner(`⚠️ Editorial martes: ${e.message}`));
+}, { timezone: zona });
+
+cron.schedule("0 12 * * 3", async () => {    // Miércoles — educativo
+  if (isPausado()) return;
+  await ejecutarEditorial().catch((e) => alertarOwner(`⚠️ Editorial miércoles: ${e.message}`));
+}, { timezone: zona });
+
+cron.schedule("0 11 * * 6", async () => {    // Sábado — histórico
+  if (isPausado()) return;
+  await ejecutarEditorial().catch((e) => alertarOwner(`⚠️ Editorial sábado: ${e.message}`));
+}, { timezone: zona });
+
+cron.schedule("0 18 * * 0", async () => {    // Domingo — tweet principal
+  if (isPausado()) return;
+  await ejecutarEditorial().catch((e) => alertarOwner(`⚠️ Editorial domingo: ${e.message}`));
 }, { timezone: zona });
 
 // Recap diario privado al owner — 22:00

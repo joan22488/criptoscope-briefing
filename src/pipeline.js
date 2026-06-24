@@ -3,6 +3,7 @@
 // ============================================================
 
 import { getMarketContext } from "./coindesk.js";
+import { getContextoDerivadosBTC } from "./signals.js";
 import { getTweetsRelevantes } from "./twitter.js";
 import { getRedditSignals } from "./reddit.js";
 import { generarPaqueteDiario } from "./claude.js";
@@ -59,12 +60,14 @@ export async function generarBriefing() {
   console.log("🚀 Iniciando briefing CriptoScope...");
 
   console.log("📡 Obteniendo datos de mercado, tweets y Reddit...");
-  const [contexto, tweets, reddit, eventosMacro] = await Promise.all([
+  const [contexto, tweets, reddit, eventosMacro, derivadosBinance] = await Promise.all([
     getMarketContext(),
     getTweetsRelevantes(),
     getRedditSignals(),
     getEventosMacro(),
+    getContextoDerivadosBTC().catch(() => null),
   ]);
+  if (derivadosBinance) contexto.derivadosBinance = derivadosBinance;
   console.log(`   ✓ ${contexto.noticias.length} noticias | BTC/ETH + derivados OK`);
   console.log(`   ✓ ${tweets.length} tweets de alto impacto`);
   console.log(`   ✓ ${reddit.length} posts de Reddit`);

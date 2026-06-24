@@ -6,6 +6,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
 import { getNews } from "./coindesk.js";
+import { getContextoDerivadosBTC } from "./signals.js";
 
 const client = new Anthropic();
 
@@ -42,7 +43,13 @@ const alertadas = cargarAlertadas(); // Map: key → timestamp
 
 export async function verificarAlertas() {
   try {
-    const noticias = await getNews(15);
+    const [noticias, derivados] = await Promise.all([
+      getNews(15),
+      getContextoDerivadosBTC().catch(() => null),
+    ]);
+    const ctxDerivados = derivados?.resumen
+      ? `\n\nCONTEXTO DERIVADOS LIVE:\n${derivados.resumen}\nUsa estos datos para evaluar si la noticia amplifica o contradice el posicionamiento actual del mercado.`
+      : "";
     const nuevas = noticias.filter((n) => {
       const key = n.titulo?.toLowerCase().slice(0, 60);
       if (alertadas.has(key)) return false;
@@ -61,7 +68,7 @@ export async function verificarAlertas() {
         role: "user",
         content: `Evalúa estas noticias y devuelve:
 {"urgente": true|false, "noticia": "título de la más urgente si urgente=true", "por_que": "1 frase del impacto esperado", "alerta": "mensaje de alerta para Telegram en HTML, máx 300 caracteres, con <b>negritas</b>"}
-
+${ctxDerivados}
 NOTICIAS:
 ${nuevas.slice(0, 5).map((n) => `- ${n.titulo}: ${n.resumen?.slice(0, 150)}`).join("\n")}`,
       }],

@@ -6,16 +6,17 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
 import { getMarketContext, getPrices, getFearGreed, getGlobalMarket } from "./coindesk.js";
-import { analizarSymbol, generarSenal, getVelas, calcEMA } from "./signals.js";
+import { analizarSymbol, generarSenal, getVelas, calcEMA, getContextoDerivadosBTC } from "./signals.js";
 import { getEventosMacro, formatearAlertaMacro, formatearResumenSemana } from "./calendar.js";
 import { publicarThread, publicarTweetUnico, subirImagenX } from "./twitter-post.js";
 import { enviarTelegram } from "./telegram.js";
 import { ejecutarResumenSemanal } from "./weekly.js";
 import { guardarPublicacionEnNotion } from "./notion.js";
 import { generarEstadisticasSemana } from "./tracker.js";
-import { aplicarLogo, fetchGraficoBuffer } from "./media.js";
+import { aplicarLogo, fetchGraficoBuffer, generarBannerX } from "./media.js";
 import { ejecutarBriefing, generarBriefing } from "./pipeline.js";
 import { getPortadaFija, setPortadaFija, clearPortadaFija } from "./portadas_fijas.js";
+import { cancelarEditorial } from "./editorial.js";
 
 const client = new Anthropic();
 const API = () => `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}`;
@@ -75,16 +76,17 @@ async function generarTweetDeSenal(msgSenal) {
         role: "user",
         content: `Eres el redactor de X de CriptoScope (análisis cripto en español).
 
-Señal técnica:
-${limpio.slice(0, 1500)}
+Señal técnica completa (incluye datos de derivados Binance si aparecen: OI, Top L/S, Taker):
+${limpio.slice(0, 2000)}
 
 Escribe UN tweet de 210-240 caracteres. Resalta el dato más potente: dirección, nivel clave y razón técnica concisa.
+Si hay datos de OI, Top L/S ratio o Taker y REFUERZAN la dirección, inclúyelos brevemente de forma natural (ej: "OI +2% + top traders largos confirman"). Si contradicen la dirección, no los menciones.
 
 Ejemplo de formato:
 🟢 BTC LONG. Entrada $104.500. TP $107K / SL $103K. R:R 1.8x.
-RSI 1H saliendo de sobreventa con MACD cruzando. Nivel $104K aguanta.
+RSI 1H saliendo de sobreventa con MACD cruzando. OI creciendo + top traders largos confirman.
 
-PROHIBIDO: guiones (– o —), HTML, links, menciones.
+PROHIBIDO: guiones medios o largos (– o —), HTML, links, menciones.
 Devuelve SOLO el tweet, sin comillas ni etiquetas.`,
       }],
     });
@@ -311,6 +313,11 @@ async function cmdFlash(chatId, tema, portadaFileId = null) {
   if (!tema) return reply(chatId, "❓ Uso: /flash <tema o noticia>\n\nTip: manda una foto con <code>/flash tema</code> en el pie para publicarla como portada.");
   await reply(chatId, "⚡ Generando flash...");
 
+  const derivados = await getContextoDerivadosBTC().catch(() => null);
+  const ctxDerivados = derivados?.resumen
+    ? `\n\nCONTEXTO DERIVADOS LIVE (úsalo si es relevante al tema, no lo cites literalmente):\n${derivados.resumen}`
+    : "";
+
   const response = await client.messages.create({
     model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
     max_tokens: 700,
@@ -322,7 +329,7 @@ GANCHO: [1 frase impactante sobre el tema. Puede ser una afirmación rotunda, la
 CUERPO: [2 párrafos de análisis con implicaciones, contexto y qué vigilar. HTML Telegram: <b>, <i>. 1-2 emojis funcionales máx: 📊🔴🟢⚠️🎯]
 
 REGLA CRÍTICA: NUNCA menciones un precio específico de BTC, ETH u otra moneda si ese precio no aparece textualmente en el TEMA. No lo inventes, no lo estimes, no lo deduzcas. Si el tema no tiene precio concreto, el análisis no lo tiene. Usa "el precio actual" si necesitas referirte a él.
-Voz activa. Frases cortas. PROHIBIDO: guiones (– o —), 🚀💎🙌, clickbait, consejos financieros.`,
+Voz activa. Frases cortas. PROHIBIDO: guiones (– o —), 🚀💎🙌, clickbait, consejos financieros.${ctxDerivados}`,
     messages: [{
       role: "user",
       content: `TEMA: ${tema}`,
@@ -759,6 +766,51 @@ async function cmdCalendario(chatId) {
   }
 }
 
+// /banner — genera portada para X (1500×500) con datos del día
+async function cmdBanner(chatId) {
+  await reply(chatId, "🖼 Generando banner para X (1500×500)...");
+  try {
+    const contexto = await getMarketContext();
+    const btc = contexto.precios?.["BTC-USD"];
+    const eth = contexto.precios?.["ETH-USD"];
+    const fg  = contexto.sentimiento?.fearGreed;
+    const gm  = contexto.mercadoGlobal;
+    const gl  = contexto.gainersLosers;
+
+    let coins = gl
+      ? [
+          ...gl.ganadores.map((g) => ({ label: `$${g.simbolo}`, value: parseFloat(g.cambio) })),
+          ...gl.perdedores.map((p) => ({ label: `$${p.simbolo}`, value: parseFloat(p.cambio) })),
+        ]
+      : [];
+    const existentes = new Set(coins.map((c) => c.label));
+    for (const [id, d] of Object.entries(contexto.precios || {})) {
+      const label = `$${id.replace("-USD", "")}`;
+      if (!existentes.has(label) && d.cambio24h_pct != null)
+        coins.push({ label, value: parseFloat(d.cambio24h_pct.toFixed(2)) });
+    }
+    const sorted = [...coins].sort((a, b) => b.value - a.value);
+    const top    = sorted.slice(0, 4);
+    const bottom = sorted.slice(-Math.min(4, Math.max(0, sorted.length - top.length)));
+    coins = [...new Map([...top, ...bottom].map((c) => [c.label, c])).values()];
+
+    const buffer = await generarBannerX({ btc, eth, fg, dominancia: gm?.dominancia_btc, coins });
+
+    const form = new FormData();
+    form.append("chat_id", String(chatId));
+    form.append("document", new Blob([buffer], { type: "image/png" }), "banner_x.png");
+    form.append(
+      "caption",
+      "📎 Banner listo (1500×500 px).\n\n" +
+      "Para subirlo: X → tu perfil → Editar perfil → icono de cámara en el banner → subir imagen.\n\n" +
+      "Actualízalo con /banner cuando los datos del mercado cambien mucho."
+    );
+    await fetch(`${API()}/sendDocument`, { method: "POST", body: form });
+  } catch (e) {
+    await reply(chatId, `❌ Error generando banner: ${e.message}`);
+  }
+}
+
 // /estado — estado del sistema
 const BOT_START_TS = Date.now();
 async function cmdEstado(chatId) {
@@ -1087,6 +1139,10 @@ async function procesarCallback(callback) {
   const generarTweetX = async (texto) => {
     const limpio = texto.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
     const esTitulo = limpio.length < 160;
+    const derivados = await getContextoDerivadosBTC().catch(() => null);
+    const ctxDerivados = derivados?.resumen
+      ? `\n\nContexto de derivados live: ${derivados.resumen}\nSi es relevante al contenido, úsalo para enriquecer el tweet (no lo cites literalmente).`
+      : "";
     const prompt = esTitulo
       ? `Eres analista de X de CriptoScope (cripto en español).
 
@@ -1097,7 +1153,7 @@ Escribe UN tweet de 230-255 caracteres. NO resumas la noticia: interpreta qué S
 1 emoji relevante al inicio (🚨⚠️🔴🟢💥🎯). Termina con una pregunta directa a la comunidad o una afirmación que invite al debate.
 
 Sin HTML. Sin guiones largos (– o —). Sin links. Sin hashtags. Sin mencionar "canal de Telegram".
-Devuelve SOLO el tweet. Sin comillas ni etiquetas.`
+Devuelve SOLO el tweet. Sin comillas ni etiquetas.${ctxDerivados}`
       : `Eres el redactor de X/Twitter de CriptoScope, análisis cripto en español.
 
 Contenido del análisis:
@@ -1111,7 +1167,7 @@ Estructura (todo en un bloque continuo con salto de línea en el medio):
 
 Sin HTML. Sin guiones largos (– o —). Sin links. Sin hashtags. Sin mencionar "canal de Telegram".
 
-Devuelve SOLO el tweet. Sin comillas, sin etiquetas, sin explicaciones.`;
+Devuelve SOLO el tweet. Sin comillas, sin etiquetas, sin explicaciones.${ctxDerivados}`;
     try {
       const res = await client.messages.create({
         model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
@@ -2229,6 +2285,7 @@ async function procesarMensaje(msg) {
         await cmdSenal(chatId, argStr); break;
       }
       case "/calendario": await cmdCalendario(chatId); break;
+      case "/banner":     await cmdBanner(chatId); break;
       case "/estado":     await cmdEstado(chatId); break;
       case "/pausa":      await cmdPausa(chatId); break;
       case "/activa":     await cmdActiva(chatId); break;
@@ -2237,7 +2294,14 @@ async function procesarMensaje(msg) {
       case "/borralalerta": await cmdBorrarAlerta(chatId, argStr); break;
       case "/programar":    await cmdProgramar(chatId, argStr); break;
       case "/programadas":  await cmdProgramadas(chatId); break;
-      case "/cancelar":     await cmdCancelar(chatId, argStr); break;
+      case "/cancelar":            await cmdCancelar(chatId, argStr); break;
+      case "/cancelar_editorial": {
+        const cancelado = cancelarEditorial();
+        await reply(chatId, cancelado
+          ? "❌ Tweet editorial cancelado. No se publicará en X."
+          : "ℹ️ No hay ningún tweet editorial pendiente de publicar.");
+        break;
+      }
       case "/encuesta":     await cmdEncuesta(chatId, argStr); break;
       case "/semanal":      await cmdSemanal(chatId); break;
       case "/briefing":     await cmdBriefingManual(chatId); break;

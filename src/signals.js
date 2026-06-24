@@ -4,6 +4,7 @@ import { registrarSenal, verificarResultados, calcularCorrelacion } from "./trac
 const client = new Anthropic();
 const OKX = "https://www.okx.com/api/v5/market";
 const OKX_PUBLIC = "https://www.okx.com/api/v5/public";
+const BINANCE_FAPI = "https://fapi.binance.com";
 const SYMBOLS = (process.env.SIGNALS_SYMBOLS || "BTC,ETH,SOL,AVAX,LINK,BNB,XRP")
   .split(",").map((s) => s.trim().toUpperCase().replace("USDT", "") + "USDT");
 
@@ -17,9 +18,12 @@ const SLOT_CONFIG = {
     hora_str: "07:00",
     sistema_extra: `Análisis de apertura (07:00). Foco en la estructura 4H y el sesgo del día.
 Tu trabajo: leer la macro diaria, identificar el sesgo dominante y el nivel más importante del día.
-Sé directo: "BTC abre alcista con soporte en X" o "ETH en lateral sin dirección clara en 4H".`,
+Sé directo: "BTC abre alcista con soporte en X" o "ETH en lateral sin dirección clara en 4H".
+Datos de Binance disponibles en campo "binance" de cada activo: oi_change_pct (cambio OI últimas 20h), ls_top (ratio longs/shorts top traders), taker_ratio (agresividad compradora vs vendedora).
+Si ls_top > 1.2 al abrir = institucionales estuvieron largos durante la noche, sesgo alcista reforzado. Si ls_top < 0.85 = institucionales cortos, cautela aunque la estructura técnica sea alcista. OI subiendo de noche = dinero nuevo entrando antes de apertura Europa.`,
     instruccion_extra: `FOCO 07:00: estructura 4H, tendencia 1D, sesgo del día y nivel clave a vigilar.
-El campo "sesgo" debe ser una lectura clara del bias del día. El campo "cuando" debe nombrar el nivel exacto que activa o invalida el setup.`,
+El campo "sesgo" debe ser una lectura clara del bias del día integrando técnico Y derivados de Binance. El campo "cuando" debe nombrar el nivel exacto que activa o invalida el setup.
+Si binance.ls_top confirma la dirección técnica: tamano NORMAL. Si contradice: REDUCIDO.`,
     pie: "Niveles y estructura para la sesión de hoy.",
   },
   pulso: {
@@ -28,10 +32,12 @@ El campo "sesgo" debe ser una lectura clara del bias del día. El campo "cuando"
     hora_str: "11:00",
     sistema_extra: `Análisis de media mañana (11:00). Foco en 1H: ¿el precio respeta o rompe los niveles del radar de apertura?
 Tu trabajo: evaluar el momentum 1H con RSI y MACD. Si hay setup con entrada clara, defínelo. Si el precio está en tierra de nadie, di ESPERAR.
-RSI1H > 60 con histograma MACD subiendo = momentum alcista. RSI < 40 con histograma bajando = momentum bajista.`,
+RSI1H > 60 con histograma MACD subiendo = momentum alcista. RSI < 40 con histograma bajando = momentum bajista.
+Datos de Binance disponibles en campo "binance": taker_ratio es el más relevante en el pulso de media mañana. taker > 1.1 con RSI subiendo = compradores agresivos detrás del momentum, señal real. taker < 0.9 con RSI subiendo = rally sin convicción, posible trampa alcista. ls_top refuerza o contradice el sesgo técnico.`,
     instruccion_extra: `FOCO 11:00: momentum 1H (RSI zona, MACD cruce y dirección histograma). ¿El setup de apertura se confirma o se invalida?
-El campo "sesgo" debe nombrar el estado actual del momentum en 1H. El campo "por_que" debe incluir RSI y MACD 1H.`,
-    pie: "Momentum 1H actualizado a media mañana.",
+El campo "sesgo" debe nombrar el estado actual del momentum en 1H integrando taker y ls_top de Binance. El campo "por_que" debe incluir RSI, MACD 1H y el dato de Binance más relevante.
+Si taker y RSI confirman la misma dirección: tamano NORMAL. Si divergen: REDUCIDO.`,
+    pie: "Momentum 1H + derivados Binance a media mañana.",
   },
   derivados: {
     label: "On-chain y derivados",
@@ -39,9 +45,11 @@ El campo "sesgo" debe nombrar el estado actual del momentum en 1H. El campo "por
     hora_str: "15:00",
     sistema_extra: `Análisis de tarde (15:00). Foco en derivados: funding rate, open interest, posicionamiento del mercado.
 Tu trabajo: leer el funding y el OI y traducirlos a lenguaje de mercado. Funding muy positivo = mercado excesivamente largo, riesgo de squeeze bajista. Funding muy negativo = shorts acumulados, riesgo de short squeeze.
-Si el OI sube con el precio: la tendencia tiene respaldo. Si el OI cae con el precio: el movimiento pierde fuerza.`,
-    instruccion_extra: `FOCO 15:00: interpreta funding rate y open interest de cada activo. El campo "sesgo" debe nombrar el posicionamiento del mercado (ej: "Mercado largo en exceso, funding 0.08%"). El campo "por_que" debe conectar funding+OI con la dirección del precio.`,
-    pie: "Datos de derivados instantáneos. El funding cambia cada 8h.",
+Si el OI sube con el precio: la tendencia tiene respaldo. Si el OI cae con el precio: el movimiento pierde fuerza.
+Datos de Binance disponibles en campo "binance" de cada activo: oi_change_pct = cambio OI últimas 20h (positivo = dinero entrando, negativo = saliendo), ls_top = ratio longs/shorts de los top traders (>1.2 smart money largo, <0.85 smart money corto), taker_ratio = agresividad compradora vs vendedora (>1.1 compradores dominan, <0.9 vendedores dominan).`,
+    instruccion_extra: `FOCO 15:00: interpreta funding rate y open interest de cada activo. El campo "sesgo" debe nombrar el posicionamiento del mercado (ej: "Mercado largo en exceso, funding 0.08%"). El campo "por_que" debe conectar funding+OI con la dirección del precio.
+Si hay datos "binance": usa oi_change_pct para validar si la tendencia tiene respaldo. Si ls_top y taker_ratio confirman la dirección tecnica = tamano NORMAL. Si contradicen la tecnica = REDUCIDO. Si ls_top < 0.85 = top traders cortos, refuerza SHORT.`,
+    pie: "Datos de derivados: OKX funding + Binance OI/L/S/Taker.",
   },
   cierre: {
     label: "Cierre europeo",
@@ -49,11 +57,12 @@ Si el OI sube con el precio: la tendencia tiene respaldo. Si el OI cae con el pr
     hora_str: "19:00",
     sistema_extra: `Análisis de cierre europeo (19:00). Foco en el balance del día y la preparación para la sesión asiática.
 Tu trabajo: comparar el precio actual con el rango del día, leer si el cierre deja estructura alcista o bajista, e identificar el nivel clave para la sesión asiática de esta noche.
-Un cierre en la parte alta del rango del día = fortaleza. En la parte baja = debilidad.`,
+Un cierre en la parte alta del rango del día = fortaleza. En la parte baja = debilidad.
+Datos de Binance disponibles en campo "binance": al cierre europeo, oi_change_pct muestra si el dinero entró o salió durante el día. OI cayendo al cierre = posiciones reduciéndose antes de Asia, sesión asiática menos volátil. OI subiendo con precio en máximos = continuación asiática probable. ls_top al cierre = sesgo institucional para la noche.`,
     instruccion_extra: `FOCO 19:00: balance del día (dónde cierra en el rango diario), estructura del cierre y nivel clave para la sesión asiática.
-El campo "sesgo" debe incluir el balance: "Día alcista, cierra en máximos" o "Día bajista, cierra en mínimos del rango".
-El campo "cuando" debe nombrar el nivel asiático a vigilar esta noche.`,
-    pie: "Cierre de la sesión europea. La sesión asiática abre en unas horas.",
+El campo "sesgo" debe incluir el balance ("Día alcista, cierra en máximos") Y el sesgo de derivados (ls_top + oi_change_pct) para la noche.
+El campo "cuando" debe nombrar el nivel asiático a vigilar. Si OI sube + ls_top alcista: probabilidad de continuación asiática alta.`,
+    pie: "Cierre europeo. La sesión asiática abre en unas horas.",
   },
 };
 
@@ -97,6 +106,84 @@ async function getFunding(symbol) {
       open_interest: oiVal,
     };
   } catch { return null; }
+}
+
+// Datos de derivados de Binance Futures (API pública, sin API key)
+// OI histórico 4H, ratio longs/shorts global, top traders y presión taker
+export async function getBinanceFutures(symbol) {
+  const safe = (p) => p.catch(() => null);
+  try {
+    const [oiHist, lsGlobal, lsTop, taker] = await Promise.all([
+      safe(fetch(`${BINANCE_FAPI}/futures/data/openInterestHist?symbol=${symbol}&period=4h&limit=5`).then((r) => r.json())),
+      safe(fetch(`${BINANCE_FAPI}/futures/data/globalLongShortAccountRatio?symbol=${symbol}&period=1h&limit=1`).then((r) => r.json())),
+      safe(fetch(`${BINANCE_FAPI}/futures/data/topLongShortAccountRatio?symbol=${symbol}&period=1h&limit=1`).then((r) => r.json())),
+      safe(fetch(`${BINANCE_FAPI}/futures/data/takerlongshortRatio?symbol=${symbol}&period=1h&limit=3`).then((r) => r.json())),
+    ]);
+
+    // Cambio de OI en las últimas 20h (5 velas de 4H)
+    let oi_change_pct = null;
+    if (Array.isArray(oiHist) && oiHist.length >= 2) {
+      const first = parseFloat(oiHist[0].sumOpenInterest);
+      const last = parseFloat(oiHist[oiHist.length - 1].sumOpenInterest);
+      if (first > 0) {
+        const chgNum = (last - first) / first * 100;
+        const chg = chgNum.toFixed(2);
+        oi_change_pct = `${chgNum > 0 ? "+" : ""}${chg}%`;
+      }
+    }
+
+    // Ratio L/S global retail (último 1h)
+    const ls_global = Array.isArray(lsGlobal) && lsGlobal[0]
+      ? parseFloat(lsGlobal[0].longShortRatio).toFixed(3) : null;
+
+    // Ratio L/S top traders Binance (último 1h) — el más útil para señales
+    const ls_top = Array.isArray(lsTop) && lsTop[0]
+      ? parseFloat(lsTop[0].longShortRatio).toFixed(3) : null;
+
+    // Agresividad compradora vs vendedora (media últimas 3h)
+    let taker_ratio = null;
+    if (Array.isArray(taker) && taker.length) {
+      const avg = taker.reduce((a, b) => a + parseFloat(b.buySellRatio), 0) / taker.length;
+      taker_ratio = avg.toFixed(3);
+    }
+
+    if (!oi_change_pct && !ls_global && !ls_top && !taker_ratio) return null;
+    return { oi_change_pct, ls_global, ls_top, taker_ratio };
+  } catch (e) {
+    console.warn(`⚠️  Binance futures ${symbol}:`, e.message);
+    return null;
+  }
+}
+
+// Contexto de derivados BTC+ETH para inyectar en cualquier prompt de Claude
+export async function getContextoDerivadosBTC() {
+  try {
+    const [btcB, ethB, btcF, ethF] = await Promise.all([
+      getBinanceFutures("BTCUSDT"),
+      getBinanceFutures("ETHUSDT"),
+      getFunding("BTCUSDT"),
+      getFunding("ETHUSDT"),
+    ]);
+    const resumir = (nombre, b, f) => {
+      const p = [];
+      if (f?.funding_pct) p.push(`funding ${f.funding_pct}`);
+      if (b?.oi_change_pct) p.push(`OI ${b.oi_change_pct} en 20h`);
+      if (b?.ls_top) {
+        const v = parseFloat(b.ls_top);
+        p.push(`top traders L/S ${b.ls_top}${v > 1.2 ? " (smart money largo)" : v < 0.85 ? " (smart money corto)" : ""}`);
+      }
+      if (b?.taker_ratio) {
+        const v = parseFloat(b.taker_ratio);
+        p.push(`taker ${b.taker_ratio}${v > 1.1 ? " (compradores agresivos)" : v < 0.9 ? " (vendedores agresivos)" : ""}`);
+      }
+      return `${nombre}: ${p.join(", ")}`;
+    };
+    const resumen = [resumir("BTC", btcB, btcF), resumir("ETH", ethB, ethF)].join(". ");
+    return { BTC: { ...btcB, ...btcF }, ETH: { ...ethB, ...ethF }, resumen };
+  } catch (e) {
+    console.warn("⚠️  getContextoDerivadosBTC:", e.message);
+    return null;
+  }
 }
 
 export function calcEMA(velas, p) {
@@ -189,15 +276,16 @@ function calcPivots(velas) {
 
 export async function analizarSymbol(symbol) {
   const nombre = symbol.replace("USDT", "");
-  const [v1d, v4h, v1h, v15m, funding] = await Promise.all([
+  const [v1d, v4h, v1h, v15m, funding, binance] = await Promise.all([
     getVelas(symbol, "1d", 60), getVelas(symbol, "4h", 120),
     getVelas(symbol, "1h", 120), getVelas(symbol, "15m", 120),
     getFunding(symbol),
+    getBinanceFutures(symbol),
   ]);
   const ema20s = calcEMA(v4h, 20);
   const ema50s = calcEMA(v4h, 50);
   return {
-    nombre, precio: v15m[v15m.length - 1].close, funding,
+    nombre, precio: v15m[v15m.length - 1].close, funding, binance,
     tf1d: analizarTF(v1d, "1D"),
     tf4h: analizarTF(v4h, "4H"),
     tf1h: analizarTF(v1h, "1H"),
@@ -274,6 +362,35 @@ DATOS: ` + JSON.stringify(datos);
   }
 }
 
+function calcConfluencia(datos) {
+  const lineas = [];
+  for (const d of datos) {
+    if (!d.binance) continue;
+    const oiNum = d.binance.oi_change_pct ? parseFloat(d.binance.oi_change_pct) : null;
+    const topNum = d.binance.ls_top ? parseFloat(d.binance.ls_top) : null;
+    const takNum = d.binance.taker_ratio ? parseFloat(d.binance.taker_ratio) : null;
+    const señales = [
+      oiNum !== null ? (oiNum > 0 ? 1 : -1) : null,
+      topNum !== null ? (topNum > 1.05 ? 1 : topNum < 0.95 ? -1 : 0) : null,
+      takNum !== null ? (takNum > 1.05 ? 1 : takNum < 0.95 ? -1 : 0) : null,
+    ].filter((x) => x !== null);
+    if (!señales.length) continue;
+    const suma = señales.reduce((a, b) => a + b, 0);
+    if (suma >= 2) lineas.push(`✅ ${d.nombre}: OI + derivados alineados alcistas`);
+    else if (suma <= -2) lineas.push(`🔴 ${d.nombre}: OI + derivados alineados bajistas`);
+    else lineas.push(`⚡ ${d.nombre}: señales mixtas`);
+  }
+  const btc = datos.find((d) => d.nombre === "BTC");
+  const eth = datos.find((d) => d.nombre === "ETH");
+  if (btc?.binance?.ls_top && eth?.binance?.ls_top) {
+    const bTop = parseFloat(btc.binance.ls_top);
+    const eTop = parseFloat(eth.binance.ls_top);
+    if (bTop > 1.1 && eTop < 0.95) lineas.push("🔀 Rotación: smart money largo BTC, corto ETH");
+    else if (eTop > 1.1 && bTop < 0.95) lineas.push("🔀 Rotación: smart money largo ETH, corto BTC");
+  }
+  return lineas.length ? lineas.join("\n") : null;
+}
+
 function formatear(senales, datos, hora, correlacion, slot = "apertura") {
   const cfg = SLOT_CONFIG[slot] || SLOT_CONFIG.apertura;
   const iconOp = { LONG: "🟢 LONG", SHORT: "🔴 SHORT", ESPERAR: "⏸ ESPERAR" };
@@ -285,17 +402,34 @@ function formatear(senales, datos, hora, correlacion, slot = "apertura") {
   let msg = `<b>${cfg.emoji} CRIPTOSCOPE | ${cfg.label}</b>\n`;
   msg += `<b>${fecha} · ${hora}</b>\n\n`;
 
-  // DERIVADOS: tabla de funding/OI como intro antes de los coins
+  // DERIVADOS: tabla de funding + Binance OI/L/S/Taker como intro antes de los coins
   if (slot === "derivados") {
     msg += `<b>Posicionamiento ahora:</b>\n`;
     for (const d of datos) {
-      if (!d.funding) continue;
-      const fr = parseFloat(d.funding.funding_pct);
+      if (!d.funding && !d.binance) continue;
+      const fr = d.funding ? parseFloat(d.funding.funding_pct) : 0;
       const icono = fr > 0.04 ? "🔴" : fr < -0.04 ? "🟢" : "⚪";
       const sesgo = fr > 0.04 ? "longs pagando" : fr < -0.04 ? "shorts pagando" : "equilibrado";
-      const oi = d.funding.open_interest > 0 ? `  OI ${(d.funding.open_interest / 1e6).toFixed(0)}M` : "";
-      msg += `${icono} <b>${d.nombre}</b>: ${d.funding.funding_pct} (${sesgo})${oi}\n`;
+      msg += `${icono} <b>${d.nombre}</b>: ${d.funding?.funding_pct || "n/a"} (${sesgo})\n`;
+      if (d.binance) {
+        const parts = [];
+        if (d.binance.oi_change_pct) parts.push(`OI ${d.binance.oi_change_pct}`);
+        if (d.binance.ls_top) {
+          const topVal = parseFloat(d.binance.ls_top);
+          const topIcon = topVal > 1.2 ? " 🐋" : topVal < 0.85 ? " 🐻" : "";
+          parts.push(`Top L/S ${d.binance.ls_top}${topIcon}`);
+        }
+        if (d.binance.taker_ratio) {
+          const takVal = parseFloat(d.binance.taker_ratio);
+          const takIcon = takVal > 1.1 ? "▲" : takVal < 0.9 ? "▼" : "";
+          parts.push(`Taker ${d.binance.taker_ratio}${takIcon}`);
+        }
+        if (parts.length) msg += `   ${parts.join("  ·  ")}\n`;
+      }
     }
+    // Línea de confluencia automática
+    const confluencia = calcConfluencia(datos);
+    if (confluencia) msg += `\n${confluencia}\n`;
     msg += "\n";
   }
 
@@ -314,9 +448,32 @@ function formatear(senales, datos, hora, correlacion, slot = "apertura") {
       msg += `${rsiEmoji} RSI 1H: ${rsi.v} ${rsi.zona}  ·  MACD ${macd.cruce}  hist ${histDir}\n`;
     }
 
-    // APERTURA y CIERRE: funding como dato de contexto, discreto
+    // APERTURA y CIERRE: funding + datos Binance compactos
     if ((slot === "apertura" || slot === "cierre") && info?.funding) {
       msg += `Funding: ${info.funding.funding_pct}\n`;
+    }
+    if ((slot === "apertura" || slot === "cierre") && info?.binance) {
+      const parts = [];
+      if (info.binance.ls_top) {
+        const v = parseFloat(info.binance.ls_top);
+        parts.push(`Top L/S ${info.binance.ls_top}${v > 1.2 ? " 🐋" : v < 0.85 ? " 🐻" : ""}`);
+      }
+      if (info.binance.oi_change_pct) parts.push(`OI ${info.binance.oi_change_pct}`);
+      if (parts.length) msg += `${parts.join("  ·  ")}\n`;
+    }
+
+    // PULSO: taker + Top L/S como contexto de momentum
+    if (slot === "pulso" && info?.binance) {
+      const parts = [];
+      if (info.binance.taker_ratio) {
+        const v = parseFloat(info.binance.taker_ratio);
+        parts.push(`Taker ${info.binance.taker_ratio}${v > 1.1 ? "▲" : v < 0.9 ? "▼" : ""}`);
+      }
+      if (info.binance.ls_top) {
+        const v = parseFloat(info.binance.ls_top);
+        parts.push(`Top L/S ${info.binance.ls_top}${v > 1.2 ? " 🐋" : v < 0.85 ? " 🐻" : ""}`);
+      }
+      if (parts.length) msg += `${parts.join("  ·  ")}\n`;
     }
 
     msg += `\n${d.sesgo}\n\n`;
