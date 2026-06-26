@@ -18,6 +18,32 @@ async function apiFetch(url) {
 /**
  * 1) NOTICIAS - RSS de CoinDesk parseado directamente (sin key)
  */
+// Puntúa una noticia según su potencial editorial para X y Telegram
+// Basado en el guion semanal: institucional + cifra + urgencia = viral
+export function puntuarNoticia(noticia) {
+  const texto = `${noticia.titulo} ${noticia.resumen || ""}`.toLowerCase();
+  let score = 0;
+
+  const institucional = ["etf", "grayscale", "blackrock", "strategy", "microstrategy", "saylor", "sec", "fed", "federal reserve", "cpi", "nfp", "treasury", "jp morgan", "goldman", "fidelity", "ark invest", "vaneck", "invesco"];
+  if (institucional.some((k) => texto.includes(k))) score += 3;
+
+  if (/\$[\d,.]+\s*[mbk]?|[\d,.]+\s*(million|billion|millones|millardos)/i.test(texto)) score += 2;
+
+  const urgencia = ["crash", "spike", "surges", "plummets", "ban", "hack", "exploit", "record", "récord", "all-time", "ath", "liquidat", "insolvent", "bankrupt", "seized", "arrest"];
+  if (urgencia.some((k) => texto.includes(k))) score += 2;
+
+  if (/bitcoin|\bbtc\b/.test(texto)) score += 1;
+  if (/ethereum|\beth\b/.test(texto)) score += 1;
+
+  const regulacion = ["regulation", "regulación", "congress", "senate", "executive order", "compliance", "prohibit", "ilegal"];
+  if (regulacion.some((k) => texto.includes(k))) score += 1;
+
+  if (score >= 6) return { score, emoji: "🔥🔥🔥", etiqueta: "Viral para X" };
+  if (score >= 4) return { score, emoji: "🔥🔥",   etiqueta: "Buena para X" };
+  if (score >= 2) return { score, emoji: "🔥",     etiqueta: "Canal Telegram" };
+  return             { score, emoji: "⬜",          etiqueta: "Omitir" };
+}
+
 export async function getNews(limit = 25) {
   try {
     const res = await fetch("https://www.coindesk.com/arc/outboundfeeds/rss/", {
@@ -33,7 +59,7 @@ export async function getNews(limit = 25) {
         const match = bloque.match(new RegExp(`<${tag}[^>]*>(?:<!\\[CDATA\\[)?(.*?)(?:\\]\\]>)?<\\/${tag}>`, "s"));
         return match ? match[1].trim() : "";
       };
-      return {
+      const noticia = {
         titulo: get("title"),
         resumen: get("description").replace(/<[^>]+>/g, "").slice(0, 400),
         fuente: "CoinDesk",
@@ -41,6 +67,8 @@ export async function getNews(limit = 25) {
         categorias: get("category"),
         url: get("link"),
       };
+      noticia.puntuacion = puntuarNoticia(noticia);
+      return noticia;
     });
   } catch (e) {
     console.warn("⚠️  Noticias no disponibles:", e.message);

@@ -5,11 +5,11 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
-import { getMarketContext, getPrices, getFearGreed, getGlobalMarket } from "./coindesk.js";
+import { getMarketContext, getPrices, getFearGreed, getGlobalMarket, puntuarNoticia } from "./coindesk.js";
 import { analizarSymbol, generarSenal, getVelas, calcEMA, getContextoDerivadosBTC } from "./signals.js";
 import { getEventosMacro, formatearAlertaMacro, formatearResumenSemana } from "./calendar.js";
 import { publicarThread, publicarTweetUnico, subirImagenX } from "./twitter-post.js";
-import { enviarTelegram } from "./telegram.js";
+import { enviarTelegram, enviarTelegramConFoto } from "./telegram.js";
 import { ejecutarResumenSemanal } from "./weekly.js";
 import { guardarPublicacionEnNotion } from "./notion.js";
 import { generarEstadisticasSemana } from "./tracker.js";
@@ -34,6 +34,8 @@ export const isPausado = () => pausado;
 
 // Almacén temporal para mensajes pendientes de publicar (callback de botones)
 const pendingPublish = new Map();
+// Publicaciones manuales pendientes de confirmación (/publicar)
+const pendingManual = new Map(); // chatId → { texto, fotoBuffer? }
 
 // ── Rate limiting — evita spam de comandos costosos ──
 const cooldowns = new Map(); // `${chatId}:${cmd}` → timestamp
@@ -766,6 +768,56 @@ async function cmdCalendario(chatId) {
   }
 }
 
+// /publicar <texto> — publica en X y amplifica al canal de Telegram
+// También se activa enviando una foto con caption "/publicar <texto>"
+async function cmdPublicar(chatId, texto, photoArray = null) {
+  if (!texto?.trim()) {
+    return reply(chatId,
+      "❓ <b>Uso:</b>\n" +
+      "• Escribe <code>/publicar</code> seguido del texto del tweet\n" +
+      "• O envía una foto con caption <code>/publicar texto aquí</code>"
+    );
+  }
+
+  await reply(chatId, "⏳ Preparando publicación...");
+
+  let fotoBuffer = null;
+  if (photoArray) {
+    try {
+      const base64 = await descargarFoto(photoArray);
+      fotoBuffer = Buffer.from(base64, "base64");
+    } catch (e) {
+      console.warn("⚠️ Foto no descargada:", e.message);
+    }
+  }
+
+  const textoFinal = limpiarDashes(texto.trim());
+
+  pendingManual.set(chatId, { texto: textoFinal, fotoBuffer });
+  setTimeout(() => pendingManual.delete(chatId), 30 * 60 * 1000);
+
+  const preview =
+    `📝 <b>BORRADOR</b>\n\n${textoFinal}\n\n` +
+    (fotoBuffer ? "📎 Con imagen adjunta\n\n" : "") +
+    `<i>Se publicará en X y se amplificará al canal de Telegram.</i>`;
+
+  await fetch(`${API()}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text: preview,
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [[
+          { text: "✅ Publicar en X + Canal", callback_data: "pub_manual_ok" },
+          { text: "❌ Cancelar",              callback_data: "pub_manual_no" },
+        ]],
+      },
+    }),
+  });
+}
+
 // /banner — genera portada para X (1500×500) con datos del día
 async function cmdBanner(chatId) {
   await reply(chatId, "🖼 Generando banner para X (1500×500)...");
@@ -907,6 +959,13 @@ function esModoRespuesta(caption) {
 
 // Foto con noticia → verificar credibilidad y generar opinión
 async function cmdFoto(chatId, photo, caption) {
+
+  // MODO PUBLICAR MANUAL — foto + caption "/publicar texto"
+  if ((caption || "").trimStart().toLowerCase().startsWith("/publicar")) {
+    const texto = caption.replace(/^\/publicar\s*/i, "").trim();
+    await cmdPublicar(chatId, texto, photo);
+    return;
+  }
 
   // MODO RESPUESTA A COMENTARIO
   if (esModoRespuesta(caption)) {
@@ -1066,6 +1125,45 @@ async function procesarCallback(callback) {
       body: JSON.stringify({ chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [] } }),
     });
     await reply(chatId, "✅ Guardado solo para ti.");
+    return;
+  }
+
+  if (data === "pub_manual_no") {
+    pendingManual.delete(chatId);
+    await fetch(`${API()}/editMessageReplyMarkup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [] } }),
+    });
+    await reply(chatId, "❌ Publicación cancelada.");
+    return;
+  }
+
+  if (data === "pub_manual_ok") {
+    const pending = pendingManual.get(chatId);
+    pendingManual.delete(chatId);
+    await fetch(`${API()}/editMessageReplyMarkup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [] } }),
+    });
+    if (!pending) return reply(chatId, "⚠️ La publicación expiró. Vuelve a usar /publicar.");
+    await reply(chatId, "📤 Publicando...");
+    try {
+      let mediaId = null;
+      if (pending.fotoBuffer) {
+        mediaId = await subirImagenX(pending.fotoBuffer).catch(() => null);
+      }
+      await publicarTweetUnico(pending.texto, mediaId ? { mediaId } : {});
+      if (pending.fotoBuffer) {
+        await enviarTelegramConFoto(pending.texto, pending.fotoBuffer);
+      } else {
+        await enviarTelegram(pending.texto);
+      }
+      await reply(chatId, "✅ Publicado en X y amplificado al canal de Telegram.");
+    } catch (e) {
+      await reply(chatId, `❌ Error publicando: ${e.message}`);
+    }
     return;
   }
 
@@ -1879,7 +1977,7 @@ export async function monitorNoticias() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             chat_id: OWNER(),
-            text: `📰 <b>${item.fuente}</b>\n\n<b>${item.titulo}</b>\n\n<a href="${item.link}">Ver artículo</a>`,
+            text: `${puntuarNoticia({ titulo: item.titulo, resumen: "" }).emoji} <b>${item.fuente}</b> · <i>${puntuarNoticia({ titulo: item.titulo, resumen: "" }).etiqueta}</i>\n\n<b>${item.titulo}</b>\n\n<a href="${item.link}">Ver artículo</a>`,
             parse_mode: "HTML",
             disable_web_page_preview: false,
             reply_markup: {
@@ -2284,6 +2382,7 @@ async function procesarMensaje(msg) {
         if (cd) { await reply(chatId, `⏳ Espera ${cd}s antes de pedir otra señal.`); break; }
         await cmdSenal(chatId, argStr); break;
       }
+      case "/publicar":   await cmdPublicar(chatId, argStr); break;
       case "/calendario": await cmdCalendario(chatId); break;
       case "/banner":     await cmdBanner(chatId); break;
       case "/estado":     await cmdEstado(chatId); break;
