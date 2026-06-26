@@ -17,8 +17,12 @@ export async function guardarBriefingEnNotion(paquete, contexto, { conPortada = 
   if (!process.env.NOTION_BRIEFINGS_DB) return;
   const notion = getClient();
 
-  const btc = contexto?.precios?.["BTC-USD"];
-  const eth = contexto?.precios?.["ETH-USD"];
+  const btc  = contexto?.precios?.["BTC-USD"];
+  const eth  = contexto?.precios?.["ETH-USD"];
+  const sol  = contexto?.precios?.["SOL-USD"];
+  const mstr = contexto?.mstr;
+  const liq  = contexto?.sentimiento?.liquidaciones;
+  const fund = contexto?.derivados?.funding;
   const plataformas = [{ name: "Telegram" }, ...(xPublicado ? [{ name: "X" }] : [])];
 
   await notion.pages.create({
@@ -30,10 +34,16 @@ export async function guardarBriefingEnNotion(paquete, contexto, { conPortada = 
       Plataformas:          { multi_select: plataformas },
       "BTC Precio":         { number: btc?.precio || 0 },
       "ETH Precio":         { number: eth?.precio || 0 },
+      "SOL Precio":         { number: sol?.precio || 0 },
       "BTC % 24h":          { number: parseFloat((btc?.cambio24h_pct || 0).toFixed(2)) },
       "ETH % 24h":          { number: parseFloat((eth?.cambio24h_pct || 0).toFixed(2)) },
+      "SOL % 24h":          { number: parseFloat((sol?.cambio24h_pct || 0).toFixed(2)) },
+      "MSTR Precio":        { number: mstr?.precio || 0 },
+      "MSTR % 24h":         { number: parseFloat((mstr?.cambio_pct || 0).toFixed(2)) },
       "Dominancia BTC":     { number: contexto?.mercadoGlobal?.dominancia_btc || 0 },
       "Fear & Greed":       { number: contexto?.sentimiento?.fearGreed?.valor || 0 },
+      "Funding BTC":        { number: parseFloat((fund?.funding_rate || 0).toFixed(6)) },
+      "Liquidaciones $M":   { number: liq ? parseFloat((liq.total_usd / 1e6).toFixed(2)) : 0 },
       "Con Portada":        { checkbox: conPortada },
       Narrativa:            { rich_text: [{ text: { content: paquete.narrativa_caliente || "" } }] },
       "Pregunta Comunidad": { rich_text: [{ text: { content: paquete.pregunta_comunidad || "" } }] },
