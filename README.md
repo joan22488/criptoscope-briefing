@@ -17,6 +17,7 @@ Sistema que monitoriza el mercado cripto 24/7, genera análisis con IA (Claude) 
 | Cada 30 min | ✅ Verificación automática de resultados de señales |
 | Lunes 08:00 | 📅 Macro de la semana → canal (ForexFactory JSON, eventos alto impacto) |
 | Domingos 09:00 | 📅 Resumen semanal con estadísticas de señales |
+| Lun 16:30 · Mar 10:00 · Mié 12:00 · Sáb 11:00 · Dom 18:00 | 📝 Pipeline editorial autónomo — tweet de crecimiento → borrador privado + X |
 | Bajo demanda | 🤖 Bot de Telegram con comandos en cualquier momento |
 
 ---
@@ -28,11 +29,12 @@ src/
 ├── index.js          # Punto de entrada. Inicia crons + bot
 ├── pipeline.js       # Orquesta el briefing matinal
 ├── claude.js         # Genera el paquete diario con Claude
-├── signals.js        # Análisis técnico top-down 1D→4H→1H→15m
+├── signals.js        # Análisis técnico top-down 1D→4H→1H→15m + derivados Binance
 ├── weekly.js         # Resumen semanal
 ├── alerts.js         # Monitor de eventos críticos
+├── editorial.js      # Pipeline editorial autónomo (tweet diario X según guion semanal)
 ├── bot.js            # Bot de Telegram con comandos bajo demanda
-├── coindesk.js       # Fuentes de datos (precios, noticias, derivados)
+├── coindesk.js       # Fuentes de datos (precios, noticias, scoring editorial)
 ├── twitter.js        # Tweets vía Nitter RSS (contexto para Claude)
 ├── reddit.js         # HackerNews señales de comunidad
 ├── calendar.js       # Calendario económico ForexFactory
@@ -40,6 +42,7 @@ src/
 ├── notion.js         # Integración Notion (briefings + señales)
 ├── telegram.js       # Envío a Telegram con chunking automático
 ├── twitter-post.js   # Publicación en X (tweet único + threads para /hilo)
+├── media.js          # Imágenes: charts de barras/línea, banner de portada X (1500x500)
 ├── prompts.js        # Voz editorial CriptoScope + plantillas JSON
 └── output.js         # Guardado local de archivos
 ```
@@ -57,6 +60,7 @@ src/
 | Velas 1D/4H/1H/15m | OKX API pública | Gratis |
 | Funding rate + Open Interest | OKX API pública | Gratis |
 | Liquidaciones 24h BTC/ETH/SOL | OKX API pública | Gratis |
+| OI histórico + L/S ratio + taker ratio BTC/ETH | Binance Futures API pública | Gratis |
 | Noticias cripto | CoinDesk RSS | Gratis |
 | Tweets de cuentas clave | Nitter RSS (fallback múltiple) | Gratis |
 | Señales de comunidad | Hacker News API | Gratis |
@@ -109,6 +113,8 @@ Escríbele directamente al bot (chat privado):
 | `/opinion <noticia>` | `/opinion SEC aprueba ETF` | Lectura de mercado estilo CriptoScope |
 | `/encuesta [tema]` | `/encuesta` · `/encuesta BTC esta semana` | Poll nativo para el canal con preview |
 | `/semanal` | `/semanal` | Resumen semanal bajo demanda — sin esperar al domingo |
+| `/publicar <texto>` | `/publicar BTC supera los 100k. Nivel clave: 98.000.` | Publica tu propio texto (+ foto opcional) en X y/o canal con 4 botones de destino |
+| `/banner` | `/banner` | Genera imagen de portada 1500×500 px con datos del día lista para subir a X |
 
 **Botones de publicación** (aparecen tras generar cualquier contenido):
 - 📢 **Canal + X** — publica en Telegram y en X (con hashtags automáticos de monedas)
@@ -146,7 +152,16 @@ Escríbele directamente al bot (chat privado):
 | Foto + pie `responde` | Redacta una respuesta al comentario de la imagen (solo para ti) |
 
 ### Monitor automático de noticias
-Cada 15 min el sistema revisa **6 fuentes RSS en paralelo**: CoinDesk · Cointelegraph · The Block · Decrypt · BeInCrypto · The Defiant. Si detecta una noticia con tus keywords (`MONITOR_KEYWORDS`) te la manda en privado con botones. Cuando una señal toca TP1, TP2 o SL, recibes una **alerta privada** con todos los detalles (entrada, niveles, R:R).
+Cada 15 min el sistema revisa **6 fuentes RSS en paralelo**: CoinDesk · Cointelegraph · The Block · Decrypt · BeInCrypto · The Defiant. Si detecta una noticia con tus keywords (`MONITOR_KEYWORDS`) te la manda en privado con botones y una **puntuación editorial automática**:
+
+| Puntuación | Emoji | Significado |
+|-----------|-------|-------------|
+| ≥ 6 pts | 🔥🔥🔥 | Viral para X — institucional + cifra + urgencia |
+| ≥ 4 pts | 🔥🔥 | Buena para X |
+| ≥ 2 pts | 🔥 | Canal Telegram |
+| < 2 pts | ⬜ | Omitir |
+
+Cuando una señal toca TP1, TP2 o SL, recibes una **alerta privada** con todos los detalles (entrada, niveles, R:R).
 - **⚡ Flash** — genera flash con preview + botones de destino
 - **📝 Hilo** — genera hilo de 5 tweets con preview + botones
 - **🐦 Tweet X** — genera tweet nativo y publica **directamente en X** sin pasos intermedios (queda registrado en Notion)
@@ -158,6 +173,7 @@ Cada 15 min el sistema revisa **6 fuentes RSS en paralelo**: CoinDesk · Cointel
 | `/estado` | Estado completo: hora Madrid, alertas activas, programadas y próximas ejecuciones automáticas |
 | `/pausa` | Pausar todas las publicaciones automáticas |
 | `/activa` | Reanudar publicaciones |
+| `/cancelar_editorial` | Cancela el tweet editorial pendiente antes de que se publique en X |
 | `/ayuda` | Guía completa. `/ayuda <comando>` para detalle de cada uno |
 
 ---
@@ -221,6 +237,7 @@ CRON_SCHEDULE=0 7 * * *
 SIGNALS_SCHEDULE=0 7,11,15,19 * * *
 WEEKLY_SCHEDULE=0 9 * * 0
 ALERTS_SCHEDULE=*/30 * * * *
+EDITORIAL_DELAY_MIN=10                # Minutos entre borrador y publicación en X (editorial autónomo)
 ```
 
 ---
@@ -377,6 +394,14 @@ O conecta el repositorio de GitHub en el dashboard de Railway para despliegue au
 **Verificación de noticias:** Cuando se manda una foto al bot, Claude hace primero un análisis de credibilidad (VERIFICADA / PROBABLE / DUDOSA / FALSA). Las noticias FALSAS no se pueden publicar.
 
 **SDK Notion v5:** La versión 5 del SDK eliminó `databases.query`. Se usa `notion.request()` directamente contra la REST API para las consultas.
+
+**Pipeline editorial autónomo:** `editorial.js` genera un tweet por día según el tipo (lunes ETF, martes institucional, miércoles educativo, sábado histórico, domingo principal). Flujo: contexto → Claude → borrador al owner → `EDITORIAL_DELAY_MIN` minutos de espera → publica en X con imagen. Cancelable con `/cancelar_editorial`.
+
+**Banner X (1500×500):** `generarBannerX()` en media.js construye el banner como SVG en memoria y lo convierte a PNG con Sharp. Si Sharp falla, cae a `generarChartBarras`. El resultado se envía como documento (sin compresión) para preservar la resolución.
+
+**Binance Futures (gratis, sin key):** `getBinanceFutures()` en signals.js obtiene OI histórico 20h, globalLongShortAccountRatio y takerlongshortRatio. Se usa en briefing, alertas y pipeline editorial como contexto de derivados.
+
+**Scoring de noticias:** `puntuarNoticia()` en coindesk.js asigna puntos por keywords institucionales (+3), cifras en dólares (+2), urgencia (+2), BTC/ETH (+1 c/u) y regulación (+1). Sin coste de API.
 
 ---
 

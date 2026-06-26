@@ -915,10 +915,11 @@ async function cmdEstado(chatId) {
     `🚨 Monitor eventos: cada 30 min\n` +
     `🔔 Alertas precio: cada 5 min\n` +
     `📰 Monitor RSS: cada 15 min\n` +
+    `📝 Editorial: lun 16:30 · mar 10:00 · mié 12:00 · sáb 11:00 · dom 18:00\n` +
     `🌙 Recap diario: 22:00\n\n` +
     `<b>Publicación manual:</b>\n` +
     `<code>/flash</code> · <code>/hilo</code> · <code>/analiza</code> · <code>/opinion</code>\n` +
-    `<code>/encuesta</code> · <code>/semanal</code>\n\n` +
+    `<code>/encuesta</code> · <code>/semanal</code> · <code>/publicar</code> · <code>/banner</code>\n\n` +
     `<b>Consulta privada:</b>\n` +
     `<code>/precio</code> · <code>/quepasa</code> · <code>/senal</code> · <code>/calendario</code>\n` +
     `<code>/stats</code> · <code>/historial</code>\n\n` +
@@ -926,7 +927,8 @@ async function cmdEstado(chatId) {
     `<code>/alerta</code> · <code>/alertas</code> · <code>/borralalerta</code>\n` +
     `<code>/programar</code> · <code>/programadas</code> · <code>/cancelar</code>\n\n` +
     `<b>Sistema:</b>\n` +
-    `<code>/pausa</code> · <code>/activa</code> · <code>/estado</code> · <code>/ayuda</code>\n\n` +
+    `<code>/pausa</code> · <code>/activa</code> · <code>/cancelar_editorial</code>\n` +
+    `<code>/estado</code> · <code>/ayuda</code>\n\n` +
     `<i>📒 Notion: Publicaciones · Señales · Briefings</i>\n` +
     `🔗 Webhook TradingView: activo\n` +
     (process.env.X_PROFILE_URL ? `🐦 <a href="${process.env.X_PROFILE_URL}">${process.env.X_PROFILE_URL.replace("https://x.com/", "@")}</a>` : "");
@@ -1749,7 +1751,44 @@ async function cmdAyuda(chatId, cmd) {
         "📝 <b>Hilo</b> — genera un hilo educativo de 5 tweets con preview y botones\n" +
         "🐦 <b>Tweet X</b> — genera un tweet nativo y lo publica directamente en X sin pasos intermedios. Se registra en Notion automáticamente.\n" +
         "🙈 <b>Ignorar</b> — descarta la noticia sin hacer nada\n\n" +
+        "Cada noticia lleva una puntuación editorial: 🔥🔥🔥 Viral para X · 🔥🔥 Buena para X · 🔥 Canal Telegram · ⬜ Omitir.\n\n" +
         "Configura tus keywords en MONITOR_KEYWORDS en Railway (separadas por comas).",
+    },
+    publicar: {
+      titulo: "📤 /publicar — Publica tu propio contenido en X y Telegram",
+      uso: "/publicar <texto> (con foto adjunta opcional)",
+      ejemplo: "/publicar BTC rompe el ATH. Clave: 74.000 ya era soporte.",
+      detalle:
+        "Publica tu propio texto (y foto opcional) directamente en X y/o el canal sin que Claude lo modifique.\n\n" +
+        "Manda el texto como argumento — puedes adjuntar una foto al mismo mensaje. Verás una preview con cuatro botones:\n" +
+        "🐦 <b>Solo X</b> — publica solo en Twitter/X\n" +
+        "📢 <b>Solo Canal</b> — publica solo en Telegram\n" +
+        "🔄 <b>X + Canal</b> — publica en ambos\n" +
+        "❌ <b>Cancelar</b> — descarta sin publicar\n\n" +
+        "La publicación caduca si no confirmas en 30 minutos.",
+    },
+    banner: {
+      titulo: "🖼 /banner — Genera portada para X (1500x500)",
+      uso: "/banner",
+      ejemplo: "/banner",
+      detalle:
+        "Genera una imagen de portada profesional de 1500x500 px lista para subir al perfil de X.\n\n" +
+        "El banner incluye precio de BTC y ETH, Fear & Greed Index, dominancia BTC y un mini gráfico de barras con los mejores y peores activos del dia.\n\n" +
+        "Se envía como archivo (sin compresión) para que la subas directamente en Configuración de X. Actualízalo cuando el mercado tenga datos que merezcan mostrarse.",
+    },
+    cancelar_editorial: {
+      titulo: "🚫 /cancelar_editorial — Cancela el tweet editorial pendiente",
+      uso: "/cancelar_editorial",
+      ejemplo: "/cancelar_editorial",
+      detalle:
+        "Si el pipeline editorial acaba de generar un tweet y está esperando antes de publicar en X, este comando lo cancela.\n\n" +
+        "El pipeline editorial genera tweets automáticamente segun el guion semanal de crecimiento:\n" +
+        "📅 Lunes 16:30 — Flujo ETF\n" +
+        "📅 Martes 10:00 — Angulo institucional\n" +
+        "📅 Miercoles 12:00 — Concepto educativo\n" +
+        "📅 Sábado 11:00 — Patron historico\n" +
+        "📅 Domingo 18:00 — Tweet principal de la semana\n\n" +
+        "Cuando el pipeline genera un borrador, recibes el texto en privado y tienes EDITORIAL_DELAY_MIN minutos para cancelarlo antes de que se publique en X.",
     },
   };
 
@@ -1778,6 +1817,8 @@ async function cmdAyuda(chatId, cmd) {
     `<code>/analiza</code> &lt;coin&gt; — Análisis técnico con entrada, TP y SL\n` +
     `<code>/encuesta</code> [tema] — Poll nativo para el canal\n` +
     `<code>/semanal</code> — Resumen semanal bajo demanda\n` +
+    `<code>/publicar</code> &lt;texto&gt; — Publica tu propio texto en X y/o canal\n` +
+    `<code>/banner</code> — Genera portada para X (1500x500)\n` +
     `<i>📸 Todos admiten portada — /ayuda flash para más detalle</i>\n\n` +
     `──────────────\n` +
     `<b>🔒 Solo para ti (privado)</b>\n` +
@@ -1802,6 +1843,7 @@ async function cmdAyuda(chatId, cmd) {
     `──────────────\n` +
     `<b>⚙️ Sistema</b>\n` +
     `<code>/stats</code> — Rendimiento señales 7 días\n` +
+    `<code>/cancelar_editorial</code> — Cancela tweet editorial pendiente\n` +
     `<code>/estado</code> · <code>/pausa</code> · <code>/activa</code> · <code>/ayuda</code>\n\n` +
     `──────────────\n` +
     `<b>🖼 Portadas fijas (admin)</b>\n` +
