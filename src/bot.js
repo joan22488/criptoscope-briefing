@@ -762,9 +762,92 @@ async function cmdCalendario(chatId) {
   try {
     const eventos = await getEventosMacro();
     const msg = formatearResumenSemana(eventos);
-    await reply(chatId, msg || "📅 No hay eventos macro relevantes esta semana");
+    if (!msg) return reply(chatId, "📅 No hay eventos macro relevantes esta semana");
+    await fetch(`${API()}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: msg,
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+        reply_markup: {
+          inline_keyboard: [[
+            { text: "📊 Generar post para publicar", callback_data: "cal_post" },
+          ]],
+        },
+      }),
+    });
   } catch (e) {
     await reply(chatId, `❌ Error obteniendo calendario: ${e.message}`);
+  }
+}
+
+// Genera un post CriptoScope sobre los eventos macro de la semana
+async function cmdGenerarPostMacro(chatId) {
+  await reply(chatId, "📅 Generando post macro...");
+  try {
+    const eventos = await getEventosMacro();
+    const todosEventos = eventos.semana || [];
+    if (!todosEventos.length) return reply(chatId, "📅 No hay eventos macro relevantes para generar un post.");
+
+    const DIAS_ES_CAL = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+    const contexto = todosEventos.map((e) => {
+      const d = new Date(e.date);
+      const dia = DIAS_ES_CAL[d.getDay()] || "?";
+      const imp = e.impact === "High" ? "🔴" : "🟡";
+      let line = `${imp} ${dia} ${e.time || "?"} ET: ${e.title}`;
+      if (e.forecast) line += ` (prev: ${e.forecast})`;
+      if (e.previous) line += ` (ant: ${e.previous})`;
+      return line;
+    }).join("\n");
+
+    const prompt = `Eres CriptoScope. Redactor de analisis cripto en español.
+
+EVENTOS MACRO DE LA SEMANA:
+${contexto}
+
+REGLAS DE VOZ (innegociable):
+- Castellano neutro y directo. Cero frases de IA.
+- Voz activa. Frases cortas.
+- PROHIBIDO guiones medios o largos (en vez de esos guiones usa punto o dos puntos).
+- Sin hashtags. Sin links. Sin menciones.
+- Maximo 3 emojis funcionales.
+
+Genera un post analitico sobre los eventos macro mas relevantes de la semana con foco en su impacto en crypto (BTC/ETH).
+
+El post debe tener:
+1. TITULO: una linea impactante sobre el evento mas importante. Ejemplo: "CPI de junio manana: lo que el mercado esta descontando"
+2. CUERPO: 3 a 5 parrafos cortos. Que es el dato, que espera el mercado (usa forecast si lo tienes), que significa para BTC/ETH si viene mejor o peor de lo esperado, nivel clave a vigilar.
+3. CIERRE: pregunta a la comunidad o afirmacion que invite a debatir.
+
+Devuelve SOLO JSON valido:
+{"titulo": "...", "cuerpo": "..."}`;
+
+    const response = await client.messages.create({
+      model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
+      max_tokens: 900,
+      messages: [{ role: "user", content: prompt }],
+    });
+
+    const txt = response.content[0].text;
+    let titulo, cuerpo;
+    try {
+      const json = JSON.parse(txt.slice(txt.indexOf("{"), txt.lastIndexOf("}") + 1));
+      titulo = limpiarDashes(json.titulo || "Macro de la semana");
+      cuerpo = limpiarDashes(json.cuerpo || txt);
+    } catch {
+      titulo = "📅 Macro de la semana";
+      cuerpo = limpiarDashes(txt.trim());
+    }
+
+    const msgFinal = `📅 <b>MACRO | CriptoScope</b>\n\n<b>${titulo}</b>\n\n${cuerpo}\n\n<i>Análisis educativo · no es consejo financiero</i>`;
+    const pid = Date.now().toString(36);
+    pendingPublish.set(pid, msgFinal);
+    setTimeout(() => pendingPublish.delete(pid), 30 * 60 * 1000);
+    await mostrarBotonesPublicacion(chatId, pid, msgFinal);
+  } catch (e) {
+    await reply(chatId, `❌ Error generando post macro: ${e.message}`);
   }
 }
 
@@ -1349,6 +1432,7 @@ Devuelve SOLO el tweet. Sin comillas, sin etiquetas, sin explicaciones.${ctxDeri
       if (/ANÁLISIS|ANALISIS|On-Demand/i.test(t)) return "Análisis";
       if (/OPINIÓN|OPINION/i.test(t)) return "Opinión";
       if (/SEMANAL/i.test(t)) return "Semanal";
+      if (/MACRO/i.test(t))   return "Otro";
       return "Otro";
     };
     const extraerTitulo = (t) => t.replace(/<[^>]+>/g, "").split("\n").find((l) => l.trim().length > 5) || "Sin título";
@@ -1379,6 +1463,10 @@ Devuelve SOLO el tweet. Sin comillas, sin etiquetas, sin explicaciones.${ctxDeri
       await reply(chatId, `✅ Publicado ${donde}.`);
     }
   };
+
+  if (data === "cal_post") {
+    await cmdGenerarPostMacro(chatId);
+  }
 
   if (data.startsWith("pub_ambos:") || data.startsWith("pub:")) {
     const pid = data.startsWith("pub:") ? data.slice(4) : data.slice(10);
@@ -1647,7 +1735,8 @@ async function cmdAyuda(chatId, cmd) {
       detalle:
         "Muestra los eventos macroeconómicos de alto impacto de <b>toda la semana</b>: Fed, CPI, NFP, FOMC, datos de empleo... agrupados por día, con hora exacta en ET.\n\n" +
         "Datos de ForexFactory JSON (alta precisión). El bot incluye los eventos del día en el briefing matinal, y cada <b>lunes a las 08:00</b> publica automáticamente el resumen completo de la semana en el canal.\n\n" +
-        "Útil antes de abrir posiciones para saber si hay riesgo de volatilidad macro.",
+        "Debajo del calendario aparece el botón <b>📊 Generar post para publicar</b>: Claude analiza los eventos más importantes, redacta un post al estilo CriptoScope con título y análisis de impacto en BTC/ETH, y te muestra una preview con botones para publicar en canal, X o ambos.\n\n" +
+        "Útil antes de abrir posiciones para saber si hay riesgo de volatilidad macro, y para publicar análisis macro en el canal con un clic.",
     },
     estado: {
       titulo: "⚙️ /estado — Estado del sistema",
