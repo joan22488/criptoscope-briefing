@@ -126,6 +126,19 @@ ${INSTRUCCIONES_RESUMEN_SEMANAL}`,
     }
   }
 
+  // Guion de vídeo al owner (privado, para grabar)
+  if (paquete.guion_video && process.env.TELEGRAM_OWNER_ID) {
+    fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: process.env.TELEGRAM_OWNER_ID,
+        text: `🎬 <b>Guion semanal — ${paquete.titular}</b>\n\n${paquete.guion_video}`,
+        parse_mode: "HTML",
+      }),
+    }).catch(() => {});
+  }
+
   console.log(`   ✓ Resumen semanal generado: ${paquete.titular}${chartBuffer ? " + gráfico" : ""}`);
   return { mensaje, paquete, chartBuffer };
 }

@@ -200,6 +200,19 @@ export async function ejecutarBriefing() {
     estado: "Publicado",
   }).catch(() => {});
 
+  // Guion de vídeo al owner (privado, para grabar)
+  if (paquete.guion_video && process.env.TELEGRAM_OWNER_ID) {
+    fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: process.env.TELEGRAM_OWNER_ID,
+        text: `🎬 <b>Guion de vídeo — ${paquete.titular}</b>\n\n${paquete.guion_video}`,
+        parse_mode: "HTML",
+      }),
+    }).catch(() => {});
+  }
+
   const seg = ((Date.now() - inicio) / 1000).toFixed(1);
   console.log(`✅ Briefing completado en ${seg}s`);
   return paquete;
