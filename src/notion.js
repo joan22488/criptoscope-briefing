@@ -27,6 +27,7 @@ export async function guardarBriefingEnNotion(paquete, contexto) {
       "Fear & Greed": { number: contexto?.sentimiento?.fearGreed?.valor || 0 },
       Narrativa: { rich_text: [{ text: { content: paquete.narrativa_caliente || "" } }] },
       "Pregunta Comunidad": { rich_text: [{ text: { content: paquete.pregunta_comunidad || "" } }] },
+      "Guion Vídeo": { rich_text: [{ text: { content: (paquete.guion_video || "").slice(0, 2000) } }] },
     },
     children: [
       {
