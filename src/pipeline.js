@@ -82,10 +82,11 @@ export async function generarBriefing() {
 
   const cabecera = `<b>☕ CRIPTOSCOPE | Briefing Matinal</b>\n<b>${paquete.titular}</b>\n\n`;
 
-  const gl  = contexto.gainersLosers;
-  const fg  = contexto.sentimiento?.fearGreed;
-  const gm  = contexto.mercadoGlobal;
-  const liq = contexto.sentimiento?.liquidaciones;
+  const gl   = contexto.gainersLosers;
+  const fg   = contexto.sentimiento?.fearGreed;
+  const gm   = contexto.mercadoGlobal;
+  const liq  = contexto.sentimiento?.liquidaciones;
+  const mstr = contexto.mstr;
   const fgEmoji = fg ? (fg.valor >= 75 ? "🟢" : fg.valor >= 55 ? "🟡" : fg.valor >= 35 ? "🟠" : "🔴") : "";
 
   let liqLinea = "";
@@ -97,10 +98,11 @@ export async function generarBriefing() {
     liqLinea = `${liqEmoji} <b>Liquidaciones 24h:</b> $${totalM}M  ·  Longs $${longsM}M  ·  Shorts $${shortsM}M  <i>(${liq.sesgo})</i>\n`;
   }
 
-  const bloqueSentimiento = (fg || gm || liq)
+  const bloqueSentimiento = (fg || gm || liq || mstr)
     ? `\n\n─────────────────\n` +
-      (fg ? `${fgEmoji} <b>Fear & Greed:</b> ${fg.valor} — ${fg.clasificacion}` + (fg.ayer ? ` (ayer ${fg.ayer})` : "") + "\n" : "") +
-      (gm ? `<b>Dominancia BTC:</b> ${gm.dominancia_btc}%  ·  ETH ${gm.dominancia_eth}%\n` : "") +
+      (fg   ? `${fgEmoji} <b>Fear & Greed:</b> ${fg.valor} — ${fg.clasificacion}` + (fg.ayer ? ` (ayer ${fg.ayer})` : "") + "\n" : "") +
+      (gm   ? `<b>Dominancia BTC:</b> ${gm.dominancia_btc}%  ·  ETH ${gm.dominancia_eth}%\n` : "") +
+      (mstr ? `<b>MSTR (Strategy):</b> $${mstr.precio}  ·  ${mstr.cambio_pct >= 0 ? "+" : ""}${mstr.cambio_pct}% hoy\n` : "") +
       liqLinea
     : "";
 

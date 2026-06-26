@@ -24,7 +24,13 @@ export function puntuarNoticia(noticia) {
   const texto = `${noticia.titulo} ${noticia.resumen || ""}`.toLowerCase();
   let score = 0;
 
-  const institucional = ["etf", "grayscale", "blackrock", "strategy", "microstrategy", "saylor", "sec", "fed", "federal reserve", "cpi", "nfp", "treasury", "jp morgan", "goldman", "fidelity", "ark invest", "vaneck", "invesco"];
+  // Strategy/Saylor/MSTR = siempre viral: son el principal motor institucional del ciclo
+  const estrategia = ["strategy", "microstrategy", "saylor", "\bmstr\b"];
+  if (estrategia.some((k) => new RegExp(k).test(texto))) {
+    return { score: 9, emoji: "🔥🔥🔥", etiqueta: "Viral para X" };
+  }
+
+  const institucional = ["etf", "grayscale", "blackrock", "sec", "fed", "federal reserve", "cpi", "nfp", "treasury", "jp morgan", "goldman", "fidelity", "ark invest", "vaneck", "invesco"];
   if (institucional.some((k) => texto.includes(k))) score += 3;
 
   if (/\$[\d,.]+\s*[mbk]?|[\d,.]+\s*(million|billion|millones|millardos)/i.test(texto)) score += 2;
@@ -42,6 +48,30 @@ export function puntuarNoticia(noticia) {
   if (score >= 4) return { score, emoji: "🔥🔥",   etiqueta: "Buena para X" };
   if (score >= 2) return { score, emoji: "🔥",     etiqueta: "Canal Telegram" };
   return             { score, emoji: "⬜",          etiqueta: "Omitir" };
+}
+
+/**
+ * Precio y cambio diario de MSTR (Strategy) — Yahoo Finance, gratis, sin key
+ */
+export async function getMSTRPrice() {
+  try {
+    const res = await fetch(
+      "https://query1.finance.yahoo.com/v8/finance/chart/MSTR?interval=1d&range=2d",
+      { headers: { "User-Agent": "Mozilla/5.0 (compatible; CriptoScope/1.0)" }, signal: AbortSignal.timeout(8000) }
+    );
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    const meta   = json.chart?.result?.[0]?.meta;
+    const closes = json.chart?.result?.[0]?.indicators?.quote?.[0]?.close;
+    if (!meta || !closes) throw new Error("Sin datos");
+    const precio   = meta.regularMarketPrice;
+    const anterior = closes.filter(Boolean).at(-2) || precio;
+    const cambio   = ((precio - anterior) / anterior) * 100;
+    return { precio: parseFloat(precio.toFixed(2)), cambio_pct: parseFloat(cambio.toFixed(2)) };
+  } catch (e) {
+    console.warn("⚠️  MSTR price no disponible:", e.message);
+    return null;
+  }
 }
 
 export async function getNews(limit = 25) {
@@ -262,7 +292,6 @@ export async function getLiquidaciones() {
  * Recopila TODO el contexto de mercado en un solo objeto.
  */
 export async function getMarketContext() {
-  // Precios (Binance ticker) + noticias + funding/OI en paralelo — sin CoinGecko
   const [noticias, precios, funding, openInterest, fearGreed, liquidaciones] = await Promise.all([
     getNews(),
     getPrices(),
@@ -271,9 +300,10 @@ export async function getMarketContext() {
     getFearGreed(),
     getLiquidaciones(),
   ]);
-  const [gainersLosers, globalMarket] = await Promise.all([
+  const [gainersLosers, globalMarket, mstr] = await Promise.all([
     getGainersLosers().catch(() => null),
     getGlobalMarket().catch(() => null),
+    getMSTRPrice().catch(() => null),
   ]);
 
   return {
@@ -282,7 +312,8 @@ export async function getMarketContext() {
     derivados: { funding, openInterest },
     sentimiento: { fearGreed, liquidaciones },
     mercadoGlobal: globalMarket,
-    gainersLosers, // usado solo en pipeline.js para Telegram, no se pasa a Claude
+    gainersLosers,
+    mstr,   // Strategy (MSTR) stock — indicador institucional clave
     noticias,
   };
 }

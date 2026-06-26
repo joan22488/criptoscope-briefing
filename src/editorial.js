@@ -9,6 +9,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
 import { getMarketContext } from "./coindesk.js";
 import { getContextoDerivadosBTC } from "./signals.js";
+import { getEventosMacro } from "./calendar.js";
 import { publicarTweetUnico, subirImagenX } from "./twitter-post.js";
 import { generarChartBarras, aplicarLogo } from "./media.js";
 
@@ -63,22 +64,38 @@ const TIPO_POR_DIA = {
 // ── Contexto de mercado ───────────────────────────────────────
 
 async function construirContexto() {
-  const [contexto, derivados] = await Promise.all([
+  const [contexto, derivados, eventosMacro] = await Promise.all([
     getMarketContext(),
     getContextoDerivadosBTC().catch(() => null),
+    getEventosMacro().catch(() => null),
   ]);
 
-  const btc = contexto.precios?.["BTC-USD"];
-  const eth = contexto.precios?.["ETH-USD"];
-  const fg  = contexto.sentimiento?.fearGreed;
-  const gm  = contexto.mercadoGlobal;
+  const btc  = contexto.precios?.["BTC-USD"];
+  const eth  = contexto.precios?.["ETH-USD"];
+  const fg   = contexto.sentimiento?.fearGreed;
+  const gm   = contexto.mercadoGlobal;
+  const mstr = contexto.mstr;
 
   const lineas = [];
   if (btc?.precio)        lineas.push(`BTC: $${btc.precio.toLocaleString("es-ES")} (${btc.cambio24h_pct >= 0 ? "+" : ""}${btc.cambio24h_pct?.toFixed(2)}% 24h)`);
   if (eth?.precio)        lineas.push(`ETH: $${eth.precio.toLocaleString("es-ES")} (${eth.cambio24h_pct >= 0 ? "+" : ""}${eth.cambio24h_pct?.toFixed(2)}% 24h)`);
+  if (mstr?.precio)       lineas.push(`MSTR (Strategy): $${mstr.precio} (${mstr.cambio_pct >= 0 ? "+" : ""}${mstr.cambio_pct}% hoy)`);
   if (fg)                 lineas.push(`Fear & Greed: ${fg.valor} (${fg.clasificacion})`);
   if (gm?.dominancia_btc) lineas.push(`Dominancia BTC: ${gm.dominancia_btc}%`);
   if (derivados?.resumen) lineas.push(`Derivados: ${derivados.resumen}`);
+
+  // Eventos macro próximos (hoy + mañana)
+  const DIAS_ED = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+  const proxEventos = [...(eventosMacro?.hoy || []), ...(eventosMacro?.manana || [])];
+  if (proxEventos.length) {
+    const resumenMacro = proxEventos.map((e) => {
+      const d   = new Date(e.date);
+      const dia = DIAS_ED[d.getDay()] || "?";
+      const imp = e.impact === "High" ? "🔴" : "🟡";
+      return `${imp} ${dia} ${e.time || "?"} ET: ${e.title}${e.forecast ? ` (prev: ${e.forecast})` : ""}`;
+    }).join(" | ");
+    lineas.push(`Macro próximo: ${resumenMacro}`);
+  }
 
   const noticias = (contexto.noticias || [])
     .slice(0, 5)

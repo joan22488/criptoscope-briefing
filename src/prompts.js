@@ -68,6 +68,8 @@ REGLAS:
 - Si falta algún dato (ej: funding null), simplemente no lo menciones.
 - Si hay datos de liquidaciones (longs o shorts liquidados en 24h), úsalos cuando sean relevantes para explicar movimientos de precio.
 - Si hay datos derivadosBinance: ls_top > 1.2 = smart money largo (sesgo alcista reforzado), ls_top < 0.85 = smart money corto (cautela aunque el precio suba). taker_ratio > 1.1 = compradores agresivos en mercado, presión real. oi_change_pct positivo con precio subiendo = tendencia con respaldo, no squeeze. Estos datos ENRIQUECEN el análisis, no son el centro del briefing.
+- MSTR (Strategy): si hay precio de MSTR disponible, menciónalo cuando sea relevante. MSTR es el proxy institucional de BTC: si MSTR sube más que BTC = demanda institucional creciente; si diverge a la baja = cautela. Un movimiento fuerte de MSTR sin movimiento en BTC suele anticipar. Saylor y Strategy son el indicador institucional más relevante del ciclo actual.
+- Si hay eventos macro próximos en el calendario (CPI, NFP, FOMC, PCE), menciónalos en el briefing como catalizadores pendientes. Especifica fecha y hora si las tienes.
 - Si hay tweets relevantes, úsalos para detectar narrativa y sentimiento real en X. Cita al autor cuando aporte valor. No conviertas el briefing en un resumen de Twitter.
 - Si hay posts de Reddit, úsalos para captar el sentimiento retail. Sintetiza en UNA frase qué dice la calle hoy.
 - La palabra_del_dia debe estar conectada a lo que está pasando hoy en el mercado, no ser aleatoria.
