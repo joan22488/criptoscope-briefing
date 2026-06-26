@@ -145,17 +145,7 @@ export async function ejecutarBriefing() {
   // PASO 3a: Guardar archivos locales
   await guardarPaquete(paquete);
 
-  // PASO 3b: Guardar en Notion (si configurado)
-  if (process.env.NOTION_TOKEN) {
-    try {
-      await guardarBriefingEnNotion(paquete, contexto);
-      console.log("   ✓ Guardado en Notion");
-    } catch (e) {
-      console.warn("   ⚠️ Notion falló:", e.message);
-    }
-  }
-
-  // PASO 3c: Publicar en X (si configurado)
+  // PASO 3b: Publicar en X (si configurado)
   let xPublicado = false;
   if (process.env.X_API_KEY && paquete.tweet_x) {
     console.log("🐦 Publicando en X...");
@@ -199,6 +189,13 @@ export async function ejecutarBriefing() {
     conPortada: !!portadaBuffer,
     estado: "Publicado",
   }).catch(() => {});
+
+  // Guardar briefing completo en Notion (después de publicar — ya sabemos portada y X)
+  if (process.env.NOTION_TOKEN) {
+    guardarBriefingEnNotion(paquete, contexto, { conPortada: !!portadaBuffer, xPublicado })
+      .then(() => console.log("   ✓ Guardado en Notion"))
+      .catch((e) => console.warn("   ⚠️ Notion falló:", e.message));
+  }
 
   // Guion de vídeo al owner (privado, para grabar)
   if (paquete.guion_video && process.env.TELEGRAM_OWNER_ID) {

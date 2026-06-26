@@ -13,21 +13,33 @@ function getClient() {
 
 // ─── BRIEFINGS ───────────────────────────────────────────────
 
-export async function guardarBriefingEnNotion(paquete, contexto) {
+export async function guardarBriefingEnNotion(paquete, contexto, { conPortada = false, xPublicado = false } = {}) {
   if (!process.env.NOTION_BRIEFINGS_DB) return;
   const notion = getClient();
+
+  const btc = contexto?.precios?.["BTC-USD"];
+  const eth = contexto?.precios?.["ETH-USD"];
+  const plataformas = [{ name: "Telegram" }, ...(xPublicado ? [{ name: "X" }] : [])];
 
   await notion.pages.create({
     parent: { database_id: process.env.NOTION_BRIEFINGS_DB },
     properties: {
-      Titular: { title: [{ text: { content: paquete.titular || "Sin titular" } }] },
-      Fecha: { date: { start: new Date().toISOString().split("T")[0] } },
-      "BTC Precio": { number: contexto?.precios?.["BTC-USD"]?.precio || 0 },
-      "ETH Precio": { number: contexto?.precios?.["ETH-USD"]?.precio || 0 },
-      "Fear & Greed": { number: contexto?.sentimiento?.fearGreed?.valor || 0 },
-      Narrativa: { rich_text: [{ text: { content: paquete.narrativa_caliente || "" } }] },
+      Titular:              { title:        [{ text: { content: paquete.titular || "Sin titular" } }] },
+      Fecha:                { date:         { start: new Date().toISOString().split("T")[0] } },
+      Estado:               { select:       { name: "Publicado" } },
+      Plataformas:          { multi_select: plataformas },
+      "BTC Precio":         { number: btc?.precio || 0 },
+      "ETH Precio":         { number: eth?.precio || 0 },
+      "BTC % 24h":          { number: parseFloat((btc?.cambio24h_pct || 0).toFixed(2)) },
+      "ETH % 24h":          { number: parseFloat((eth?.cambio24h_pct || 0).toFixed(2)) },
+      "Dominancia BTC":     { number: contexto?.mercadoGlobal?.dominancia_btc || 0 },
+      "Fear & Greed":       { number: contexto?.sentimiento?.fearGreed?.valor || 0 },
+      "Con Portada":        { checkbox: conPortada },
+      Narrativa:            { rich_text: [{ text: { content: paquete.narrativa_caliente || "" } }] },
       "Pregunta Comunidad": { rich_text: [{ text: { content: paquete.pregunta_comunidad || "" } }] },
-      "Guion Vídeo": { rich_text: [{ text: { content: (paquete.guion_video || "").slice(0, 2000) } }] },
+      "Palabra del Día":    { rich_text: [{ text: { content: (paquete.palabra_del_dia || "").slice(0, 2000) } }] },
+      "Tweet X":            { rich_text: [{ text: { content: (paquete.tweet_x || "").slice(0, 2000) } }] },
+      "Guion Vídeo":        { rich_text: [{ text: { content: (paquete.guion_video || "").slice(0, 2000) } }] },
     },
     children: [
       {
