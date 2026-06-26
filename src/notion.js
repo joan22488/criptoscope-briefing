@@ -78,6 +78,41 @@ export async function guardarPublicacionEnNotion({ tipo, titulo, texto, platafor
   }).catch((e) => console.warn("⚠️ Notion publicación no guardada:", e.message));
 }
 
+// ─── RESUMEN SEMANAL ─────────────────────────────────────────
+
+export async function guardarSemanalEnNotion(paquete) {
+  if (!process.env.NOTION_BRIEFINGS_DB) return;
+  const notion = getClient();
+
+  await notion.pages.create({
+    parent: { database_id: process.env.NOTION_BRIEFINGS_DB },
+    properties: {
+      Titular:              { title:     [{ text: { content: paquete.titular || "Resumen Semanal" } }] },
+      Fecha:                { date:      { start: new Date().toISOString().split("T")[0] } },
+      Narrativa:            { rich_text: [{ text: { content: "Resumen Semanal" } }] },
+      "Pregunta Comunidad": { rich_text: [{ text: { content: paquete.pregunta_comunidad || "" } }] },
+    },
+    children: [
+      {
+        object: "block", type: "heading_2",
+        heading_2: { rich_text: [{ text: { content: "Resumen de la Semana" } }] },
+      },
+      {
+        object: "block", type: "paragraph",
+        paragraph: { rich_text: [{ text: { content: (paquete.resumen || "").replace(/<[^>]+>/g, "").slice(0, 2000) } }] },
+      },
+      {
+        object: "block", type: "heading_2",
+        heading_2: { rich_text: [{ text: { content: "Guion Vídeo" } }] },
+      },
+      {
+        object: "block", type: "paragraph",
+        paragraph: { rich_text: [{ text: { content: (paquete.guion_video || "").slice(0, 2000) } }] },
+      },
+    ],
+  });
+}
+
 // ─── SEÑALES ─────────────────────────────────────────────────
 
 export async function guardarSenalEnNotion(registro) {

@@ -8,6 +8,7 @@ import { INSTRUCCIONES_RESUMEN_SEMANAL, VOZ_CRIPTOSCOPE } from "./prompts.js";
 import { generarEstadisticasSemana, formatearEstadisticas } from "./tracker.js";
 import { getVelas } from "./signals.js";
 import { generarChartLinea, aplicarLogo } from "./media.js";
+import { guardarSemanalEnNotion } from "./notion.js";
 
 const client = new Anthropic();
 
@@ -85,6 +86,7 @@ ${INSTRUCCIONES_RESUMEN_SEMANAL}`,
     paquete = {
       titular: extraer("titular") || "Resumen Semanal CriptoScope",
       resumen: extraer("resumen"),
+      guion_video: extraer("guion_video"),
       pregunta_comunidad: extraer("pregunta_comunidad"),
     };
   }
@@ -114,6 +116,15 @@ ${INSTRUCCIONES_RESUMEN_SEMANAL}`,
     bloqueStats +
     pie +
     xLink;
+
+  if (process.env.NOTION_TOKEN) {
+    try {
+      await guardarSemanalEnNotion(paquete);
+      console.log("   ✓ Resumen semanal guardado en Notion");
+    } catch (e) {
+      console.warn("   ⚠️ Notion semanal falló:", e.message);
+    }
+  }
 
   console.log(`   ✓ Resumen semanal generado: ${paquete.titular}${chartBuffer ? " + gráfico" : ""}`);
   return { mensaje, paquete, chartBuffer };

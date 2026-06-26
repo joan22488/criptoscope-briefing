@@ -81,6 +81,7 @@ Con el contexto semanal que te paso, genera un objeto JSON (responde SOLO el JSO
 {
   "titular": "Titular del resumen semanal, potente y con datos (máx 90 caracteres)",
   "resumen": "Resumen de la semana en formato Telegram HTML. Estructura: 1) Balance de la semana: BTC y ETH en % semanal, qué pasó con el Fear & Greed durante la semana. 2) Los 3 eventos que definieron la semana y por qué. 3) Lo que aprendimos: qué patrón o lección queda para la semana siguiente. 4) Lo que viene: eventos o catalizadores a vigilar la próxima semana. Longitud: 1200-2000 caracteres.",
+  "guion_video": "Guion de vídeo del resumen semanal para grabar, 90-120 segundos. Estructura: HOOK (el dato o movimiento más sorprendente de la semana, máx 12 palabras, que pare el scroll) → LOS 3 MOMENTOS (qué pasó, por qué importó cada uno, 40 seg) → LA LECCIÓN (qué nos enseña esta semana para la siguiente, 25 seg) → LO QUE VIENE (catalizadores clave de la próxima semana, 20 seg) → CTA (pregunta directa a la audiencia + cierre con llamada a seguir el canal). Escrito como se habla, frases cortas, cifras exactas siempre. PROHIBIDO guiones medios o largos.",
   "pregunta_comunidad": "Una pregunta reflexiva sobre la semana para generar conversación en Telegram"
 }
 `;
