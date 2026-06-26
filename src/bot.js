@@ -809,10 +809,16 @@ async function cmdPublicar(chatId, texto, photoArray = null) {
       text: preview,
       parse_mode: "HTML",
       reply_markup: {
-        inline_keyboard: [[
-          { text: "✅ Publicar en X + Canal", callback_data: "pub_manual_ok" },
-          { text: "❌ Cancelar",              callback_data: "pub_manual_no" },
-        ]],
+        inline_keyboard: [
+          [
+            { text: "🐦 Solo X",    callback_data: "pub_solo_x" },
+            { text: "📢 Solo Canal", callback_data: "pub_solo_canal" },
+          ],
+          [
+            { text: "🔄 X + Canal", callback_data: "pub_ambos" },
+            { text: "❌ Cancelar",   callback_data: "pub_manual_no" },
+          ],
+        ],
       },
     }),
   });
@@ -1139,7 +1145,7 @@ async function procesarCallback(callback) {
     return;
   }
 
-  if (data === "pub_manual_ok") {
+  if (data === "pub_solo_x" || data === "pub_solo_canal" || data === "pub_ambos") {
     const pending = pendingManual.get(chatId);
     pendingManual.delete(chatId);
     await fetch(`${API()}/editMessageReplyMarkup`, {
@@ -1150,17 +1156,25 @@ async function procesarCallback(callback) {
     if (!pending) return reply(chatId, "⚠️ La publicación expiró. Vuelve a usar /publicar.");
     await reply(chatId, "📤 Publicando...");
     try {
-      let mediaId = null;
-      if (pending.fotoBuffer) {
-        mediaId = await subirImagenX(pending.fotoBuffer).catch(() => null);
+      const enX      = data === "pub_solo_x"    || data === "pub_ambos";
+      const enCanal  = data === "pub_solo_canal" || data === "pub_ambos";
+      const resultados = [];
+
+      if (enX) {
+        let mediaId = null;
+        if (pending.fotoBuffer) mediaId = await subirImagenX(pending.fotoBuffer).catch(() => null);
+        await publicarTweetUnico(pending.texto, mediaId ? { mediaId } : {});
+        resultados.push("🐦 X");
       }
-      await publicarTweetUnico(pending.texto, mediaId ? { mediaId } : {});
-      if (pending.fotoBuffer) {
-        await enviarTelegramConFoto(pending.texto, pending.fotoBuffer);
-      } else {
-        await enviarTelegram(pending.texto);
+      if (enCanal) {
+        if (pending.fotoBuffer) {
+          await enviarTelegramConFoto(pending.texto, pending.fotoBuffer);
+        } else {
+          await enviarTelegram(pending.texto);
+        }
+        resultados.push("📢 Canal Telegram");
       }
-      await reply(chatId, "✅ Publicado en X y amplificado al canal de Telegram.");
+      await reply(chatId, `✅ Publicado en ${resultados.join(" + ")}.`);
     } catch (e) {
       await reply(chatId, `❌ Error publicando: ${e.message}`);
     }
