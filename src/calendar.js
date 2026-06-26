@@ -77,7 +77,8 @@ export async function getEventosMacro() {
       if (isNaN(d.getTime())) continue;
       d.setHours(0, 0, 0, 0);
 
-      semana.push(e);
+      // Solo incluir hoy y fechas futuras — nunca eventos ya pasados
+      if (d.getTime() >= hoyMedNoche.getTime()) semana.push(e);
       if (d.getTime() === hoyMedNoche.getTime())    hoy.push(e);
       else if (d.getTime() === mananaMedNoche.getTime()) manana.push(e);
     }

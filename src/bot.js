@@ -36,6 +36,8 @@ export const isPausado = () => pausado;
 const pendingPublish = new Map();
 // Publicaciones manuales pendientes de confirmación (/publicar)
 const pendingManual = new Map(); // chatId → { texto, fotoBuffer? }
+// Edición en curso — bot espera texto corregido del usuario
+const waitingEdit = new Map(); // chatId → pid
 
 // ── Rate limiting — evita spam de comandos costosos ──
 const cooldowns = new Map(); // `${chatId}:${cmd}` → timestamp
@@ -226,6 +228,7 @@ async function mostrarBotonesPublicacion(chatId, pid, previewTexto) {
             { text: "📊 CMC Community", callback_data: `pub_cmc:${pid}` },
           ],
           [
+            { text: "✏️ Editar", callback_data: `edit_pending:${pid}` },
             { text: "❌ Descartar", callback_data: "nopub" },
           ],
         ],
@@ -1468,6 +1471,23 @@ Devuelve SOLO el tweet. Sin comillas, sin etiquetas, sin explicaciones.${ctxDeri
     await cmdGenerarPostMacro(chatId);
   }
 
+  if (data.startsWith("edit_pending:")) {
+    const pid = data.slice(13);
+    const contenidoActual = pendingPublish.get(pid);
+    if (!contenidoActual || typeof contenidoActual !== "string") {
+      return reply(chatId, "❌ El contenido ya expiró (>30 min). Vuelve a generarlo.");
+    }
+    waitingEdit.set(chatId, pid);
+    const textoLimpio = contenidoActual.replace(/<[^>]+>/g, "").trim();
+    await reply(chatId,
+      `✏️ <b>Modo edición</b>\n\n` +
+      `Texto actual:\n\n${textoLimpio}\n\n` +
+      `──────────────\n` +
+      `Escríbeme el texto corregido y actualizo la preview.\n` +
+      `<i>Puedes cambiar lo que quieras: título, cuerpo, todo.</i>`
+    );
+  }
+
   if (data.startsWith("pub_ambos:") || data.startsWith("pub:")) {
     const pid = data.startsWith("pub:") ? data.slice(4) : data.slice(10);
     await publicarPorDestino(pid, "ambos");
@@ -2481,6 +2501,18 @@ async function procesarMensaje(msg) {
   }
 
   const texto = msg.text || "";
+
+  // ¿Estamos esperando texto editado para un contenido pendiente?
+  if (waitingEdit.has(chatId) && texto && !texto.startsWith("/")) {
+    const pid = waitingEdit.get(chatId);
+    waitingEdit.delete(chatId);
+    if (!pendingPublish.has(pid)) return reply(chatId, "❌ El contenido ya expiró. Vuelve a generarlo.");
+    pendingPublish.set(pid, texto);
+    await reply(chatId, "✅ Texto actualizado. Nueva preview:");
+    await mostrarBotonesPublicacion(chatId, pid, texto);
+    return;
+  }
+
   if (!texto.startsWith("/")) {
     await reply(chatId, "👋 Hola. Escribe <code>/ayuda</code> para ver todos los comandos.\n\nTambién puedes <b>enviarme una foto</b> de cualquier noticia y la analizo al estilo CriptoScope.");
     return;
