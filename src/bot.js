@@ -34,8 +34,6 @@ export const isPausado = () => pausado;
 
 // Almacén temporal para mensajes pendientes de publicar (callback de botones)
 const pendingPublish = new Map();
-// Publicaciones manuales pendientes de confirmación (/publicar)
-const pendingManual = new Map(); // chatId → { texto, fotoBuffer? }
 // Edición en curso — bot espera texto corregido del usuario
 const waitingEdit = new Map(); // chatId → pid
 
@@ -61,6 +59,8 @@ const waitingPortadaFija = new Map(); // chatId → tipo "briefing"|"semanal" (e
 
 // ── Hilos pendientes (array de tweets para publicar en X como thread real) ──
 const hilosPendientes = new Map(); // pid → string[]
+// ── Elección de gancho pendiente (flash con 2 opciones) ──
+const pendingGanchos = new Map(); // pickId → { ganchoA, ganchoB, cuerpo, portadaFid }
 
 // ── Señales pendientes de revisión (owner aprueba antes de publicar al canal) ──
 const senalesPendientes = new Map(); // pid → mensaje
@@ -403,7 +403,8 @@ async function cmdFlash(chatId, tema, portadaFileId = null) {
 
 Genera el flash en este formato EXACTO (responde SOLO el contenido, sin etiquetas ni explicaciones):
 
-GANCHO: [1 frase impactante sobre el tema. Puede ser una afirmación rotunda, la conclusión clave o la pregunta que deja el hecho sobre la mesa.]
+GANCHO_A: [1 frase directa y rotunda — afirmación fuerte o conclusión clave]
+GANCHO_B: [1 frase diferente — contrarian, pregunta retórica o dato sorprendente]
 CUERPO: [2 párrafos de análisis con implicaciones, contexto y qué vigilar. HTML Telegram: <b>, <i>. 1-2 emojis funcionales máx: 📊🔴🟢⚠️🎯]
 
 REGLA CRÍTICA: NUNCA menciones un precio específico de BTC, ETH u otra moneda si ese precio no aparece textualmente en el TEMA. No lo inventes, no lo estimes, no lo deduzcas. Si el tema no tiene precio concreto, el análisis no lo tiene. Usa "el precio actual" si necesitas referirte a él.
@@ -419,34 +420,51 @@ Voz activa. Frases cortas. PROHIBIDO: guiones (– o —), 🚀💎🙌, clickba
 
   const raw = response.content[0].text.trim();
 
-  // Extraer GANCHO y CUERPO del formato estructurado
-  const ganchoMatch = raw.match(/GANCHO:\s*(.+?)(?:\n|$)/s);
-  const cuerpoMatch = raw.match(/CUERPO:\s*([\s\S]+)/s);
-  let gancho = limpiarDashes(ganchoMatch ? ganchoMatch[1].trim() : raw.split("\n")[0]);
-  const cuerpo = limpiarDashes(cuerpoMatch ? cuerpoMatch[1].trim() : raw.split("\n").slice(1).join("\n").trim());
+  // Extraer GANCHO_A, GANCHO_B y CUERPO del formato estructurado
+  const ganchoAMatch = raw.match(/GANCHO_A:\s*(.+?)(?=\nGANCHO_B:|\nCUERPO:|$)/s);
+  const ganchoBMatch = raw.match(/GANCHO_B:\s*(.+?)(?=\nCUERPO:|$)/s);
+  const cuerpoMatch  = raw.match(/CUERPO:\s*([\s\S]+)/s);
 
-  // Red de seguridad: si el GANCHO empieza con precio/coin inventado, usar primera frase del CUERPO
-  const tienePrecionInventado = /^(BTC|ETH|SOL|bitcoin|ethereum|el precio|la cotización)\s/i.test(gancho)
-    || /^\$[\d.,]+/.test(gancho);
-  if (tienePrecionInventado) {
-    const primeraFrase = cuerpo.replace(/<[^>]+>/g, "").split(/(?<=[.!?])\s/)[0]?.trim();
-    if (primeraFrase && primeraFrase.length > 20) gancho = primeraFrase;
-  }
+  const lineas = raw.split("\n");
+  let ganchoA = limpiarDashes((ganchoAMatch?.[1]?.trim()) || lineas[0]);
+  let ganchoB = limpiarDashes((ganchoBMatch?.[1]?.trim()) || ganchoA);
+  const cuerpo = limpiarDashes(cuerpoMatch ? cuerpoMatch[1].trim() : lineas.slice(2).join("\n").trim());
 
-  const msg = `🚨 <b>FLASH | CriptoScope</b>\n\n<b>${gancho}</b>\n\n${cuerpo}\n\n<i>Análisis educativo · no es consejo financiero</i>`;
+  // Red de seguridad: precio inventado → sustituir por primera/segunda frase del cuerpo
+  const tienePrecioInventado = (g) =>
+    /^(BTC|ETH|SOL|bitcoin|ethereum|el precio|la cotización)\s/i.test(g) || /^\$[\d.,]+/.test(g);
+  const frasesCuerpo = cuerpo.replace(/<[^>]+>/g, "").split(/(?<=[.!?])\s/);
+  if (tienePrecioInventado(ganchoA) && frasesCuerpo[0]?.length > 20) ganchoA = frasesCuerpo[0].trim();
+  if (tienePrecioInventado(ganchoB) && frasesCuerpo[1]?.length > 20) ganchoB = frasesCuerpo[1].trim();
 
-  const pid = Date.now().toString(36);
-  pendingPublish.set(pid, msg);
-  setTimeout(() => { pendingPublish.delete(pid); portadas.delete(pid); }, 30 * 60 * 1000);
-
-  if (portadaFileId) {
-    portadas.set(pid, portadaFileId);
-  } else if (portadaBuffer) {
+  // Subir portada si hay (antes de mostrar opciones)
+  let portadaFid = portadaFileId || null;
+  if (!portadaFid && portadaBuffer) {
     const fid = await subirPortadaChat(chatId, portadaBuffer);
-    if (fid) portadas.set(pid, fid);
+    if (fid) portadaFid = fid;
   }
 
-  await mostrarBotonesPublicacion(chatId, pid, msg);
+  // Guardar opciones pendientes y mostrar selector de gancho
+  const pickId = Date.now().toString(36);
+  pendingGanchos.set(pickId, { ganchoA, ganchoB, cuerpo, portadaFid });
+  setTimeout(() => pendingGanchos.delete(pickId), 30 * 60 * 1000);
+
+  await fetch(`${API()}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text: `⚡ <b>Elige el gancho:</b>\n\n<b>A:</b> ${ganchoA}\n\n<b>B:</b> ${ganchoB}`,
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+      reply_markup: {
+        inline_keyboard: [[
+          { text: "✅ Gancho A", callback_data: `flash_pick_a:${pickId}` },
+          { text: "✅ Gancho B", callback_data: `flash_pick_b:${pickId}` },
+        ]],
+      },
+    }),
+  });
 }
 
 // /hilo <tema|URL> — thread educativo completo en canal + X
@@ -1335,53 +1353,6 @@ async function procesarCallback(callback) {
     return;
   }
 
-  if (data === "pub_manual_no") {
-    pendingManual.delete(chatId);
-    await fetch(`${API()}/editMessageReplyMarkup`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [] } }),
-    });
-    await reply(chatId, "❌ Publicación cancelada.");
-    return;
-  }
-
-  if (data === "pub_solo_x" || data === "pub_solo_canal" || data === "pub_ambos") {
-    const pending = pendingManual.get(chatId);
-    pendingManual.delete(chatId);
-    await fetch(`${API()}/editMessageReplyMarkup`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [] } }),
-    });
-    if (!pending) return reply(chatId, "⚠️ La publicación expiró. Vuelve a usar /publicar.");
-    await reply(chatId, "📤 Publicando...");
-    try {
-      const enX      = data === "pub_solo_x"    || data === "pub_ambos";
-      const enCanal  = data === "pub_solo_canal" || data === "pub_ambos";
-      const resultados = [];
-
-      if (enX) {
-        let mediaId = null;
-        if (pending.fotoBuffer) mediaId = await subirImagenX(pending.fotoBuffer).catch(() => null);
-        await publicarTweetUnico(pending.texto, mediaId ? { mediaId } : {});
-        resultados.push("🐦 X");
-      }
-      if (enCanal) {
-        if (pending.fotoBuffer) {
-          await enviarTelegramConFoto(pending.texto, pending.fotoBuffer);
-        } else {
-          await enviarTelegram(pending.texto);
-        }
-        resultados.push("📢 Canal Telegram");
-      }
-      await reply(chatId, `✅ Publicado en ${resultados.join(" + ")}.`);
-    } catch (e) {
-      await reply(chatId, `❌ Error publicando: ${e.message}`);
-    }
-    return;
-  }
-
   // Helper para quitar botones del mensaje
   const quitarBotones = () => fetch(`${API()}/editMessageReplyMarkup`, {
     method: "POST",
@@ -1546,8 +1517,6 @@ Devuelve SOLO el tweet. Sin comillas, sin etiquetas, sin explicaciones.${ctxDeri
       }
     }
 
-    pendingPublish.delete(pid);
-    portadas.delete(pid);
     hilosPendientes.delete(pid);
 
     // Registrar en Notion
@@ -1575,6 +1544,7 @@ Devuelve SOLO el tweet. Sin comillas, sin etiquetas, sin explicaciones.${ctxDeri
 
     const donde = destino === "ambos" ? "en el canal y en X" : destino === "canal" ? "en el canal" : "en X";
     if (errorX) {
+      // Mantener pid en maps para permitir reintento
       const canalParte = (destino === "ambos") ? "✅ Publicado en el canal.\n" : "";
       let consejo = "";
       if (/401|unauthorized|credentials/i.test(errorX)) {
@@ -1584,8 +1554,19 @@ Devuelve SOLO el tweet. Sin comillas, sin etiquetas, sin explicaciones.${ctxDeri
       } else if (/429|rate/i.test(errorX)) {
         consejo = "\n\n<b>Solución:</b> Límite de la API alcanzado. Espera unos minutos antes de intentarlo.";
       }
-      await reply(chatId, `${canalParte}⚠️ X falló: <code>${errorX}</code>${consejo}`);
+      await fetch(`${API()}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: `${canalParte}⚠️ X falló: <code>${errorX}</code>${consejo}`,
+          parse_mode: "HTML",
+          reply_markup: { inline_keyboard: [[{ text: "🔄 Reintentar en X", callback_data: `retry_x:${pid}` }]] },
+        }),
+      });
     } else {
+      pendingPublish.delete(pid);
+      portadas.delete(pid);
       await reply(chatId, `✅ Publicado ${donde}.`);
     }
   };
@@ -1622,6 +1603,30 @@ Devuelve SOLO el tweet. Sin comillas, sin etiquetas, sin explicaciones.${ctxDeri
 
   if (data.startsWith("pub_x:")) {
     await publicarPorDestino(data.slice(6), "x");
+  }
+
+  if (data.startsWith("retry_x:")) {
+    await publicarPorDestino(data.slice(8), "x");
+  }
+
+  if (data.startsWith("flash_pick_a:") || data.startsWith("flash_pick_b:")) {
+    const isA = data.startsWith("flash_pick_a:");
+    const pickId = data.slice(13);
+    const pending = pendingGanchos.get(pickId);
+    if (!pending) return reply(chatId, "❌ Opciones expiradas (>30 min). Vuelve a generar el flash.");
+    pendingGanchos.delete(pickId);
+    await fetch(`${API()}/editMessageReplyMarkup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [] } }),
+    });
+    const gancho = isA ? pending.ganchoA : pending.ganchoB;
+    const msg = `🚨 <b>FLASH | CriptoScope</b>\n\n<b>${gancho}</b>\n\n${pending.cuerpo}\n\n<i>Análisis educativo · no es consejo financiero</i>`;
+    const pid = Date.now().toString(36);
+    pendingPublish.set(pid, msg);
+    setTimeout(() => { pendingPublish.delete(pid); portadas.delete(pid); }, 30 * 60 * 1000);
+    if (pending.portadaFid) portadas.set(pid, pending.portadaFid);
+    await mostrarBotonesPublicacion(chatId, pid, msg);
   }
 
   if (data.startsWith("enc:")) {
@@ -1811,15 +1816,16 @@ async function cmdAyuda(chatId, cmd) {
       uso: "/flash <tema o noticia>",
       ejemplo: "/flash BlackRock compra 10.000 BTC · /flash SEC demanda a Coinbase",
       detalle:
-        "Genera una alerta de alto impacto sobre lo que le indiques. Claude analiza el tema, lo cruza con el precio actual de BTC/ETH y el Fear&Greed Index, y redacta un mensaje en la voz de CriptoScope.\n\n" +
-        "Genera automáticamente una <b>portada editorial gpt-image-1</b> con la estética CriptoScope (fondo grafito oscuro, verde esmeralda, estilo Bloomberg/FT). Antes de publicar, te muestra una preview con botones:\n" +
-        "📢 <b>Canal + X</b> — publica en Telegram y en X con hashtags automáticos\n" +
-        "📣 <b>Solo canal</b> — solo Telegram\n" +
-        "🐦 <b>Solo X</b> — solo Twitter/X\n" +
-        "🗑 <b>Sin portada</b> — descarta la imagen generada si no te convence\n" +
-        "📸 <b>Añadir / cambiar portada</b> — usa tu propia foto en lugar de la generada\n" +
-        "❌ <b>Descartar</b> — lo borra sin publicar\n\n" +
-        "También puedes mandar la foto junto con el comando como adjunto: la foto queda guardada automáticamente como portada y reemplaza la de DALL-E.",
+        "Genera una alerta de alto impacto sobre lo que le indiques. Claude analiza el tema con contexto de mercado live.\n\n" +
+        "<b>Flujo en 2 pasos:</b>\n" +
+        "1. Claude genera <b>2 opciones de gancho</b> (frase de apertura). Eliges con ✅ Gancho A / ✅ Gancho B.\n" +
+        "2. Aparece la preview completa con portada gpt-image-1 y botones de publicación.\n\n" +
+        "<b>Botones de publicación:</b>\n" +
+        "📢 <b>Canal + X</b> · 📣 <b>Solo canal</b> · 🐦 <b>Solo X</b>\n" +
+        "🗑 <b>Sin portada</b> · 📸 <b>Añadir / cambiar portada</b>\n" +
+        "✏️ <b>Editar</b> · ❌ <b>Descartar</b>\n\n" +
+        "Si X falla, aparece el botón <b>🔄 Reintentar en X</b> sin perder el contenido.\n\n" +
+        "También puedes adjuntar una foto con el comando: se usa esa como portada en lugar de la generada.",
     },
     hilo: {
       titulo: "📝 /hilo — Thread educativo",

@@ -11,6 +11,7 @@ import { getMarketContext } from "./coindesk.js";
 import { getContextoDerivadosBTC } from "./signals.js";
 import { getEventosMacro } from "./calendar.js";
 import { publicarTweetUnico, subirImagenX } from "./twitter-post.js";
+import { enviarTelegram, enviarTelegramConFoto } from "./telegram.js";
 import { generarChartBarras, aplicarLogo } from "./media.js";
 
 const client = new Anthropic();
@@ -308,9 +309,28 @@ export async function ejecutarEditorial() {
           mediaId = await subirImagenX(imagenBuffer).catch(() => null);
         }
         await publicarTweetUnico(tweetTexto, mediaId ? { mediaId } : {});
-        console.log("✅ Tweet editorial publicado en X.");
-        await notificarOwner("✅ Tweet editorial publicado en X.");
         guardarPendiente({ ...pendiente, publicado: true, cancelado: false });
+        console.log("✅ Tweet editorial publicado en X.");
+
+        // Publicar también en canal Telegram
+        const textoCanal = `📝 <b>Editorial | CriptoScope</b>\n\n${tweetTexto}`;
+        let telegramOk = true;
+        try {
+          if (imagenBuffer) {
+            await enviarTelegramConFoto(textoCanal, imagenBuffer);
+          } else {
+            await enviarTelegram(textoCanal);
+          }
+          console.log("✅ Editorial publicado en canal Telegram.");
+        } catch (eTg) {
+          telegramOk = false;
+          console.warn("⚠️ Error editorial canal Telegram:", eTg.message);
+        }
+
+        const resumen = telegramOk
+          ? "✅ Tweet editorial publicado en X y en el canal."
+          : "✅ Publicado en X. ⚠️ Fallo canal Telegram (ver logs).";
+        await notificarOwner(resumen);
       } catch (e) {
         console.warn("⚠️ Error publicando tweet editorial:", e.message);
         await notificarOwner(`⚠️ <b>Error publicando tweet editorial</b>\n<code>${e.message.slice(0, 200)}</code>`);

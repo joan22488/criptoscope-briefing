@@ -5,3 +5,5 @@ output/
 data/
 dist/
 miniapp/dist/
+test-imagen.js
+test-portada.png
