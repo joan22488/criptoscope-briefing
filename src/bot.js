@@ -1114,7 +1114,8 @@ async function cmdEstado(chatId) {
     `<b>Publicación manual:</b>\n` +
     `<code>/briefing</code> · <code>/flash</code> · <code>/hilo</code> · <code>/analiza</code> · <code>/opinion</code>\n` +
     `<code>/encuesta</code> · <code>/semanal</code> · <code>/publicar</code> · <code>/banner</code>\n` +
-    `<i>🖼 Briefing genera portada branded 1200x628 automática</i>\n\n` +
+    `<i>🖼 Briefing: portada branded 1200x628 (Sharp)</i>\n` +
+    `<i>🎨 DALL-E 3 (flash/hilo/opinion/quepasa): ${process.env.OPENAI_API_KEY ? "✅ activa" : "⚠️ sin OPENAI_API_KEY"}</i>\n\n` +
     `<b>Consulta privada:</b>\n` +
     `<code>/precio</code> · <code>/quepasa</code> · <code>/senal</code> · <code>/calendario</code>\n` +
     `<code>/stats</code> · <code>/historial</code>\n\n` +
@@ -1807,13 +1808,14 @@ async function cmdAyuda(chatId, cmd) {
       ejemplo: "/flash BlackRock compra 10.000 BTC · /flash SEC demanda a Coinbase",
       detalle:
         "Genera una alerta de alto impacto sobre lo que le indiques. Claude analiza el tema, lo cruza con el precio actual de BTC/ETH y el Fear&Greed Index, y redacta un mensaje en la voz de CriptoScope.\n\n" +
-        "Antes de publicar, te muestra una preview con cuatro botones:\n" +
+        "Genera automáticamente una <b>portada editorial DALL-E 3</b> con la estética CriptoScope (fondo grafito oscuro, verde esmeralda, estilo Bloomberg/FT). Antes de publicar, te muestra una preview con botones:\n" +
         "📢 <b>Canal + X</b> — publica en Telegram y en X con hashtags automáticos\n" +
         "📣 <b>Solo canal</b> — solo Telegram\n" +
         "🐦 <b>Solo X</b> — solo Twitter/X\n" +
-        "📸 <b>Añadir portada</b> — manda una foto y se adjunta integrada en la publicación\n" +
+        "🗑 <b>Sin portada</b> — descarta la imagen generada si no te convence\n" +
+        "📸 <b>Añadir / cambiar portada</b> — usa tu propia foto en lugar de la generada\n" +
         "❌ <b>Descartar</b> — lo borra sin publicar\n\n" +
-        "También puedes mandar la foto junto con el comando como adjunto: la foto queda guardada automáticamente como portada.",
+        "También puedes mandar la foto junto con el comando como adjunto: la foto queda guardada automáticamente como portada y reemplaza la de DALL-E.",
     },
     hilo: {
       titulo: "📝 /hilo — Thread educativo",
@@ -1822,7 +1824,8 @@ async function cmdAyuda(chatId, cmd) {
       detalle:
         "Genera un hilo educativo de 5 tweets sobre el tema que indiques. Si le pasas una URL, descarga el artículo real y basa el hilo en su contenido.\n\n" +
         "Cada tweet es autónomo: funciona aunque el lector entre por el tweet 3. Gancho en el primero, un punto concreto por tweet, regla práctica en el último.\n\n" +
-        "En el canal se publica el hilo completo como un solo mensaje. En X se publica como thread real encadenado (5 tweets + CTA). Los hashtags de monedas mencionadas se añaden al último tweet automáticamente. Admite portada.",
+        "En el canal se publica el hilo completo como un solo mensaje. En X se publica como thread real encadenado (5 tweets + CTA). Los hashtags de monedas mencionadas se añaden al último tweet automáticamente.\n\n" +
+        "Genera automáticamente una <b>portada editorial DALL-E 3</b>. Usa 🗑 <b>Sin portada</b> para descartarla, o 📸 <b>Añadir / cambiar portada</b> para usar la tuya.",
     },
     analiza: {
       titulo: "📊 /analiza — Análisis técnico on-demand",
@@ -1840,7 +1843,7 @@ async function cmdAyuda(chatId, cmd) {
       ejemplo: "/opinion Ethereum ETF aprobado en Europa · /opinion China legaliza Bitcoin",
       detalle:
         "Le das una noticia y CriptoScope la analiza como trader: qué significa para el mercado, qué haría el precio a corto y medio plazo, y qué vigilarías. Sin hype, sin titulares vacíos.\n\n" +
-        "Igual que /flash, te muestra una preview con botones para elegir dónde publicar (canal, X o ambos) y añadir portada antes de confirmar.",
+        "Genera automáticamente una <b>portada editorial DALL-E 3</b>. Te muestra una preview con botones para elegir dónde publicar (canal, X o ambos). Usa 🗑 <b>Sin portada</b> para descartarla o 📸 para usar la tuya.",
     },
     precio: {
       titulo: "💰 /precio — Precio actual",
@@ -1856,8 +1859,8 @@ async function cmdAyuda(chatId, cmd) {
       ejemplo: "/quepasa",
       detalle:
         "Claude revisa BTC, ETH, SOL, Fear&Greed Index y dominancia BTC en tiempo real y te da un resumen de 3-4 frases: qué domina el mercado, si hay momentum o no, y qué vigilar ahora mismo.\n\n" +
-        "Muestra botones para publicar en canal o en X, igual que /flash o /hilo. También puedes añadir portada.\n\n" +
-        "📸 <b>Con portada:</b> manda una foto con <code>/quepasa</code> en el pie.",
+        "Genera automáticamente una <b>portada editorial DALL-E 3</b>. Muestra botones para publicar en canal o en X. Usa 🗑 <b>Sin portada</b> para descartarla o 📸 para usar la tuya.\n\n" +
+        "📸 <b>Con portada propia:</b> manda una foto con <code>/quepasa</code> en el pie.",
     },
     senal: {
       titulo: "🔒 /senal — Señal técnica privada",

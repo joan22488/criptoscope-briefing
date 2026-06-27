@@ -106,11 +106,11 @@ Escríbele directamente al bot (chat privado):
 ### Contenido manual — preview + botones antes de publicar
 | Comando | Ejemplo | Resultado |
 |---------|---------|-----------|
-| `/flash <tema>` | `/flash BlackRock compra BTC` | Alerta urgente con preview y botones de destino |
-| `/hilo <tema>` | `/hilo qué es el halving` | Thread 5 tweets — canal como mensaje único, X como thread encadenado |
+| `/flash <tema>` | `/flash BlackRock compra BTC` | Alerta urgente con portada DALL-E 3 auto-generada + preview + botones de destino |
+| `/hilo <tema>` | `/hilo qué es el halving` | Thread 5 tweets + portada DALL-E 3 — canal como mensaje único, X como thread encadenado |
 | `/hilo <URL>` | `/hilo https://coindesk.com/...` | Hilo basado en el contenido real del artículo |
 | `/analiza <coin>` | `/analiza AVAX` | Gráfico 4H + análisis técnico top-down con entrada, TP1, TP2, SL y R:R |
-| `/opinion <noticia>` | `/opinion SEC aprueba ETF` | Lectura de mercado estilo CriptoScope |
+| `/opinion <noticia>` | `/opinion SEC aprueba ETF` | Lectura de mercado estilo CriptoScope + portada DALL-E 3 auto-generada |
 | `/encuesta [tema]` | `/encuesta` · `/encuesta BTC esta semana` | Poll nativo para el canal con preview |
 | `/semanal` | `/semanal` | Resumen semanal bajo demanda — sin esperar al domingo |
 | `/publicar <texto>` | `/publicar BTC supera los 100k. Nivel clave: 98.000.` | Publica tu propio texto (+ foto opcional) en X y/o canal con 4 botones de destino |
@@ -122,6 +122,7 @@ Escríbele directamente al bot (chat privado):
 - 🐦 **Solo X** — solo Twitter/X
 - 🟡 **Binance Square** — formatea el texto en plain text (sin HTML) listo para copiar-pegar en Binance Square
 - 📊 **CMC Community** — ídem para CoinMarketCap Community
+- 🗑 **Sin portada** — descarta la imagen DALL-E generada automáticamente (solo aparece si hay portada auto-generada)
 - 📸 **Añadir / Cambiar portada** — la foto se integra en el mismo mensaje del canal y se adjunta al tweet de X
 - ❌ **Descartar** — no publica nada
 
@@ -152,7 +153,9 @@ Escríbele directamente al bot (chat privado):
 | Foto + pie `responde` | Redacta una respuesta al comentario de la imagen (solo para ti) |
 
 ### Monitor automático de noticias
-Cada 15 min el sistema revisa **6 fuentes RSS en paralelo**: CoinDesk · Cointelegraph · The Block · Decrypt · BeInCrypto · The Defiant. Si detecta una noticia con tus keywords (`MONITOR_KEYWORDS`) te la manda en privado con botones y una **puntuación editorial automática**:
+Cada 15 min el sistema revisa **6 fuentes RSS en paralelo**: CoinDesk · Cointelegraph · The Block · Decrypt · BeInCrypto · CryptoPanic. Si detecta una noticia con tus keywords (`MONITOR_KEYWORDS`) te la manda en privado con botones y una **puntuación editorial automática**.
+
+**Deduplicación cross-fuente:** si la misma noticia aparece en varias fuentes, solo llega una vez. El sistema usa fingerprinting por palabras clave (eliminando stopwords): si hay un 50% de overlap entre dos titulares, se descarta el duplicado. Limite: max 2 alertas por fuente y 3 en total por ciclo de 15 min.
 
 | Puntuación | Emoji | Significado |
 |-----------|-------|-------------|
@@ -204,6 +207,7 @@ Copia `.env.example` a `.env` y rellena:
 ANTHROPIC_API_KEY=sk-ant-...          # console.anthropic.com
 TELEGRAM_BOT_TOKEN=123456:ABC...      # @BotFather en Telegram
 TELEGRAM_CHAT_ID=-100...              # ID del canal (con -100 delante)
+OPENAI_API_KEY=sk-proj-...            # platform.openai.com → portadas DALL-E 3 (~$0.04/imagen)
 
 # ─── RECOMENDADAS ────────────────────────────────────────────
 COINGECKO_API_KEY=CG-...              # coingecko.com/en/developers → Demo gratis
@@ -399,6 +403,10 @@ O conecta el repositorio de GitHub en el dashboard de Railway para despliegue au
 
 **Banner X (1500×500):** `generarBannerX()` en media.js construye el banner como SVG en memoria y lo convierte a PNG con Sharp. Si Sharp falla, cae a `generarChartBarras`. El resultado se envía como documento (sin compresión) para preservar la resolución.
 
+**Portadas DALL-E 3:** `generarPortadaEditorial(tema)` en media.js genera imágenes 1792x1024 con el master prompt de CriptoScope Editorial Style v1 (fondo grafito oscuro, verde esmeralda #00C896, estética Bloomberg/FT). Se activa automáticamente en `/flash`, `/hilo`, `/opinion` y `/quepasa` si `OPENAI_API_KEY` está configurada. Timeout de 50s. El botón "🗑 Sin portada" permite descartar la imagen antes de publicar.
+
+**Deduplicacion RSS:** `fingerprintTitulo()` elimina stopwords del titulo y extrae las 6 palabras clave mas relevantes. `yaNotificado()` y `yaPublicadoEnX()` comprueban overlap ≥50% con notificaciones recientes (TTL 4h/6h respectivamente) para evitar repeticiones cross-fuente. Max 2 alertas por fuente y 3 globales por ciclo.
+
 **Binance Futures (gratis, sin key):** `getBinanceFutures()` en signals.js obtiene OI histórico 20h, globalLongShortAccountRatio y takerlongshortRatio. Se usa en briefing, alertas y pipeline editorial como contexto de derivados.
 
 **Scoring de noticias:** `puntuarNoticia()` en coindesk.js asigna puntos por keywords institucionales (+3), cifras en dólares (+2), urgencia (+2), BTC/ETH (+1 c/u) y regulación (+1). Sin coste de API.
@@ -410,9 +418,10 @@ O conecta el repositorio de GitHub en el dashboard de Railway para despliegue au
 | Servicio | Plan | Coste |
 |----------|------|-------|
 | Claude API | Pay per use | ~$3-8/mes |
+| OpenAI DALL-E 3 | Pay per use | ~$0-3/mes (~$0.04/imagen) |
 | Railway | Hobby | $5/mes |
 | CoinGecko | Demo (gratis) | $0 |
 | X API | Pay Per Use | ~$1-2/mes |
 | Notion | Free | $0 |
 | Resto de APIs | Gratis | $0 |
-| **Total** | | **~$9-15/mes** |
+| **Total** | | **~$9-18/mes** |

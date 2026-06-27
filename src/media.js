@@ -342,29 +342,8 @@ export async function generarBannerX({ btc, eth, fg, dominancia, coins = [] }) {
 const MASTER_PROMPT = `Ultra-realistic editorial illustration for a premium crypto financial news outlet. Cinematic institutional aesthetic, inspired by Bloomberg, Financial Times graphics and Cointelegraph editorial composition, but with a unique CriptoScope identity. Dark graphite and matte black environment with subtle emerald green accents (#00C896). Sophisticated hedge fund atmosphere, premium market intelligence, modern financial newsroom. Hyper-realistic lighting, realistic reflections, shallow depth of field, ultra detailed textures, premium magazine cover quality. Clean composition with one dominant visual concept representing the news story. No memes, no rockets, no moon, no bulls, no exaggerated crypto clichés. No logos, no watermarks, no text, no UI overlays, no fake dashboards with readable numbers, no branding. Focus on institutional finance, capital markets, blockchain infrastructure, macroeconomics and professional trading. Editorial photography mixed with cinematic digital art. Professional color grading, high contrast, minimalist luxury aesthetic. 16:9 aspect ratio. Ultra high resolution.`;
 
 export async function generarPortadaEditorial(tema) {
-  if (!process.env.OPENAI_API_KEY || !process.env.ANTHROPIC_API_KEY) return null;
+  if (!process.env.OPENAI_API_KEY) return null;
 
-  // 1. Claude Haiku genera el Subject cinematográfico
-  const subjectRes = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": process.env.ANTHROPIC_API_KEY,
-      "anthropic-version": "2023-06-01",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 120,
-      messages: [{
-        role: "user",
-        content: `Write a cinematic Subject description (2-3 sentences) for a DALL-E editorial image about this crypto/finance news: "${tema}"\n\nRules: institutional setting, no clichés (no rockets, no memes, no coins on table), focus on people/spaces/tension/infrastructure. Reply with ONLY the subject description, no intro.`,
-      }],
-    }),
-  });
-  const subjectJson = await subjectRes.json();
-  const subject = subjectJson.content?.[0]?.text?.trim() || tema;
-
-  // 2. DALL-E 3 genera la imagen
   const imgRes = await fetch("https://api.openai.com/v1/images/generations", {
     method: "POST",
     headers: {
@@ -373,17 +352,25 @@ export async function generarPortadaEditorial(tema) {
     },
     body: JSON.stringify({
       model: "dall-e-3",
-      prompt: `${MASTER_PROMPT}\n\nSubject: ${subject}`,
+      prompt: `${MASTER_PROMPT}\n\nSubject: ${tema.slice(0, 500)}`,
       n: 1,
       size: "1792x1024",
       quality: "standard",
       response_format: "b64_json",
     }),
+    signal: AbortSignal.timeout(50000),
   });
+
+  if (!imgRes.ok) {
+    const err = await imgRes.text().catch(() => "");
+    throw new Error(`DALL-E HTTP ${imgRes.status}: ${err.slice(0, 200)}`);
+  }
+
   const imgJson = await imgRes.json();
   if (imgJson.error) throw new Error(imgJson.error.message);
   const b64 = imgJson.data?.[0]?.b64_json;
   if (!b64) throw new Error("DALL-E no devolvió imagen");
 
+  console.log(`✅ Portada DALL-E generada para: ${tema.slice(0, 60)}`);
   return Buffer.from(b64, "base64");
 }
