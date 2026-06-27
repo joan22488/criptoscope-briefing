@@ -106,14 +106,14 @@ Escríbele directamente al bot (chat privado):
 ### Contenido manual — preview + botones antes de publicar
 | Comando | Ejemplo | Resultado |
 |---------|---------|-----------|
-| `/flash <tema>` | `/flash BlackRock compra BTC` | Alerta urgente con portada DALL-E 3 auto-generada + preview + botones de destino |
-| `/hilo <tema>` | `/hilo qué es el halving` | Thread 5 tweets + portada DALL-E 3 — canal como mensaje único, X como thread encadenado |
+| `/flash <tema>` | `/flash BlackRock compra BTC` | Alerta urgente con portada gpt-image-1 auto-generada + preview + botones de destino |
+| `/hilo <tema>` | `/hilo qué es el halving` | Thread 5 tweets + portada gpt-image-1 — canal como mensaje único, X como thread encadenado |
 | `/hilo <URL>` | `/hilo https://coindesk.com/...` | Hilo basado en el contenido real del artículo |
 | `/analiza <coin>` | `/analiza AVAX` | Gráfico 4H + análisis técnico top-down con entrada, TP1, TP2, SL y R:R |
-| `/opinion <noticia>` | `/opinion SEC aprueba ETF` | Lectura de mercado estilo CriptoScope + portada DALL-E 3 auto-generada |
+| `/opinion <noticia>` | `/opinion SEC aprueba ETF` | Lectura de mercado estilo CriptoScope + portada gpt-image-1 auto-generada |
 | `/encuesta [tema]` | `/encuesta` · `/encuesta BTC esta semana` | Poll nativo para el canal con preview |
 | `/semanal` | `/semanal` | Resumen semanal bajo demanda — sin esperar al domingo |
-| `/publicar <texto>` | `/publicar BTC supera los 100k. Nivel clave: 98.000.` | Publica tu propio texto (+ foto opcional) en X y/o canal con 4 botones de destino |
+| `/publicar <texto>` | `/publicar BTC supera los 100k. Nivel clave: 98.000.` | Publica tu propio texto con portada gpt-image-1 auto-generada + todos los botones de destino |
 | `/banner` | `/banner` | Genera imagen de portada 1500×500 px con datos del día lista para subir a X |
 
 **Botones de publicación** (aparecen tras generar cualquier contenido):
@@ -207,7 +207,7 @@ Copia `.env.example` a `.env` y rellena:
 ANTHROPIC_API_KEY=sk-ant-...          # console.anthropic.com
 TELEGRAM_BOT_TOKEN=123456:ABC...      # @BotFather en Telegram
 TELEGRAM_CHAT_ID=-100...              # ID del canal (con -100 delante)
-OPENAI_API_KEY=sk-proj-...            # platform.openai.com → portadas DALL-E 3 (~$0.04/imagen)
+OPENAI_API_KEY=sk-proj-...            # platform.openai.com → portadas gpt-image-1 (~$0.04/imagen)
 
 # ─── RECOMENDADAS ────────────────────────────────────────────
 COINGECKO_API_KEY=CG-...              # coingecko.com/en/developers → Demo gratis
@@ -403,7 +403,7 @@ O conecta el repositorio de GitHub en el dashboard de Railway para despliegue au
 
 **Banner X (1500×500):** `generarBannerX()` en media.js construye el banner como SVG en memoria y lo convierte a PNG con Sharp. Si Sharp falla, cae a `generarChartBarras`. El resultado se envía como documento (sin compresión) para preservar la resolución.
 
-**Portadas DALL-E 3:** `generarPortadaEditorial(tema)` en media.js genera imágenes 1792x1024 con el master prompt de CriptoScope Editorial Style v1 (fondo grafito oscuro, verde esmeralda #00C896, estética Bloomberg/FT). Se activa automáticamente en `/flash`, `/hilo`, `/opinion` y `/quepasa` si `OPENAI_API_KEY` está configurada. Timeout de 50s. El botón "🗑 Sin portada" permite descartar la imagen antes de publicar.
+**Portadas gpt-image-1:** `generarPortadaEditorial(tema)` en media.js genera imágenes 1536x1024 con el master prompt de CriptoScope Editorial Style v1 (fondo grafito oscuro, verde esmeralda #00C896, estética Bloomberg/FT). Se activa automáticamente en `/flash`, `/hilo`, `/opinion`, `/quepasa` y `/publicar` si `OPENAI_API_KEY` está configurada. Timeout 90s. El botón "🗑 Sin portada" permite descartar la imagen antes de publicar. Si el usuario adjunta su propia foto, esta tiene prioridad y no se genera la imagen.
 
 **Deduplicacion RSS:** `fingerprintTitulo()` elimina stopwords del titulo y extrae las 6 palabras clave mas relevantes. `yaNotificado()` y `yaPublicadoEnX()` comprueban overlap ≥50% con notificaciones recientes (TTL 4h/6h respectivamente) para evitar repeticiones cross-fuente. Max 2 alertas por fuente y 3 globales por ciclo.
 
@@ -418,7 +418,7 @@ O conecta el repositorio de GitHub en el dashboard de Railway para despliegue au
 | Servicio | Plan | Coste |
 |----------|------|-------|
 | Claude API | Pay per use | ~$3-8/mes |
-| OpenAI DALL-E 3 | Pay per use | ~$0-3/mes (~$0.04/imagen) |
+| OpenAI gpt-image-1 | Pay per use | ~$0-3/mes (~$0.04/imagen) |
 | Railway | Hobby | $5/mes |
 | CoinGecko | Demo (gratis) | $0 |
 | X API | Pay Per Use | ~$1-2/mes |

@@ -1118,7 +1118,7 @@ async function cmdEstado(chatId) {
     `<code>/briefing</code> · <code>/flash</code> · <code>/hilo</code> · <code>/analiza</code> · <code>/opinion</code>\n` +
     `<code>/encuesta</code> · <code>/semanal</code> · <code>/publicar</code> · <code>/banner</code>\n` +
     `<i>🖼 Briefing: portada branded 1200x628 (Sharp)</i>\n` +
-    `<i>🎨 DALL-E 3 (flash/hilo/opinion/quepasa): ${process.env.OPENAI_API_KEY ? "✅ activa" : "⚠️ sin OPENAI_API_KEY"}</i>\n\n` +
+    `<i>🎨 gpt-image-1 (flash/hilo/opinion/quepasa/publicar): ${process.env.OPENAI_API_KEY ? "✅ activa" : "⚠️ sin OPENAI_API_KEY"}</i>\n\n` +
     `<b>Consulta privada:</b>\n` +
     `<code>/precio</code> · <code>/quepasa</code> · <code>/senal</code> · <code>/calendario</code>\n` +
     `<code>/stats</code> · <code>/historial</code>\n\n` +
@@ -1812,7 +1812,7 @@ async function cmdAyuda(chatId, cmd) {
       ejemplo: "/flash BlackRock compra 10.000 BTC · /flash SEC demanda a Coinbase",
       detalle:
         "Genera una alerta de alto impacto sobre lo que le indiques. Claude analiza el tema, lo cruza con el precio actual de BTC/ETH y el Fear&Greed Index, y redacta un mensaje en la voz de CriptoScope.\n\n" +
-        "Genera automáticamente una <b>portada editorial DALL-E 3</b> con la estética CriptoScope (fondo grafito oscuro, verde esmeralda, estilo Bloomberg/FT). Antes de publicar, te muestra una preview con botones:\n" +
+        "Genera automáticamente una <b>portada editorial gpt-image-1</b> con la estética CriptoScope (fondo grafito oscuro, verde esmeralda, estilo Bloomberg/FT). Antes de publicar, te muestra una preview con botones:\n" +
         "📢 <b>Canal + X</b> — publica en Telegram y en X con hashtags automáticos\n" +
         "📣 <b>Solo canal</b> — solo Telegram\n" +
         "🐦 <b>Solo X</b> — solo Twitter/X\n" +
@@ -1829,7 +1829,7 @@ async function cmdAyuda(chatId, cmd) {
         "Genera un hilo educativo de 5 tweets sobre el tema que indiques. Si le pasas una URL, descarga el artículo real y basa el hilo en su contenido.\n\n" +
         "Cada tweet es autónomo: funciona aunque el lector entre por el tweet 3. Gancho en el primero, un punto concreto por tweet, regla práctica en el último.\n\n" +
         "En el canal se publica el hilo completo como un solo mensaje. En X se publica como thread real encadenado (5 tweets + CTA). Los hashtags de monedas mencionadas se añaden al último tweet automáticamente.\n\n" +
-        "Genera automáticamente una <b>portada editorial DALL-E 3</b>. Usa 🗑 <b>Sin portada</b> para descartarla, o 📸 <b>Añadir / cambiar portada</b> para usar la tuya.",
+        "Genera automáticamente una <b>portada editorial gpt-image-1</b>. Usa 🗑 <b>Sin portada</b> para descartarla, o 📸 <b>Añadir / cambiar portada</b> para usar la tuya.",
     },
     analiza: {
       titulo: "📊 /analiza — Análisis técnico on-demand",
@@ -1847,7 +1847,7 @@ async function cmdAyuda(chatId, cmd) {
       ejemplo: "/opinion Ethereum ETF aprobado en Europa · /opinion China legaliza Bitcoin",
       detalle:
         "Le das una noticia y CriptoScope la analiza como trader: qué significa para el mercado, qué haría el precio a corto y medio plazo, y qué vigilarías. Sin hype, sin titulares vacíos.\n\n" +
-        "Genera automáticamente una <b>portada editorial DALL-E 3</b>. Te muestra una preview con botones para elegir dónde publicar (canal, X o ambos). Usa 🗑 <b>Sin portada</b> para descartarla o 📸 para usar la tuya.",
+        "Genera automáticamente una <b>portada editorial gpt-image-1</b>. Te muestra una preview con botones para elegir dónde publicar (canal, X o ambos). Usa 🗑 <b>Sin portada</b> para descartarla o 📸 para usar la tuya.",
     },
     precio: {
       titulo: "💰 /precio — Precio actual",
@@ -1863,7 +1863,7 @@ async function cmdAyuda(chatId, cmd) {
       ejemplo: "/quepasa",
       detalle:
         "Claude revisa BTC, ETH, SOL, Fear&Greed Index y dominancia BTC en tiempo real y te da un resumen de 3-4 frases: qué domina el mercado, si hay momentum o no, y qué vigilar ahora mismo.\n\n" +
-        "Genera automáticamente una <b>portada editorial DALL-E 3</b>. Muestra botones para publicar en canal o en X. Usa 🗑 <b>Sin portada</b> para descartarla o 📸 para usar la tuya.\n\n" +
+        "Genera automáticamente una <b>portada editorial gpt-image-1</b>. Muestra botones para publicar en canal o en X. Usa 🗑 <b>Sin portada</b> para descartarla o 📸 para usar la tuya.\n\n" +
         "📸 <b>Con portada propia:</b> manda una foto con <code>/quepasa</code> en el pie.",
     },
     senal: {
@@ -2008,16 +2008,17 @@ async function cmdAyuda(chatId, cmd) {
         "Configura tus keywords en MONITOR_KEYWORDS en Railway (separadas por comas).",
     },
     publicar: {
-      titulo: "📤 /publicar — Publica tu propio contenido en X y Telegram",
+      titulo: "📤 /publicar — Publica tu propio contenido",
       uso: "/publicar <texto> (con foto adjunta opcional)",
       ejemplo: "/publicar BTC rompe el ATH. Clave: 74.000 ya era soporte.",
       detalle:
-        "Publica tu propio texto (y foto opcional) directamente en X y/o el canal sin que Claude lo modifique.\n\n" +
-        "Manda el texto como argumento — puedes adjuntar una foto al mismo mensaje. Verás una preview con cuatro botones:\n" +
-        "🐦 <b>Solo X</b> — publica solo en Twitter/X\n" +
-        "📢 <b>Solo Canal</b> — publica solo en Telegram\n" +
-        "🔄 <b>X + Canal</b> — publica en ambos\n" +
-        "❌ <b>Cancelar</b> — descarta sin publicar\n\n" +
+        "Publica tu propio texto en X y/o el canal sin que Claude lo modifique.\n\n" +
+        "Genera automáticamente una <b>portada gpt-image-1</b> basada en tu texto. Si adjuntas una foto, se usa esa en lugar de la generada.\n\n" +
+        "Verás una preview con los mismos botones que /flash:\n" +
+        "📢 <b>Canal + X</b> · 📣 <b>Solo canal</b> · 🐦 <b>Solo X</b>\n" +
+        "🟡 <b>Binance Square</b> · 📊 <b>CMC Community</b>\n" +
+        "🗑 <b>Sin portada</b> · 📸 <b>Añadir / cambiar portada</b>\n" +
+        "✏️ <b>Editar</b> · ❌ <b>Descartar</b>\n\n" +
         "La publicación caduca si no confirmas en 30 minutos.",
     },
     banner: {
