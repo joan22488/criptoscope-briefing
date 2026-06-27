@@ -154,6 +154,61 @@ function limpiarNoticiasViejas() {
     if (ts < limite) noticiasVistas.delete(guid);
   }
 }
+
+// ── Deduplicación cross-source por contenido del título ──────────
+const titulosNotificados = new Map(); // fingerprint → timestamp
+const publicadosEnX       = new Map(); // fingerprint → timestamp
+
+function fingerprintTitulo(titulo) {
+  const STOPWORDS = new Set([
+    "the","a","an","of","in","on","to","for","and","or","is","are","was",
+    "has","have","with","from","that","this","by","at","as","its","it","be",
+    "will","not","over","after","amid","as","says","say","new","first","could",
+    "bitcoin","btc","crypto","cryptocurrency","market","digital","assets","asset",
+  ]);
+  return titulo.toLowerCase()
+    .replace(/[^a-z0-9 ]/g, " ")
+    .split(/\s+/)
+    .filter(w => w.length > 2 && !STOPWORDS.has(w))
+    .slice(0, 6)
+    .sort()
+    .join("|");
+}
+
+function yaNotificado(titulo) {
+  const fp = fingerprintTitulo(titulo);
+  const hace4h = Date.now() - 4 * 60 * 60 * 1000;
+  for (const [k, ts] of titulosNotificados) if (ts < hace4h) titulosNotificados.delete(k);
+  // coincidencia exacta o solapamiento ≥ 50% de palabras clave
+  const palabras = fp.split("|");
+  for (const [k] of titulosNotificados) {
+    const kPalabras = k.split("|");
+    const comunes = palabras.filter(w => kPalabras.includes(w));
+    if (comunes.length >= Math.max(2, Math.floor(palabras.length * 0.5))) return true;
+  }
+  return false;
+}
+
+function marcarTituloNotificado(titulo) {
+  titulosNotificados.set(fingerprintTitulo(titulo), Date.now());
+}
+
+function yaPublicadoEnX(titulo) {
+  const fp = fingerprintTitulo(titulo);
+  const hace6h = Date.now() - 6 * 60 * 60 * 1000;
+  for (const [k, ts] of publicadosEnX) if (ts < hace6h) publicadosEnX.delete(k);
+  const palabras = fp.split("|");
+  for (const [k] of publicadosEnX) {
+    const kPalabras = k.split("|");
+    const comunes = palabras.filter(w => kPalabras.includes(w));
+    if (comunes.length >= Math.max(2, Math.floor(palabras.length * 0.5))) return true;
+  }
+  return false;
+}
+
+function marcarPublicadoEnX(titulo) {
+  publicadosEnX.set(fingerprintTitulo(titulo), Date.now());
+}
 // Caché de títulos de noticias — evita superar el límite de 64 bytes de callback_data
 const noticiasCache = new Map(); // nid → { titulo, link }
 const cachearNoticia = (titulo, link) => {
@@ -1502,6 +1557,7 @@ Devuelve SOLO el tweet. Sin comillas, sin etiquetas, sin explicaciones.${ctxDeri
       return "Otro";
     };
     const extraerTitulo = (t) => t.replace(/<[^>]+>/g, "").split("\n").find((l) => l.trim().length > 5) || "Sin título";
+    if ((destino === "x" || destino === "ambos") && !errorX) marcarPublicadoEnX(extraerTitulo(msg));
     const plataformaNotion = errorX && destino === "x" ? "X" : errorX && destino === "ambos" ? "Canal" : destino === "ambos" ? "Canal+X" : destino === "canal" ? "Canal" : "X";
     const estadoNotion = errorCanal ? "Error canal" : errorX ? "Error X" : "Publicado";
     guardarPublicacionEnNotion({
@@ -1629,6 +1685,10 @@ Devuelve SOLO el tweet. Sin comillas, sin etiquetas, sin explicaciones.${ctxDeri
       return reply(chatId, "❌ X no configurado. Añade X_API_KEY en Railway.");
     }
 
+    if (yaPublicadoEnX(titulo)) {
+      return reply(chatId, "⚠️ Ya se publicó un tweet sobre este tema en las últimas 6h. Usa /flash si quieres un ángulo diferente.");
+    }
+
     await reply(chatId, "🐦 Generando tweet para X...");
 
     // Auto-imagen: gráfico BTC 4H como contexto visual para el tweet de noticia
@@ -1647,6 +1707,7 @@ Devuelve SOLO el tweet. Sin comillas, sin etiquetas, sin explicaciones.${ctxDeri
 
     try {
       await publicarTweetUnico(tweetFinal, { mediaId });
+      marcarPublicadoEnX(titulo);
       guardarPublicacionEnNotion({
         tipo: "Flash",
         titulo,
@@ -2179,10 +2240,13 @@ export async function monitorNoticias() {
   if (!OWNER()) return;
   limpiarNoticiasViejas(); // purga GUIDs con más de 24h para evitar memory leak
 
-  const MAX_EDAD_MS  = 60 * 60 * 1000; // ignorar noticias de más de 1 hora
-  const MAX_X_FUENTE = 3;               // máx alertas por fuente por ciclo
+  const MAX_EDAD_MS   = 60 * 60 * 1000; // ignorar noticias de más de 1 hora
+  const MAX_X_FUENTE  = 2;              // máx alertas por fuente por ciclo
+  const MAX_TOTAL     = 3;              // máx alertas totales por ciclo (todas las fuentes)
+  let totalEnviadas   = 0;
 
   for (const fuente of FUENTES_RSS) {
+    if (totalEnviadas >= MAX_TOTAL) break;
     try {
       const res = await fetch(fuente.url, {
         headers: { "User-Agent": "Mozilla/5.0" },
@@ -2213,6 +2277,10 @@ export async function monitorNoticias() {
         const coincide = KEYWORDS_NOTICIAS.some((k) => item.titulo.toLowerCase().includes(k));
         if (!coincide) continue;
 
+        // Deduplicación cross-source: saltar si ya notificamos una noticia similar
+        if (yaNotificado(item.titulo)) continue;
+        marcarTituloNotificado(item.titulo);
+
         const nid = cachearNoticia(item.titulo, item.link);
         await fetch(`${API()}/sendMessage`, {
           method: "POST",
@@ -2238,6 +2306,8 @@ export async function monitorNoticias() {
         });
 
         enviadas++;
+        totalEnviadas++;
+        if (totalEnviadas >= MAX_TOTAL) break;
         await new Promise((r) => setTimeout(r, 800));
       }
     } catch (e) {
