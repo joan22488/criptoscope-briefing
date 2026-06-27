@@ -1673,31 +1673,32 @@ Devuelve SOLO el tweet. Sin comillas, sin etiquetas, sin explicaciones.${ctxDeri
   if (data.startsWith("news_flash:")) {
     const nid = data.slice(11);
     const cached = noticiasCache.get(nid);
-    const titulo = cached?.titulo || nid;
+    if (!cached) return reply(chatId, "⏱ Esta noticia ya no está en caché (el bot se reinició). Espera la próxima alerta del monitor.");
     await fetch(`${API()}/editMessageReplyMarkup`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [] } }),
     });
-    await cmdFlash(chatId, titulo);
+    await cmdFlash(chatId, cached.titulo);
   }
 
   if (data.startsWith("news_hilo:")) {
     const nid = data.slice(10);
     const cached = noticiasCache.get(nid);
-    const titulo = cached?.titulo || nid;
+    if (!cached) return reply(chatId, "⏱ Esta noticia ya no está en caché (el bot se reinició). Espera la próxima alerta del monitor.");
     await fetch(`${API()}/editMessageReplyMarkup`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [] } }),
     });
-    await cmdHilo(chatId, titulo);
+    await cmdHilo(chatId, cached.titulo);
   }
 
   if (data.startsWith("news_tweet:")) {
     const nid = data.slice(11);
     const cached = noticiasCache.get(nid);
-    const titulo = cached?.titulo || nid;
+    if (!cached) return reply(chatId, "⏱ Esta noticia ya no está en caché (el bot se reinició). Espera la próxima alerta del monitor.");
+    const titulo = cached.titulo;
     await quitarBotones();
 
     if (!process.env.X_API_KEY) {

@@ -356,7 +356,6 @@ export async function generarPortadaEditorial(tema) {
       n: 1,
       size: "1792x1024",
       quality: "standard",
-      response_format: "b64_json",
     }),
     signal: AbortSignal.timeout(50000),
   });
@@ -368,9 +367,12 @@ export async function generarPortadaEditorial(tema) {
 
   const imgJson = await imgRes.json();
   if (imgJson.error) throw new Error(imgJson.error.message);
-  const b64 = imgJson.data?.[0]?.b64_json;
-  if (!b64) throw new Error("DALL-E no devolvió imagen");
+  const imgUrl = imgJson.data?.[0]?.url;
+  if (!imgUrl) throw new Error("DALL-E no devolvio URL de imagen");
+
+  const downloadRes = await fetch(imgUrl, { signal: AbortSignal.timeout(30000) });
+  if (!downloadRes.ok) throw new Error(`Error descargando imagen DALL-E: ${downloadRes.status}`);
 
   console.log(`✅ Portada DALL-E generada para: ${tema.slice(0, 60)}`);
-  return Buffer.from(b64, "base64");
+  return Buffer.from(await downloadRes.arrayBuffer());
 }
