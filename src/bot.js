@@ -986,54 +986,39 @@ async function cmdPublicar(chatId, texto, photoArray = null) {
   if (!texto?.trim()) {
     return reply(chatId,
       "❓ <b>Uso:</b>\n" +
-      "• Escribe <code>/publicar</code> seguido del texto del tweet\n" +
+      "• Escribe <code>/publicar</code> seguido del texto\n" +
       "• O envía una foto con caption <code>/publicar texto aquí</code>"
     );
   }
 
   await reply(chatId, "⏳ Preparando publicación...");
 
-  let fotoBuffer = null;
+  const textoFinal = limpiarDashes(texto.trim());
+  const pid = Date.now().toString(36);
+  pendingPublish.set(pid, textoFinal);
+  setTimeout(() => { pendingPublish.delete(pid); portadas.delete(pid); }, 30 * 60 * 1000);
+
   if (photoArray) {
     try {
       const base64 = await descargarFoto(photoArray);
-      fotoBuffer = Buffer.from(base64, "base64");
+      const fid = await subirPortadaChat(chatId, Buffer.from(base64, "base64"));
+      if (fid) portadas.set(pid, fid);
     } catch (e) {
-      console.warn("⚠️ Foto no descargada:", e.message);
+      console.warn("⚠️ Foto /publicar:", e.message);
+    }
+  } else {
+    const portadaBuffer = await generarPortadaEditorial(textoFinal).catch((e) => {
+      console.warn("⚠️ DALL-E publicar:", e.message);
+      reply(chatId, `⚠️ <i>DALL-E: ${e.message.slice(0, 200)}</i>`).catch(() => {});
+      return null;
+    });
+    if (portadaBuffer) {
+      const fid = await subirPortadaChat(chatId, portadaBuffer);
+      if (fid) portadas.set(pid, fid);
     }
   }
 
-  const textoFinal = limpiarDashes(texto.trim());
-
-  pendingManual.set(chatId, { texto: textoFinal, fotoBuffer });
-  setTimeout(() => pendingManual.delete(chatId), 30 * 60 * 1000);
-
-  const preview =
-    `📝 <b>BORRADOR</b>\n\n${textoFinal}\n\n` +
-    (fotoBuffer ? "📎 Con imagen adjunta\n\n" : "") +
-    `<i>Se publicará en X y se amplificará al canal de Telegram.</i>`;
-
-  await fetch(`${API()}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text: preview,
-      parse_mode: "HTML",
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { text: "🐦 Solo X",    callback_data: "pub_solo_x" },
-            { text: "📢 Solo Canal", callback_data: "pub_solo_canal" },
-          ],
-          [
-            { text: "🔄 X + Canal", callback_data: "pub_ambos" },
-            { text: "❌ Cancelar",   callback_data: "pub_manual_no" },
-          ],
-        ],
-      },
-    }),
-  });
+  await mostrarBotonesPublicacion(chatId, pid, `📝 <b>BORRADOR</b>\n\n${textoFinal}`);
 }
 
 // /banner — genera portada para X (1500×500) con datos del día
