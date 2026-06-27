@@ -236,6 +236,7 @@ async function mostrarBotonesPublicacion(chatId, pid, previewTexto) {
           [
             { text: "🐦 Solo X", callback_data: `pub_x:${pid}` },
             { text: tienePortada ? "🖼 Cambiar portada" : "📸 Añadir portada", callback_data: `add_portada:${pid}` },
+            ...(tienePortada ? [{ text: "🗑 Sin portada", callback_data: `quitar_portada:${pid}` }] : []),
           ],
           [
             { text: "🟡 Binance Square", callback_data: `pub_bs:${pid}` },
@@ -1336,6 +1337,15 @@ async function procesarCallback(callback) {
     await quitarBotones();
     waitingCover.set(chatId, pid);
     await reply(chatId, "📸 Mándame la foto que quieres usar como portada.");
+    return;
+  }
+
+  if (data.startsWith("quitar_portada:")) {
+    const pid = data.slice(15);
+    portadas.delete(pid);
+    await quitarBotones();
+    const texto = pendingPublish.get(pid);
+    if (texto) await mostrarBotonesPublicacion(chatId, pid, texto);
     return;
   }
 
