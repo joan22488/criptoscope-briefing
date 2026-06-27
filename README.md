@@ -8,7 +8,7 @@ Sistema que monitoriza el mercado cripto 24/7, genera análisis con IA (Claude) 
 
 | Cuándo | Qué publica |
 |--------|-------------|
-| 07:00 diario | ☕ Briefing matinal → Telegram + 1 tweet en X (si `X_API_KEY` configurado) |
+| 07:00 diario | ☕ Briefing matinal → Telegram + 1 tweet en X (portada branded 1200x628 auto-generada con Sharp) |
 | 07:00 | 🌅 Radar de apertura — sesgo del día y nivel clave 4H → Telegram |
 | 11:00 | 📈 Pulso técnico — momentum 1H RSI/MACD → Telegram |
 | 15:00 | ⚡ On-chain y derivados — funding rate, OI, posicionamiento → Telegram |
@@ -42,7 +42,7 @@ src/
 ├── notion.js         # Integración Notion (briefings + señales)
 ├── telegram.js       # Envío a Telegram con chunking automático
 ├── twitter-post.js   # Publicación en X (tweet único + threads para /hilo)
-├── media.js          # Imágenes: charts de barras/línea, banner de portada X (1500x500)
+├── media.js          # Imágenes: portada branded 1200x628 (SVG+Sharp), charts barras/línea, banner X 1500x500
 ├── prompts.js        # Voz editorial CriptoScope + plantillas JSON
 └── output.js         # Guardado local de archivos
 ```

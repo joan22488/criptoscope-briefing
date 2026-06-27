@@ -1004,8 +1004,9 @@ async function cmdEstado(chatId) {
     `📝 Editorial: lun 16:30 · mar 10:00 · mié 12:00 · sáb 11:00 · dom 18:00\n` +
     `🌙 Recap diario: 22:00\n\n` +
     `<b>Publicación manual:</b>\n` +
-    `<code>/flash</code> · <code>/hilo</code> · <code>/analiza</code> · <code>/opinion</code>\n` +
-    `<code>/encuesta</code> · <code>/semanal</code> · <code>/publicar</code> · <code>/banner</code>\n\n` +
+    `<code>/briefing</code> · <code>/flash</code> · <code>/hilo</code> · <code>/analiza</code> · <code>/opinion</code>\n` +
+    `<code>/encuesta</code> · <code>/semanal</code> · <code>/publicar</code> · <code>/banner</code>\n` +
+    `<i>🖼 Briefing genera portada branded 1200x628 automática</i>\n\n` +
     `<b>Consulta privada:</b>\n` +
     `<code>/precio</code> · <code>/quepasa</code> · <code>/senal</code> · <code>/calendario</code>\n` +
     `<code>/stats</code> · <code>/historial</code>\n\n` +
@@ -1758,6 +1759,19 @@ async function cmdAyuda(chatId, cmd) {
         "Debajo del calendario aparece el botón <b>📊 Generar post para publicar</b>: Claude analiza los eventos más importantes, redacta un post al estilo CriptoScope con título y análisis de impacto en BTC/ETH, y te muestra una preview con botones para publicar en canal, X o ambos.\n\n" +
         "Útil antes de abrir posiciones para saber si hay riesgo de volatilidad macro, y para publicar análisis macro en el canal con un clic.",
     },
+    briefing: {
+      titulo: "☕ /briefing — Briefing matinal manual",
+      uso: "/briefing",
+      ejemplo: "/briefing",
+      detalle:
+        "Genera el briefing completo en cualquier momento sin esperar a las 07:00. Claude descarga datos en tiempo real (precios, derivados, noticias, tweets, Reddit, macro) y genera el briefing + guion de vídeo + tweet X.\n\n" +
+        "Antes de publicar te muestra:\n" +
+        "🖼 Portada branded 1200x628 con titular del día, BTC/ETH/SOL/MSTR y Fear & Greed\n" +
+        "📋 Preview del texto completo\n" +
+        "Botones para publicar en canal, X o ambos\n\n" +
+        "La portada se genera automáticamente con los datos del día. Si prefieres una imagen fija, usa /setportada briefing.\n\n" +
+        "<i>Solo disponible para el owner del bot.</i>",
+    },
     estado: {
       titulo: "⚙️ /estado — Estado del sistema",
       uso: "/estado",
@@ -1951,6 +1965,7 @@ async function cmdAyuda(chatId, cmd) {
     `<i>/ayuda monitor para detalle</i>\n\n` +
     `──────────────\n` +
     `<b>⚙️ Sistema</b>\n` +
+    `<code>/briefing</code> — Genera briefing ahora (portada auto + preview + botones)\n` +
     `<code>/stats</code> — Rendimiento señales 7 días\n` +
     `<code>/cancelar_editorial</code> — Cancela tweet editorial pendiente\n` +
     `<code>/estado</code> · <code>/pausa</code> · <code>/activa</code> · <code>/ayuda</code>\n\n` +
