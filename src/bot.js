@@ -293,7 +293,9 @@ async function mostrarBotonesPublicacion(chatId, pid, previewTexto) {
           [
             { text: "🐦 Solo X", callback_data: `pub_x:${pid}` },
             { text: tienePortada ? "🖼 Cambiar portada" : "📸 Añadir portada", callback_data: `add_portada:${pid}` },
-            ...(tienePortada ? [{ text: "🗑 Sin portada", callback_data: `quitar_portada:${pid}` }] : []),
+            ...(tienePortada
+              ? [{ text: "🗑 Sin portada", callback_data: `quitar_portada:${pid}` }]
+              : [{ text: "🎨 Generar IA", callback_data: `gen_portada:${pid}` }]),
           ],
           [
             { text: "🟡 Binance Square", callback_data: `pub_bs:${pid}` },
@@ -395,11 +397,10 @@ async function cmdFlash(chatId, tema, portadaFileId = null) {
     ? `\n\nCONTEXTO DERIVADOS LIVE (úsalo si es relevante al tema, no lo cites literalmente):\n${derivados.resumen}`
     : "";
 
-  const [response, portadaBuffer] = await Promise.all([
-    client.messages.create({
-      model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
-      max_tokens: 700,
-      system: `Eres CriptoScope. Analista senior, voz directa y fría.
+  const response = await client.messages.create({
+    model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
+    max_tokens: 700,
+    system: `Eres CriptoScope. Analista senior, voz directa y fría.
 
 Genera el flash en este formato EXACTO (responde SOLO el contenido, sin etiquetas ni explicaciones):
 
@@ -409,14 +410,8 @@ CUERPO: [2 párrafos de análisis con implicaciones, contexto y qué vigilar. HT
 
 REGLA CRÍTICA: NUNCA menciones un precio específico de BTC, ETH u otra moneda si ese precio no aparece textualmente en el TEMA. No lo inventes, no lo estimes, no lo deduzcas. Si el tema no tiene precio concreto, el análisis no lo tiene. Usa "el precio actual" si necesitas referirte a él.
 Voz activa. Frases cortas. PROHIBIDO: guiones (– o —), 🚀💎🙌, clickbait, consejos financieros.${ctxDerivados}`,
-      messages: [{ role: "user", content: `TEMA: ${tema}` }],
-    }),
-    portadaFileId ? Promise.resolve(null) : generarPortadaEditorial(tema).catch((e) => {
-      console.warn("⚠️ DALL-E flash:", e.message);
-      reply(chatId, `⚠️ <i>DALL-E: ${e.message.slice(0, 200)}</i>`).catch(() => {});
-      return null;
-    }),
-  ]);
+    messages: [{ role: "user", content: `TEMA: ${tema}` }],
+  });
 
   const raw = response.content[0].text.trim();
 
@@ -437,15 +432,9 @@ Voz activa. Frases cortas. PROHIBIDO: guiones (– o —), 🚀💎🙌, clickba
   if (tienePrecioInventado(ganchoA) && frasesCuerpo[0]?.length > 20) ganchoA = frasesCuerpo[0].trim();
   if (tienePrecioInventado(ganchoB) && frasesCuerpo[1]?.length > 20) ganchoB = frasesCuerpo[1].trim();
 
-  // Subir portada si hay (antes de mostrar opciones)
-  let portadaFid = portadaFileId || null;
-  if (!portadaFid && portadaBuffer) {
-    const fid = await subirPortadaChat(chatId, portadaBuffer);
-    if (fid) portadaFid = fid;
-  }
-
   // Guardar opciones pendientes y mostrar selector de gancho
   const pickId = Date.now().toString(36);
+  const portadaFid = portadaFileId || null;
   pendingGanchos.set(pickId, { ganchoA, ganchoB, cuerpo, portadaFid });
   setTimeout(() => pendingGanchos.delete(pickId), 30 * 60 * 1000);
 
@@ -496,19 +485,12 @@ async function cmdHilo(chatId, tema, portadaFileId = null) {
 
   await reply(chatId, "📝 Generando hilo educativo...");
 
-  const [response, portadaBuffer] = await Promise.all([
-    client.messages.create({
-      model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
-      max_tokens: 1500,
-      system: `Eres CriptoScope. Genera un hilo educativo de 5 tweets sobre el tema. Cada tweet es autónomo: funciona aunque el lector entre por el tweet 3. Numerados (1/5, 2/5...). Máx 260 chars cada uno.\nVoz directa y fría. Tweet 1: la tesis en una frase, sin contexto. Tweets 2-4: un punto concreto por tweet con datos o niveles exactos. Tweet 5: conclusión o regla práctica aplicable.\nPROHIBIDO: guiones medios o largos (– o —), 🚀💎🙌WAGMI, clickbait, consejos financieros directos, predicciones sin datos.\nDevuelve SOLO JSON: {"tweets": ["tweet1", "tweet2", ...]}`,
-      messages: [{ role: "user", content: `TEMA: ${tema}${contextoExtra}` }],
-    }),
-    portadaFileId ? Promise.resolve(null) : generarPortadaEditorial(tema).catch((e) => {
-      console.warn("⚠️ DALL-E hilo:", e.message);
-      reply(chatId, `⚠️ <i>DALL-E: ${e.message.slice(0, 200)}</i>`).catch(() => {});
-      return null;
-    }),
-  ]);
+  const response = await client.messages.create({
+    model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
+    max_tokens: 1500,
+    system: `Eres CriptoScope. Genera un hilo educativo de 5 tweets sobre el tema. Cada tweet es autónomo: funciona aunque el lector entre por el tweet 3. Numerados (1/5, 2/5...). Máx 260 chars cada uno.\nVoz directa y fría. Tweet 1: la tesis en una frase, sin contexto. Tweets 2-4: un punto concreto por tweet con datos o niveles exactos. Tweet 5: conclusión o regla práctica aplicable.\nPROHIBIDO: guiones medios o largos (– o —), 🚀💎🙌WAGMI, clickbait, consejos financieros directos, predicciones sin datos.\nDevuelve SOLO JSON: {"tweets": ["tweet1", "tweet2", ...]}`,
+    messages: [{ role: "user", content: `TEMA: ${tema}${contextoExtra}` }],
+  });
 
   const txt = response.content[0].text;
   let tweets;
@@ -530,12 +512,7 @@ async function cmdHilo(chatId, tema, portadaFileId = null) {
   hilosPendientes.set(pid, tweets);
   setTimeout(() => { pendingPublish.delete(pid); portadas.delete(pid); hilosPendientes.delete(pid); }, 30 * 60 * 1000);
 
-  if (portadaFileId) {
-    portadas.set(pid, portadaFileId);
-  } else if (portadaBuffer) {
-    const fid = await subirPortadaChat(chatId, portadaBuffer);
-    if (fid) portadas.set(pid, fid);
-  }
+  if (portadaFileId) portadas.set(pid, portadaFileId);
 
   await mostrarBotonesPublicacion(chatId, pid, msgCanal);
 }
@@ -783,14 +760,7 @@ async function cmdOpinion(chatId, noticia, portadaFileId = null) {
   if (!noticia) return reply(chatId, "❓ Uso: /opinion <noticia o hecho concreto>");
   await reply(chatId, "🧠 Procesando...");
 
-  const [precios, portadaBuffer] = await Promise.all([
-    getPrices().catch(() => ({})),
-    portadaFileId ? Promise.resolve(null) : generarPortadaEditorial(noticia).catch((e) => {
-      console.warn("⚠️ DALL-E opinion:", e.message);
-      reply(chatId, `⚠️ <i>DALL-E: ${e.message.slice(0, 200)}</i>`).catch(() => {});
-      return null;
-    }),
-  ]);
+  const precios = await getPrices().catch(() => ({}));
 
   const response = await client.messages.create({
     model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
@@ -813,12 +783,7 @@ PROHIBIDO: guiones medios o largos (– o —), 🚀💎🙌, clickbait, consejo
   pendingPublish.set(pid, msg);
   setTimeout(() => { pendingPublish.delete(pid); portadas.delete(pid); }, 30 * 60 * 1000);
 
-  if (portadaFileId) {
-    portadas.set(pid, portadaFileId);
-  } else if (portadaBuffer) {
-    const fid = await subirPortadaChat(chatId, portadaBuffer);
-    if (fid) portadas.set(pid, fid);
-  }
+  if (portadaFileId) portadas.set(pid, portadaFileId);
 
   await mostrarBotonesPublicacion(chatId, pid, msg);
 }
@@ -856,34 +821,22 @@ async function cmdQuePasa(chatId, portadaFileId = null) {
     ? `Bitcoin at $${btcQP.precio?.toFixed(0)}, Fear & Greed ${fearGreed?.valor ?? "?"}, BTC dominance ${globalMarket?.dominancia_btc ?? "?"}%`
     : "crypto market overview";
 
-  const [response, portadaBuffer] = await Promise.all([
-    client.messages.create({
-      model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
-      max_tokens: 500,
-      system: `Eres CriptoScope. Resume el estado del mercado ahora mismo en 3-4 frases directas. Abre con el dato más relevante, no con contexto. Qué domina, qué vigilar, si hay oportunidad o no. Niveles exactos cuando los haya. Voz activa. PROHIBIDO: guiones medios o largos (– o —), rodeos, emojis decorativos, consejos de compra/venta.`,
-      messages: [{
-        role: "user",
-        content: `BTC: $${btcQP?.precio?.toFixed(0)} (${btcQP?.cambio24h_pct?.toFixed(2)}%)\nETH: $${precios["ETH-USD"]?.precio?.toFixed(0)} (${precios["ETH-USD"]?.cambio24h_pct?.toFixed(2)}%)\nSOL: $${precios["SOL-USD"]?.precio?.toFixed(0)} (${precios["SOL-USD"]?.cambio24h_pct?.toFixed(2)}%)\nFear&Greed: ${fearGreed?.valor} (${fearGreed?.clasificacion})\nDominancia BTC: ${globalMarket?.dominancia_btc}%`,
-      }],
-    }),
-    portadaFileId ? Promise.resolve(null) : generarPortadaEditorial(temaQP).catch((e) => {
-      console.warn("⚠️ DALL-E quepasa:", e.message);
-      reply(chatId, `⚠️ <i>DALL-E: ${e.message.slice(0, 200)}</i>`).catch(() => {});
-      return null;
-    }),
-  ]);
+  const response = await client.messages.create({
+    model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
+    max_tokens: 500,
+    system: `Eres CriptoScope. Resume el estado del mercado ahora mismo en 3-4 frases directas. Abre con el dato más relevante, no con contexto. Qué domina, qué vigilar, si hay oportunidad o no. Niveles exactos cuando los haya. Voz activa. PROHIBIDO: guiones medios o largos (– o —), rodeos, emojis decorativos, consejos de compra/venta.`,
+    messages: [{
+      role: "user",
+      content: `BTC: $${btcQP?.precio?.toFixed(0)} (${btcQP?.cambio24h_pct?.toFixed(2)}%)\nETH: $${precios["ETH-USD"]?.precio?.toFixed(0)} (${precios["ETH-USD"]?.cambio24h_pct?.toFixed(2)}%)\nSOL: $${precios["SOL-USD"]?.precio?.toFixed(0)} (${precios["SOL-USD"]?.cambio24h_pct?.toFixed(2)}%)\nFear&Greed: ${fearGreed?.valor} (${fearGreed?.clasificacion})\nDominancia BTC: ${globalMarket?.dominancia_btc}%`,
+    }],
+  });
 
   const msg = `📡 <b>MERCADO AHORA | CriptoScope</b>\n\n${limpiarDashes(response.content[0].text.trim())}\n\n<i>Análisis educativo · no es consejo financiero</i>`;
   const pid = Date.now().toString(36);
   pendingPublish.set(pid, msg);
   setTimeout(() => { pendingPublish.delete(pid); portadas.delete(pid); }, 30 * 60 * 1000);
 
-  if (portadaFileId) {
-    portadas.set(pid, portadaFileId);
-  } else if (portadaBuffer) {
-    const fid = await subirPortadaChat(chatId, portadaBuffer);
-    if (fid) portadas.set(pid, fid);
-  }
+  if (portadaFileId) portadas.set(pid, portadaFileId);
 
   await mostrarBotonesPublicacion(chatId, pid, msg);
 }
@@ -1023,16 +976,6 @@ async function cmdPublicar(chatId, texto, photoArray = null) {
       if (fid) portadas.set(pid, fid);
     } catch (e) {
       console.warn("⚠️ Foto /publicar:", e.message);
-    }
-  } else {
-    const portadaBuffer = await generarPortadaEditorial(textoFinal).catch((e) => {
-      console.warn("⚠️ DALL-E publicar:", e.message);
-      reply(chatId, `⚠️ <i>DALL-E: ${e.message.slice(0, 200)}</i>`).catch(() => {});
-      return null;
-    });
-    if (portadaBuffer) {
-      const fid = await subirPortadaChat(chatId, portadaBuffer);
-      if (fid) portadas.set(pid, fid);
     }
   }
 
@@ -1374,6 +1317,25 @@ async function procesarCallback(callback) {
     const pid = data.slice(15);
     portadas.delete(pid);
     await quitarBotones();
+    const texto = pendingPublish.get(pid);
+    if (texto) await mostrarBotonesPublicacion(chatId, pid, texto);
+    return;
+  }
+
+  if (data.startsWith("gen_portada:")) {
+    const pid = data.slice(12);
+    if (!pendingPublish.has(pid)) return reply(chatId, "❌ El contenido ya expiró. Vuelve a generarlo.");
+    await quitarBotones();
+    await reply(chatId, "🎨 Generando portada IA... (30-60 seg)");
+    const textoParaImagen = pendingPublish.get(pid);
+    try {
+      const buf = await generarPortadaEditorial(textoParaImagen);
+      if (!buf) throw new Error("Sin imagen en respuesta");
+      const fid = await subirPortadaChat(chatId, buf);
+      if (fid) portadas.set(pid, fid);
+    } catch (e) {
+      await reply(chatId, `⚠️ <i>Error generando portada: ${e.message.slice(0, 200)}</i>`);
+    }
     const texto = pendingPublish.get(pid);
     if (texto) await mostrarBotonesPublicacion(chatId, pid, texto);
     return;
