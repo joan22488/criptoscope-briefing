@@ -248,8 +248,10 @@ async function subirPortadaChat(chatId, buffer) {
     form.append("photo", new Blob([buffer], { type: "image/png" }), "portada.png");
     const res = await fetch(`${API()}/sendPhoto`, { method: "POST", body: form });
     const json = await res.json();
+    if (!json.ok) console.warn("⚠️ sendPhoto Telegram:", JSON.stringify(json));
     return json.ok ? json.result.photo.at(-1).file_id : null;
-  } catch {
+  } catch (e) {
+    console.warn("⚠️ subirPortadaChat error:", e.message);
     return null;
   }
 }
@@ -408,7 +410,11 @@ REGLA CRÍTICA: NUNCA menciones un precio específico de BTC, ETH u otra moneda 
 Voz activa. Frases cortas. PROHIBIDO: guiones (– o —), 🚀💎🙌, clickbait, consejos financieros.${ctxDerivados}`,
       messages: [{ role: "user", content: `TEMA: ${tema}` }],
     }),
-    portadaFileId ? Promise.resolve(null) : generarPortadaEditorial(tema).catch((e) => { console.warn("⚠️ DALL-E flash:", e.message); return null; }),
+    portadaFileId ? Promise.resolve(null) : generarPortadaEditorial(tema).catch((e) => {
+      console.warn("⚠️ DALL-E flash:", e.message);
+      reply(chatId, `⚠️ <i>DALL-E: ${e.message.slice(0, 200)}</i>`).catch(() => {});
+      return null;
+    }),
   ]);
 
   const raw = response.content[0].text.trim();
@@ -479,7 +485,11 @@ async function cmdHilo(chatId, tema, portadaFileId = null) {
       system: `Eres CriptoScope. Genera un hilo educativo de 5 tweets sobre el tema. Cada tweet es autónomo: funciona aunque el lector entre por el tweet 3. Numerados (1/5, 2/5...). Máx 260 chars cada uno.\nVoz directa y fría. Tweet 1: la tesis en una frase, sin contexto. Tweets 2-4: un punto concreto por tweet con datos o niveles exactos. Tweet 5: conclusión o regla práctica aplicable.\nPROHIBIDO: guiones medios o largos (– o —), 🚀💎🙌WAGMI, clickbait, consejos financieros directos, predicciones sin datos.\nDevuelve SOLO JSON: {"tweets": ["tweet1", "tweet2", ...]}`,
       messages: [{ role: "user", content: `TEMA: ${tema}${contextoExtra}` }],
     }),
-    portadaFileId ? Promise.resolve(null) : generarPortadaEditorial(tema).catch((e) => { console.warn("⚠️ DALL-E hilo:", e.message); return null; }),
+    portadaFileId ? Promise.resolve(null) : generarPortadaEditorial(tema).catch((e) => {
+      console.warn("⚠️ DALL-E hilo:", e.message);
+      reply(chatId, `⚠️ <i>DALL-E: ${e.message.slice(0, 200)}</i>`).catch(() => {});
+      return null;
+    }),
   ]);
 
   const txt = response.content[0].text;
@@ -757,7 +767,11 @@ async function cmdOpinion(chatId, noticia, portadaFileId = null) {
 
   const [precios, portadaBuffer] = await Promise.all([
     getPrices().catch(() => ({})),
-    portadaFileId ? Promise.resolve(null) : generarPortadaEditorial(noticia).catch((e) => { console.warn("⚠️ DALL-E opinion:", e.message); return null; }),
+    portadaFileId ? Promise.resolve(null) : generarPortadaEditorial(noticia).catch((e) => {
+      console.warn("⚠️ DALL-E opinion:", e.message);
+      reply(chatId, `⚠️ <i>DALL-E: ${e.message.slice(0, 200)}</i>`).catch(() => {});
+      return null;
+    }),
   ]);
 
   const response = await client.messages.create({
@@ -834,7 +848,11 @@ async function cmdQuePasa(chatId, portadaFileId = null) {
         content: `BTC: $${btcQP?.precio?.toFixed(0)} (${btcQP?.cambio24h_pct?.toFixed(2)}%)\nETH: $${precios["ETH-USD"]?.precio?.toFixed(0)} (${precios["ETH-USD"]?.cambio24h_pct?.toFixed(2)}%)\nSOL: $${precios["SOL-USD"]?.precio?.toFixed(0)} (${precios["SOL-USD"]?.cambio24h_pct?.toFixed(2)}%)\nFear&Greed: ${fearGreed?.valor} (${fearGreed?.clasificacion})\nDominancia BTC: ${globalMarket?.dominancia_btc}%`,
       }],
     }),
-    portadaFileId ? Promise.resolve(null) : generarPortadaEditorial(temaQP).catch((e) => { console.warn("⚠️ DALL-E quepasa:", e.message); return null; }),
+    portadaFileId ? Promise.resolve(null) : generarPortadaEditorial(temaQP).catch((e) => {
+      console.warn("⚠️ DALL-E quepasa:", e.message);
+      reply(chatId, `⚠️ <i>DALL-E: ${e.message.slice(0, 200)}</i>`).catch(() => {});
+      return null;
+    }),
   ]);
 
   const msg = `📡 <b>MERCADO AHORA | CriptoScope</b>\n\n${limpiarDashes(response.content[0].text.trim())}\n\n<i>Análisis educativo · no es consejo financiero</i>`;
