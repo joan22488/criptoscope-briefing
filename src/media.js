@@ -351,28 +351,36 @@ export async function generarPortadaEditorial(tema) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "dall-e-3",
-      prompt: `${MASTER_PROMPT}\n\nSubject: ${tema.slice(0, 500)}`,
+      model: "gpt-image-1",
+      prompt: `${MASTER_PROMPT}\n\nSubject: ${tema.slice(0, 1000)}`,
       n: 1,
-      size: "1792x1024",
-      quality: "standard",
+      size: "1536x1024",
+      quality: "medium",
     }),
-    signal: AbortSignal.timeout(50000),
+    signal: AbortSignal.timeout(90000),
   });
 
   if (!imgRes.ok) {
     const err = await imgRes.text().catch(() => "");
-    throw new Error(`DALL-E HTTP ${imgRes.status}: ${err.slice(0, 200)}`);
+    throw new Error(`Image API HTTP ${imgRes.status}: ${err.slice(0, 200)}`);
   }
 
   const imgJson = await imgRes.json();
   if (imgJson.error) throw new Error(imgJson.error.message);
-  const imgUrl = imgJson.data?.[0]?.url;
-  if (!imgUrl) throw new Error("DALL-E no devolvio URL de imagen");
 
-  const downloadRes = await fetch(imgUrl, { signal: AbortSignal.timeout(30000) });
-  if (!downloadRes.ok) throw new Error(`Error descargando imagen DALL-E: ${downloadRes.status}`);
+  const imgData = imgJson.data?.[0];
+  if (!imgData) throw new Error("No image data in response");
 
-  console.log(`✅ Portada DALL-E generada para: ${tema.slice(0, 60)}`);
-  return Buffer.from(await downloadRes.arrayBuffer());
+  // gpt-image-1 devuelve b64_json; dall-e-3 devolvía url
+  if (imgData.b64_json) {
+    console.log(`✅ Portada generada (b64) para: ${tema.slice(0, 60)}`);
+    return Buffer.from(imgData.b64_json, "base64");
+  }
+  if (imgData.url) {
+    const downloadRes = await fetch(imgData.url, { signal: AbortSignal.timeout(30000) });
+    if (!downloadRes.ok) throw new Error(`Error descargando imagen: ${downloadRes.status}`);
+    console.log(`✅ Portada generada (url) para: ${tema.slice(0, 60)}`);
+    return Buffer.from(await downloadRes.arrayBuffer());
+  }
+  throw new Error("Sin b64_json ni url en respuesta");
 }
