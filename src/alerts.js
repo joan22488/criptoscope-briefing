@@ -41,6 +41,48 @@ function guardarAlertadas() {
 }
 const alertadas = cargarAlertadas(); // Map: key → timestamp
 
+// Extraemos términos clave del texto de la alerta para detectar duplicados semánticos
+const TERMINOS_TEMA = [
+  "btc", "bitcoin", "eth", "ethereum", "sol", "xrp",
+  "fed", "federal reserve", "powell", "fomc",
+  "gold", "oro", "plata", "silver",
+  "funding", "liquidacion", "liquidación", "long", "short",
+  "etf", "spot etf", "blackrock",
+  "inflation", "inflacion", "inflación", "cpi",
+  "tether", "usdt", "usdc", "depeg",
+  "hack", "exploit", "breach",
+  "sec", "regulation", "regulacion", "ban",
+  "trump", "executive order",
+  "whale", "ballena", "dump",
+  "selloff", "crash", "collapse",
+  "halving", "upgrade", "fork",
+  "presion", "presión", "bajista", "bullish", "bearish",
+];
+
+function fingerprintAlerta(texto) {
+  const lower = texto.toLowerCase();
+  return TERMINOS_TEMA.filter((t) => lower.includes(t)).sort().join(",");
+}
+
+function esDuplicadoReciente(nuevoTexto) {
+  const CUATRO_HORAS = 4 * 60 * 60 * 1000;
+  const ahora = Date.now();
+  const nuevoFp = fingerprintAlerta(nuevoTexto);
+  if (!nuevoFp) return false;
+  const nuevoSet = new Set(nuevoFp.split(","));
+
+  for (const [key, ts] of alertadas.entries()) {
+    if (!key.startsWith("fp:")) continue;
+    if (ahora - ts > CUATRO_HORAS) continue;
+    const existingSet = new Set(key.slice(3).split(",").filter(Boolean));
+    if (!existingSet.size) continue;
+    const interseccion = [...nuevoSet].filter((t) => existingSet.has(t)).length;
+    const union = new Set([...nuevoSet, ...existingSet]).size;
+    if (union > 0 && interseccion / union >= 0.4) return true;
+  }
+  return false;
+}
+
 export async function verificarAlertas() {
   try {
     const [noticias, derivados] = await Promise.all([
@@ -79,9 +121,18 @@ ${nuevas.slice(0, 5).map((n) => `- ${n.titulo}: ${n.resumen?.slice(0, 150)}`).jo
     const resultado = JSON.parse(txt.slice(inicio, fin + 1));
 
     if (resultado.urgente) {
+      const textoAlerta = resultado.alerta || "";
+      if (esDuplicadoReciente(textoAlerta)) {
+        console.log("ℹ️ Alerta descartada: mismo tema que una alerta reciente (<4h).");
+        nuevas.forEach((n) => alertadas.set(n.titulo?.toLowerCase().slice(0, 60), Date.now()));
+        guardarAlertadas();
+        return null;
+      }
       nuevas.forEach((n) => alertadas.set(n.titulo?.toLowerCase().slice(0, 60), Date.now()));
+      const fp = fingerprintAlerta(textoAlerta);
+      if (fp) alertadas.set(`fp:${fp}`, Date.now());
       guardarAlertadas();
-      return `🚨 <b>ALERTA CRIPTOSCOPE</b>\n\n${resultado.alerta}`;
+      return `🚨 <b>ALERTA CRIPTOSCOPE</b>\n\n${textoAlerta}`;
     }
 
     return null;
