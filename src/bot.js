@@ -274,41 +274,59 @@ function trocear(texto, max) {
 }
 
 // Muestra preview con botones de publicación (canal/X/portada)
-async function mostrarBotonesPublicacion(chatId, pid, previewTexto) {
+async function mostrarBotonesPublicacion(chatId, pid, previewTexto, editMessageId = null) {
   const tienePortada = portadas.has(pid);
-  await fetch(`${API()}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text: previewTexto + `\n\n──────────────\n<i>¿Dónde publico esto?${tienePortada ? " 📸 Portada lista." : ""}</i>`,
-      parse_mode: "HTML",
-      disable_web_page_preview: true,
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { text: "📢 Canal + X", callback_data: `pub_ambos:${pid}` },
-            { text: "📣 Solo canal", callback_data: `pub_canal:${pid}` },
-          ],
-          [
-            { text: "🐦 Solo X", callback_data: `pub_x:${pid}` },
-            { text: tienePortada ? "🖼 Cambiar portada" : "📸 Añadir portada", callback_data: `add_portada:${pid}` },
-            ...(tienePortada
-              ? [{ text: "🗑 Sin portada", callback_data: `quitar_portada:${pid}` }]
-              : [{ text: "🎨 Generar IA", callback_data: `gen_portada:${pid}` }]),
-          ],
-          [
-            { text: "🟡 Binance Square", callback_data: `pub_bs:${pid}` },
-            { text: "📊 CMC Community", callback_data: `pub_cmc:${pid}` },
-          ],
-          [
-            { text: "✏️ Editar", callback_data: `edit_pending:${pid}` },
-            { text: "❌ Descartar", callback_data: "nopub" },
-          ],
-        ],
-      },
-    }),
-  });
+  const texto = previewTexto + `\n\n──────────────\n<i>¿Dónde publico esto?${tienePortada ? " 📸 Portada lista." : ""}</i>`;
+  const teclado = {
+    inline_keyboard: [
+      [
+        { text: "📢 Canal + X", callback_data: `pub_ambos:${pid}` },
+        { text: "📣 Solo canal", callback_data: `pub_canal:${pid}` },
+      ],
+      [
+        { text: "🐦 Solo X", callback_data: `pub_x:${pid}` },
+        { text: tienePortada ? "🖼 Cambiar portada" : "📸 Añadir portada", callback_data: `add_portada:${pid}` },
+        ...(tienePortada
+          ? [{ text: "🗑 Sin portada", callback_data: `quitar_portada:${pid}` }]
+          : [{ text: "🎨 Generar IA", callback_data: `gen_portada:${pid}` }]),
+      ],
+      [
+        { text: "🟡 Binance Square", callback_data: `pub_bs:${pid}` },
+        { text: "📊 CMC Community", callback_data: `pub_cmc:${pid}` },
+      ],
+      [
+        { text: "✏️ Editar", callback_data: `edit_pending:${pid}` },
+        { text: "❌ Descartar", callback_data: "nopub" },
+      ],
+    ],
+  };
+
+  if (editMessageId) {
+    await fetch(`${API()}/editMessageText`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        message_id: editMessageId,
+        text: texto,
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+        reply_markup: teclado,
+      }),
+    });
+  } else {
+    await fetch(`${API()}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: texto,
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+        reply_markup: teclado,
+      }),
+    });
+  }
 }
 
 const xFooter = () => process.env.X_PROFILE_URL
@@ -1316,9 +1334,13 @@ async function procesarCallback(callback) {
   if (data.startsWith("quitar_portada:")) {
     const pid = data.slice(15);
     portadas.delete(pid);
-    await quitarBotones();
     const texto = pendingPublish.get(pid);
-    if (texto) await mostrarBotonesPublicacion(chatId, pid, texto);
+    if (texto) {
+      await mostrarBotonesPublicacion(chatId, pid, texto, messageId);
+    } else {
+      await quitarBotones();
+      await reply(chatId, "❌ El contenido ya expiró. Vuelve a generarlo.");
+    }
     return;
   }
 
