@@ -12,44 +12,50 @@ import { guardarPaquete } from "./output.js";
 import { getEventosMacro } from "./calendar.js";
 import { guardarBriefingEnNotion, guardarPublicacionEnNotion } from "./notion.js";
 import { publicarTweetUnico } from "./twitter-post.js";
-import { generarChartBarras, aplicarLogo } from "./media.js";
+import { generarChartBarras, aplicarLogo, generarPortadaCard } from "./media.js";
 import { getPortadaFija } from "./portadas_fijas.js";
 
-async function generarPortadaBriefing(contexto) {
+async function generarPortadaBriefing(contexto, paquete) {
   try {
-    const gl = contexto.gainersLosers;
-    const precios = contexto.precios || {};
-
-    let coins = [];
-    if (gl) {
-      coins = [
-        ...gl.ganadores.map((g) => ({ label: `$${g.simbolo}`, value: parseFloat(g.cambio) })),
-        ...gl.perdedores.map((p) => ({ label: `$${p.simbolo}`, value: parseFloat(p.cambio) })),
-      ];
-    }
-
-    // Añadir BTC/ETH/SOL si no están ya presentes
-    const existentes = new Set(coins.map((c) => c.label));
-    for (const [id, d] of Object.entries(precios)) {
-      const label = `$${id.replace("-USD", "")}`;
-      if (!existentes.has(label) && d.cambio24h_pct != null) {
-        coins.push({ label, value: parseFloat(d.cambio24h_pct.toFixed(2)) });
-      }
-    }
-
-    if (!coins.length) return null;
-
-    // Top 6 ganadores + top 6 perdedores (máx 12 barras)
-    const sorted  = [...coins].sort((a, b) => b.value - a.value);
-    const top     = sorted.slice(0, 6);
-    const bottom  = sorted.slice(-Math.min(6, Math.max(0, sorted.length - top.length)));
-    const seleccion = [...new Map([...top, ...bottom].map((c) => [c.label, c])).values()];
-
-    const buf = await generarChartBarras(seleccion);
-    return buf ? aplicarLogo(buf) : null;
+    return await generarPortadaCard({
+      titular:   paquete?.titular,
+      narrativa: paquete?.narrativa_caliente,
+      badge:     "BRIEFING MATINAL",
+      btc:       contexto.precios?.["BTC-USD"],
+      eth:       contexto.precios?.["ETH-USD"],
+      sol:       contexto.precios?.["SOL-USD"],
+      mstr:      contexto.mstr,
+      fg:        contexto.sentimiento?.fearGreed,
+    });
   } catch (e) {
-    console.warn("⚠️ Portada briefing no generada:", e.message);
-    return null;
+    console.warn("⚠️ Portada card fallida, usando chart:", e.message);
+    // Fallback: chart de barras con ganadores/perdedores
+    try {
+      const gl = contexto.gainersLosers;
+      const precios = contexto.precios || {};
+      let coins = gl
+        ? [
+            ...gl.ganadores.map((g) => ({ label: `$${g.simbolo}`, value: parseFloat(g.cambio) })),
+            ...gl.perdedores.map((p) => ({ label: `$${p.simbolo}`, value: parseFloat(p.cambio) })),
+          ]
+        : [];
+      const existentes = new Set(coins.map((c) => c.label));
+      for (const [id, d] of Object.entries(precios)) {
+        const label = `$${id.replace("-USD", "")}`;
+        if (!existentes.has(label) && d.cambio24h_pct != null)
+          coins.push({ label, value: parseFloat(d.cambio24h_pct.toFixed(2)) });
+      }
+      if (!coins.length) return null;
+      const sorted   = [...coins].sort((a, b) => b.value - a.value);
+      const top      = sorted.slice(0, 6);
+      const bottom   = sorted.slice(-Math.min(6, Math.max(0, sorted.length - top.length)));
+      const seleccion = [...new Map([...top, ...bottom].map((c) => [c.label, c])).values()];
+      const buf = await generarChartBarras(seleccion);
+      return buf ? aplicarLogo(buf) : null;
+    } catch (e2) {
+      console.warn("⚠️ Portada fallback fallida:", e2.message);
+      return null;
+    }
   }
 }
 
@@ -131,7 +137,7 @@ export async function generarBriefing() {
   const xLink = process.env.X_PROFILE_URL ? `\n\n🐦 <a href="${process.env.X_PROFILE_URL}">Síguenos en X</a>` : "";
 
   const texto = cabecera + paquete.briefing + bloqueSentimiento + bloqueGainers + bloqueMacro + bloquePalabra + pie + xLink;
-  const portadaBuffer = await generarPortadaBriefing(contexto);
+  const portadaBuffer = await generarPortadaBriefing(contexto, paquete);
 
   const seg = ((Date.now() - inicio) / 1000).toFixed(1);
   console.log(`   ✓ Briefing generado en ${seg}s${portadaBuffer ? " + portada" : ""}`);

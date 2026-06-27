@@ -150,6 +150,118 @@ export async function generarChartLinea(datasets, labels) {
   return fetchGraficoBuffer(config);
 }
 
+// ── Portada branded — 1200×628 para Telegram y X ─────────────
+// Genera la card de portada del briefing con Sharp puro (SVG → PNG).
+// Params: { titular, badge, narrativa, btc, eth, sol, mstr, fg, fecha }
+export async function generarPortadaCard({ titular, badge = "BRIEFING MATINAL", narrativa, btc, eth, sol, mstr, fg, fecha } = {}) {
+  const W = 1200, H = 628;
+  const ORANGE = "#f97316";
+
+  const esc = (s) =>
+    (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+  // Word-wrap: split text into lines of maxChars at word boundaries
+  const wrapLines = (text, maxChars) => {
+    const words = (text || "").split(" ");
+    const lines = [];
+    let cur = "";
+    for (const w of words) {
+      const attempt = (cur + " " + w).trim();
+      if (attempt.length > maxChars && cur) { lines.push(cur); cur = w; }
+      else cur = attempt;
+    }
+    if (cur) lines.push(cur);
+    return lines.slice(0, 3);
+  };
+
+  const svgText = (lines, x, startY, lineH, attrs) =>
+    lines.map((l, i) => `<text x="${x}" y="${startY + i * lineH}" ${attrs}>${esc(l)}</text>`).join("\n");
+
+  const fmtPrice = (v) => {
+    if (v == null) return "";
+    const n = Number(v);
+    if (n >= 1000) return `$${Math.round(n).toLocaleString("es-ES")}`;
+    if (n === Math.floor(n)) return `$${n}`;
+    return `$${n.toFixed(2)}`;
+  };
+  const fmtPct   = (v) => v != null ? `${v >= 0 ? "+" : ""}${Number(v).toFixed(2)}%` : "";
+  const pctCol   = (v) => (v == null || v >= 0) ? "#22c55e" : "#ef4444";
+
+  const fechaStr = fecha || new Date().toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" });
+
+  const coins = [
+    btc?.precio  ? { label: "BTC",  price: btc.precio,  pct: btc.cambio24h_pct  } : null,
+    eth?.precio  ? { label: "ETH",  price: eth.precio,  pct: eth.cambio24h_pct  } : null,
+    sol?.precio  ? { label: "SOL",  price: sol.precio,  pct: sol.cambio24h_pct  } : null,
+    mstr?.precio ? { label: "MSTR", price: mstr.precio, pct: mstr.cambio_pct    } : null,
+  ].filter(Boolean);
+
+  const COL_W   = 185;
+  const COL_X0  = 60;
+  const BAR_Y   = 480;
+  const coinsSvg = coins.map((c, i) => {
+    const x = COL_X0 + i * COL_W;
+    return `
+    <text x="${x}" y="${BAR_Y + 28}" font-family="Arial,sans-serif" font-size="11" font-weight="600" fill="rgba(255,255,255,0.42)" letter-spacing="1.5">${esc(c.label)}</text>
+    <text x="${x}" y="${BAR_Y + 60}" font-family="Arial,sans-serif" font-size="22" font-weight="700" fill="#ffffff">${esc(fmtPrice(c.price))}</text>
+    <text x="${x}" y="${BAR_Y + 84}" font-family="Arial,sans-serif" font-size="15" fill="${pctCol(c.pct)}">${esc(fmtPct(c.pct))}</text>`;
+  }).join("");
+
+  const fgSvg = fg?.valor != null ? `
+    <text x="${W - 60}" y="${BAR_Y + 28}" text-anchor="end" font-family="Arial,sans-serif" font-size="11" font-weight="600" fill="rgba(255,255,255,0.42)" letter-spacing="1.5">FEAR &amp; GREED</text>
+    <text x="${W - 60}" y="${BAR_Y + 60}" text-anchor="end" font-family="Arial,sans-serif" font-size="22" font-weight="700" fill="${ORANGE}">${fg.valor} · ${esc(fg.clasificacion || "")}</text>
+    <text x="${W - 60}" y="${BAR_Y + 84}" text-anchor="end" font-family="Arial,sans-serif" font-size="13" fill="rgba(255,255,255,0.28)">${esc(fechaStr)}</text>` : `
+    <text x="${W - 60}" y="${BAR_Y + 60}" text-anchor="end" font-family="Arial,sans-serif" font-size="13" fill="rgba(255,255,255,0.28)">${esc(fechaStr)}</text>`;
+
+  const headLines  = wrapLines(titular, 44);
+  const headSvg    = svgText(headLines, 60, 175, 58, `font-family="Arial,sans-serif" font-size="46" font-weight="700" fill="#ffffff"`);
+  const subY       = 175 + headLines.length * 58 + 24;
+  const subLines   = wrapLines(narrativa, 72);
+  const subSvg     = subLines.length ? svgText(subLines, 60, subY, 30, `font-family="Arial,sans-serif" font-size="19" fill="rgba(255,255,255,0.48)"`) : "";
+
+  // Badge width estimate: ~10px per char + padding
+  const badgeText  = badge.toUpperCase();
+  const badgeW     = Math.max(140, badgeText.length * 9 + 32);
+  const badgeX     = W - 60 - badgeW;
+
+  const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
+  <defs>
+    <radialGradient id="glow" cx="12%" cy="50%" r="55%">
+      <stop offset="0%" stop-color="${ORANGE}" stop-opacity="0.07"/>
+      <stop offset="100%" stop-color="${ORANGE}" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="60" height="60" patternUnits="userSpaceOnUse">
+      <path d="M60 0 L0 0 0 60" fill="none" stroke="rgba(255,255,255,0.022)" stroke-width="0.5"/>
+    </pattern>
+  </defs>
+  <rect width="${W}" height="${H}" fill="#0a0a12"/>
+  <rect width="${W}" height="${H}" fill="url(#grid)"/>
+  <rect width="${W}" height="${H}" fill="url(#glow)"/>
+  <!-- Logo -->
+  <circle cx="78" cy="54" r="20" fill="${ORANGE}"/>
+  <text x="78" y="61" text-anchor="middle" font-family="Arial,sans-serif" font-size="18" font-weight="800" fill="#ffffff">C</text>
+  <text x="110" y="61" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="#ffffff" letter-spacing="2.5">CRIPTOSCOPE</text>
+  <!-- Badge -->
+  <rect x="${badgeX}" y="35" width="${badgeW}" height="34" rx="17" fill="rgba(249,115,22,0.18)" stroke="rgba(249,115,22,0.35)" stroke-width="1"/>
+  <text x="${badgeX + badgeW / 2}" y="57" text-anchor="middle" font-family="Arial,sans-serif" font-size="11" font-weight="700" fill="${ORANGE}" letter-spacing="1.5">${esc(badgeText)}</text>
+  <!-- Divider -->
+  <line x1="60" y1="104" x2="${W - 60}" y2="104" stroke="rgba(249,115,22,0.22)" stroke-width="1"/>
+  <!-- Headline -->
+  ${headSvg}
+  <!-- Sub -->
+  ${subSvg}
+  <!-- Bottom bar -->
+  <rect x="0" y="${BAR_Y}" width="${W}" height="${H - BAR_Y}" fill="rgba(0,0,0,0.55)"/>
+  <line x1="0" y1="${BAR_Y}" x2="${W}" y2="${BAR_Y}" stroke="rgba(255,255,255,0.07)" stroke-width="1"/>
+  ${coinsSvg}
+  ${fgSvg}
+</svg>`;
+
+  const buf = await sharp(Buffer.from(svg)).png().toBuffer();
+  return aplicarLogo(buf, 0.10);
+}
+
 // ── Banner para portada de X — 1500×500 con datos del día ─────
 // datos: { btc, eth, fg, dominancia, coins[] }
 export async function generarBannerX({ btc, eth, fg, dominancia, coins = [] }) {
