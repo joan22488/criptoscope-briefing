@@ -65,7 +65,7 @@ function fingerprintAlerta(texto) {
 }
 
 function esDuplicadoReciente(nuevoTexto) {
-  const CUATRO_HORAS = 4 * 60 * 60 * 1000;
+  const SEIS_HORAS = 6 * 60 * 60 * 1000;
   const ahora = Date.now();
   const nuevoFp = fingerprintAlerta(nuevoTexto);
   if (!nuevoFp) return false;
@@ -73,12 +73,12 @@ function esDuplicadoReciente(nuevoTexto) {
 
   for (const [key, ts] of alertadas.entries()) {
     if (!key.startsWith("fp:")) continue;
-    if (ahora - ts > CUATRO_HORAS) continue;
+    if (ahora - ts > SEIS_HORAS) continue;
     const existingSet = new Set(key.slice(3).split(",").filter(Boolean));
     if (!existingSet.size) continue;
     const interseccion = [...nuevoSet].filter((t) => existingSet.has(t)).length;
     const union = new Set([...nuevoSet, ...existingSet]).size;
-    if (union > 0 && interseccion / union >= 0.4) return true;
+    if (union > 0 && interseccion / union >= 0.25) return true;
   }
   return false;
 }
@@ -101,6 +101,15 @@ export async function verificarAlertas() {
 
     if (nuevas.length === 0) return null;
 
+    // Chequeo semántico ANTES de llamar a Claude: fingerprint del contenido de los artículos
+    const contenidoArticulos = nuevas.slice(0, 5).map((n) => `${n.titulo} ${n.resumen || ""}`).join(" ");
+    if (esDuplicadoReciente(contenidoArticulos)) {
+      console.log("ℹ️ Artículos descartados: mismo tema que una alerta reciente (<6h).");
+      nuevas.forEach((n) => alertadas.set(n.titulo?.toLowerCase().slice(0, 60), Date.now()));
+      guardarAlertadas();
+      return null;
+    }
+
     // Pide a Claude que evalúe si realmente es urgente
     const response = await client.messages.create({
       model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
@@ -122,15 +131,12 @@ ${nuevas.slice(0, 5).map((n) => `- ${n.titulo}: ${n.resumen?.slice(0, 150)}`).jo
 
     if (resultado.urgente) {
       const textoAlerta = resultado.alerta || "";
-      if (esDuplicadoReciente(textoAlerta)) {
-        console.log("ℹ️ Alerta descartada: mismo tema que una alerta reciente (<4h).");
-        nuevas.forEach((n) => alertadas.set(n.titulo?.toLowerCase().slice(0, 60), Date.now()));
-        guardarAlertadas();
-        return null;
-      }
       nuevas.forEach((n) => alertadas.set(n.titulo?.toLowerCase().slice(0, 60), Date.now()));
+      // Guardar fingerprint tanto del texto generado como del contenido de artículos
       const fp = fingerprintAlerta(textoAlerta);
       if (fp) alertadas.set(`fp:${fp}`, Date.now());
+      const fpArticulos = fingerprintAlerta(contenidoArticulos);
+      if (fpArticulos && fpArticulos !== fp) alertadas.set(`fp:${fpArticulos}`, Date.now());
       guardarAlertadas();
       return `🚨 <b>ALERTA CRIPTOSCOPE</b>\n\n${textoAlerta}`;
     }

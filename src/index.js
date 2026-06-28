@@ -111,14 +111,10 @@ cron.schedule(
       if (!isPausado()) {
         const alerta = await verificarAlertas();
         if (alerta) {
-          console.log("🚨 Alerta de evento detectada — enviando a Telegram y X");
+          console.log("🚨 Alerta de evento detectada — enviando al canal Telegram");
           await enviarTelegram(alerta);
-          // Publicar en X sin el header de Telegram
-          const HEADER_TG = "🚨 <b>ALERTA CRIPTOSCOPE</b>\n\n";
-          const alertaX = alerta.startsWith(HEADER_TG) ? alerta.slice(HEADER_TG.length) : alerta;
-          await publicarTweetUnico(alertaX).catch((e) =>
-            console.warn("⚠️  Alerta en X:", e.message)
-          );
+          // Aviso privado al owner — si quiere tuitearlo, usa /flash o /publicar
+          alertarOwner(`📢 <b>Alerta publicada en el canal.</b>\nSi quieres tuitearlo, usa /publicar con el texto.`);
         }
       }
     } catch (e) {
