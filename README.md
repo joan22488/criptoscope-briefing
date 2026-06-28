@@ -106,25 +106,33 @@ Escríbele directamente al bot (chat privado):
 ### Contenido manual — preview + botones antes de publicar
 | Comando | Ejemplo | Resultado |
 |---------|---------|-----------|
-| `/flash <tema>` | `/flash BlackRock compra BTC` | Alerta urgente con portada gpt-image-1 auto-generada + preview + botones de destino |
-| `/hilo <tema>` | `/hilo qué es el halving` | Thread 5 tweets + portada gpt-image-1 — canal como mensaje único, X como thread encadenado |
+| `/flash <tema>` | `/flash BlackRock compra BTC` | Alerta urgente + preview + botones de destino. Usa 🎨 Generar IA para portada bajo demanda |
+| `/hilo <tema>` | `/hilo qué es el halving` | Thread 5 tweets — canal como mensaje único, X como thread encadenado. Portada bajo demanda |
 | `/hilo <URL>` | `/hilo https://coindesk.com/...` | Hilo basado en el contenido real del artículo |
 | `/analiza <coin>` | `/analiza AVAX` | Gráfico 4H + análisis técnico top-down con entrada, TP1, TP2, SL y R:R |
-| `/opinion <noticia>` | `/opinion SEC aprueba ETF` | Lectura de mercado estilo CriptoScope + portada gpt-image-1 auto-generada |
+| `/opinion <noticia>` | `/opinion SEC aprueba ETF` | Lectura de mercado estilo CriptoScope. Portada bajo demanda |
 | `/encuesta [tema]` | `/encuesta` · `/encuesta BTC esta semana` | Poll nativo para el canal con preview |
 | `/semanal` | `/semanal` | Resumen semanal bajo demanda — sin esperar al domingo |
 | `/publicar <texto>` | `/publicar BTC supera los 100k. Nivel clave: 98.000.` | Publica tu propio texto con portada gpt-image-1 auto-generada + todos los botones de destino |
 | `/banner` | `/banner` | Genera imagen de portada 1500×500 px con datos del día lista para subir a X |
 
-**Botones de publicación** (aparecen tras generar cualquier contenido):
-- 📢 **Canal + X** — publica en Telegram y en X (con hashtags automáticos de monedas)
+**Botones de publicación — contenido general** (flash, hilo, opinión, briefing, semanal):
+- 📢 **Canal + X** — publica en Telegram y en X (tweet pre-generado limpio para briefing/semanal)
 - 📣 **Solo canal** — solo Telegram
 - 🐦 **Solo X** — solo Twitter/X
-- 🟡 **Binance Square** — formatea el texto en plain text (sin HTML) listo para copiar-pegar en Binance Square
+- 🟡 **Binance Square** — texto plain text listo para copiar-pegar en Binance Square
 - 📊 **CMC Community** — ídem para CoinMarketCap Community
-- 🗑 **Sin portada** — descarta la imagen DALL-E generada automáticamente (solo aparece si hay portada auto-generada)
-- 📸 **Añadir / Cambiar portada** — la foto se integra en el mismo mensaje del canal y se adjunta al tweet de X
+- 🎨 **Generar IA** — genera portada editorial gpt-image-1 bajo demanda (30-60 seg)
+- 📸 **Añadir / Cambiar portada** — usa tu propia foto; se integra en canal y tweet de X
+- 🗑 **Sin portada** — descarta la portada generada (aparece tras usar 🎨 Generar IA)
+- ✏️ **Editar** — edita el texto antes de publicar
 - ❌ **Descartar** — no publica nada
+
+**Botones de publicación — señales técnicas:**
+- 📣 **Solo canal** — publica solo en Telegram
+- 🐦 **Solo X** — genera tweet limpio y publica solo en X
+- 📢 **Canal + X** — publica en ambos
+- ❌ **Descartar** — descarta la señal
 
 > También puedes enviar una foto con el comando como pie de foto (`/flash tema` + foto adjunta) y la foto se usa automáticamente como portada.
 

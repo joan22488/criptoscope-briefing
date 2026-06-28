@@ -52,6 +52,9 @@ function checkCooldown(chatId, cmd, segundos) {
 const programadas = new Map(); // id → { descripcion, timer }
 let progContador = 1;
 
+// ── Tweets X pre-generados (briefing y semanal guardan tweet_x aquí) ──
+const pendingTweets = new Map(); // pid → string (tweet limpio listo para X)
+
 // ── Portadas pendientes ────────────────────────
 const portadas = new Map();         // pid → fileId de la foto portada
 const waitingCover = new Map();     // chatId → pid (esperando foto de portada)
@@ -106,19 +109,7 @@ export async function publicarSenalPendiente(pid) {
   if (!msg) return false;
   senalesPendientes.delete(pid);
   await enviarTelegram(msg);
-
-  let xPublicado = false;
-  if (process.env.X_API_KEY) {
-    try {
-      const tweet = await generarTweetDeSenal(msg);
-      await publicarTweetUnico(tweet);
-      xPublicado = true;
-    } catch (e) {
-      console.warn("⚠️ Error publicando señal en X:", e.message);
-    }
-  }
-
-  guardarPublicacionEnNotion({ tipo: "Señal", titulo: "Señal técnica automática", texto: msg, plataforma: xPublicado ? "Canal+X" : "Canal", estado: "Publicado" }).catch(() => {});
+  guardarPublicacionEnNotion({ tipo: "Señal", titulo: "Señal técnica automática", texto: msg, plataforma: "Canal", estado: "Publicado" }).catch(() => {});
   return true;
 }
 
@@ -1490,8 +1481,8 @@ Devuelve SOLO el tweet. Sin comillas, sin etiquetas, sin explicaciones.${ctxDeri
           tweetsX[tweetsX.length - 1] += `\n\n${hashtags}`;
           await publicarThread(tweetsX, { mediaId });
         } else {
-          // Flash, opinión, analiza, quepasa: un único tweet maximizado
-          const contenido = await generarTweetX(msg);
+          // Usar tweet_x pre-generado (briefing/semanal) o generar desde el texto
+          const contenido = pendingTweets.get(pid) || await generarTweetX(msg);
           await publicarTweetUnico(contenido, { mediaId });
         }
       } catch (e) {
@@ -1761,14 +1752,52 @@ Devuelve SOLO el tweet. Sin comillas, sin etiquetas, sin explicaciones.${ctxDeri
     guardarPublicacionEnNotion({ tipo, titulo, texto: msg, plataforma, conPortada: !!portadas.get(pid), estado: "Formateado" }).catch(() => {});
   }
 
-  if (data.startsWith("pub_senal:")) {
+  if (data.startsWith("pub_senal:") && !data.startsWith("pub_senal_")) {
     const pid = data.slice(10);
     const msg = senalesPendientes.get(pid);
     if (!msg) return reply(chatId, "❌ La señal ya expiró (>90 min) o ya fue publicada.");
     await quitarBotones();
     senalesPendientes.delete(pid);
     await enviarTelegram(msg);
+    await reply(chatId, "✅ Señal publicada en el canal.");
+    guardarPublicacionEnNotion({ tipo: "Señal", titulo: "Señal técnica automática", texto: msg, plataforma: "Canal", estado: "Publicado" }).catch(() => {});
+  }
 
+  if (data.startsWith("pub_senal_canal:")) {
+    const pid = data.slice(16);
+    const msg = senalesPendientes.get(pid);
+    if (!msg) return reply(chatId, "❌ La señal ya expiró (>90 min) o ya fue publicada.");
+    await quitarBotones();
+    senalesPendientes.delete(pid);
+    await enviarTelegram(msg);
+    await reply(chatId, "✅ Señal publicada en el canal.");
+    guardarPublicacionEnNotion({ tipo: "Señal", titulo: "Señal técnica automática", texto: msg, plataforma: "Canal", estado: "Publicado" }).catch(() => {});
+  }
+
+  if (data.startsWith("pub_senal_x:")) {
+    const pid = data.slice(12);
+    const msg = senalesPendientes.get(pid);
+    if (!msg) return reply(chatId, "❌ La señal ya expiró (>90 min) o ya fue publicada.");
+    if (!process.env.X_API_KEY) return reply(chatId, "⚠️ X no está configurado.");
+    await quitarBotones();
+    senalesPendientes.delete(pid);
+    try {
+      const tweet = await generarTweetDeSenal(msg);
+      await publicarTweetUnico(tweet);
+      await reply(chatId, "✅ Señal publicada en X.");
+      guardarPublicacionEnNotion({ tipo: "Señal", titulo: "Señal técnica automática", texto: msg, plataforma: "X", estado: "Publicado" }).catch(() => {});
+    } catch (e) {
+      await reply(chatId, `⚠️ Error publicando en X: ${e.message.slice(0, 100)}`);
+    }
+  }
+
+  if (data.startsWith("pub_senal_ambos:")) {
+    const pid = data.slice(16);
+    const msg = senalesPendientes.get(pid);
+    if (!msg) return reply(chatId, "❌ La señal ya expiró (>90 min) o ya fue publicada.");
+    await quitarBotones();
+    senalesPendientes.delete(pid);
+    await enviarTelegram(msg);
     let xPublicado = false;
     if (process.env.X_API_KEY) {
       try {
@@ -1779,8 +1808,7 @@ Devuelve SOLO el tweet. Sin comillas, sin etiquetas, sin explicaciones.${ctxDeri
         console.warn("⚠️ Error publicando señal en X:", e.message);
       }
     }
-
-    await reply(chatId, xPublicado ? "✅ Señal publicada en el canal y en X." : "✅ Señal publicada en el canal.");
+    await reply(chatId, xPublicado ? "✅ Señal publicada en el canal y en X." : "✅ Señal publicada en el canal. ⚠️ Error en X.");
     guardarPublicacionEnNotion({ tipo: "Señal", titulo: "Señal técnica automática", texto: msg, plataforma: xPublicado ? "Canal+X" : "Canal", estado: "Publicado" }).catch(() => {});
   }
 
@@ -2426,10 +2454,11 @@ async function cmdBriefingManual(chatId) {
   if (String(chatId) !== String(OWNER())) return reply(chatId, "❌ Solo el owner puede ejecutar esto.");
   await reply(chatId, "☕ Generando briefing...");
   try {
-    const { texto, portadaBuffer } = await generarBriefing();
+    const { texto, portadaBuffer, paquete } = await generarBriefing();
     const pid = Date.now().toString(36);
     pendingPublish.set(pid, texto);
-    setTimeout(() => { pendingPublish.delete(pid); portadas.delete(pid); }, 30 * 60 * 1000);
+    if (paquete?.tweet_x) pendingTweets.set(pid, paquete.tweet_x);
+    setTimeout(() => { pendingPublish.delete(pid); portadas.delete(pid); pendingTweets.delete(pid); }, 30 * 60 * 1000);
 
     const portadaFijaId = getPortadaFija("briefing");
 
@@ -2466,10 +2495,11 @@ async function cmdBriefingManual(chatId) {
 async function cmdSemanal(chatId) {
   await reply(chatId, "📊 Generando resumen semanal...");
   try {
-    const { mensaje, chartBuffer } = await ejecutarResumenSemanal();
+    const { mensaje, paquete, chartBuffer } = await ejecutarResumenSemanal();
     const pid = Date.now().toString(36);
     pendingPublish.set(pid, mensaje);
-    setTimeout(() => { pendingPublish.delete(pid); portadas.delete(pid); }, 30 * 60 * 1000);
+    if (paquete?.tweet_x) pendingTweets.set(pid, paquete.tweet_x);
+    setTimeout(() => { pendingPublish.delete(pid); portadas.delete(pid); pendingTweets.delete(pid); }, 30 * 60 * 1000);
 
     const portadaFijaId = getPortadaFija("semanal");
 
@@ -2779,10 +2809,16 @@ export async function enviarSenalParaRevisar(mensaje) {
       parse_mode: "HTML",
       disable_web_page_preview: true,
       reply_markup: {
-        inline_keyboard: [[
-          { text: "📢 Publicar en canal", callback_data: `pub_senal:${pid}` },
-          { text: "❌ Descartar", callback_data: `del_senal:${pid}` },
-        ]],
+        inline_keyboard: [
+          [
+            { text: "📣 Solo canal", callback_data: `pub_senal_canal:${pid}` },
+            { text: "🐦 Solo X", callback_data: `pub_senal_x:${pid}` },
+          ],
+          [
+            { text: "📢 Canal + X", callback_data: `pub_senal_ambos:${pid}` },
+            { text: "❌ Descartar", callback_data: `del_senal:${pid}` },
+          ],
+        ],
       },
     }),
   });
