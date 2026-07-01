@@ -17,6 +17,7 @@ import { aplicarLogo, fetchGraficoBuffer, generarBannerX, generarPortadaEditoria
 import { ejecutarBriefing, generarBriefing } from "./pipeline.js";
 import { getPortadaFija, setPortadaFija, clearPortadaFija } from "./portadas_fijas.js";
 import { cancelarEditorial } from "./editorial.js";
+import { logActividad, getLog, getLogStats } from "./activity.js";
 
 const client = new Anthropic();
 const API = () => `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}`;
@@ -1530,6 +1531,7 @@ Devuelve SOLO el tweet. Sin comillas, sin etiquetas, sin explicaciones.${ctxDeri
       conPortada: !!portadas.get(pid) || false,
       estado:     estadoNotion,
     }).catch(() => {});
+    logActividad({ tipo: detectarTipo(msg), titulo: extraerTitulo(msg), plataforma: plataformaNotion, estado: estadoNotion === "Publicado" ? "OK" : estadoNotion });
 
     const donde = destino === "ambos" ? "en el canal y en X" : destino === "canal" ? "en el canal" : "en X";
     if (errorX) {
@@ -1786,6 +1788,7 @@ Devuelve SOLO el tweet. Sin comillas, sin etiquetas, sin explicaciones.${ctxDeri
     await enviarTelegram(msg);
     await reply(chatId, "✅ Señal publicada en el canal.");
     guardarPublicacionEnNotion({ tipo: "Señal", titulo: "Señal técnica automática", texto: msg, plataforma: "Canal", estado: "Publicado" }).catch(() => {});
+    logActividad({ tipo: "Señal", plataforma: "Canal", estado: "OK" });
   }
 
   if (data.startsWith("pub_senal_x:")) {
@@ -1800,8 +1803,10 @@ Devuelve SOLO el tweet. Sin comillas, sin etiquetas, sin explicaciones.${ctxDeri
       await publicarTweetUnico(tweet);
       await reply(chatId, "✅ Señal publicada en X.");
       guardarPublicacionEnNotion({ tipo: "Señal", titulo: "Señal técnica automática", texto: msg, plataforma: "X", estado: "Publicado" }).catch(() => {});
+      logActividad({ tipo: "Señal", plataforma: "X", estado: "OK" });
     } catch (e) {
       await reply(chatId, `⚠️ Error publicando en X: ${e.message.slice(0, 100)}`);
+      logActividad({ tipo: "Señal", plataforma: "X", estado: `Error: ${e.message.slice(0, 60)}` });
     }
   }
 
@@ -1824,6 +1829,7 @@ Devuelve SOLO el tweet. Sin comillas, sin etiquetas, sin explicaciones.${ctxDeri
     }
     await reply(chatId, xPublicado ? "✅ Señal publicada en el canal y en X." : "✅ Señal publicada en el canal. ⚠️ Error en X.");
     guardarPublicacionEnNotion({ tipo: "Señal", titulo: "Señal técnica automática", texto: msg, plataforma: xPublicado ? "Canal+X" : "Canal", estado: "Publicado" }).catch(() => {});
+    logActividad({ tipo: "Señal", plataforma: xPublicado ? "Canal+X" : "Canal", estado: "OK" });
   }
 
   if (data.startsWith("del_senal:")) {
@@ -1831,6 +1837,7 @@ Devuelve SOLO el tweet. Sin comillas, sin etiquetas, sin explicaciones.${ctxDeri
     senalesPendientes.delete(pid);
     await quitarBotones();
     await reply(chatId, "🗑 Señal descartada.");
+    logActividad({ tipo: "Señal", plataforma: "", estado: "Descartado" });
   }
 }
 
@@ -2065,6 +2072,19 @@ async function cmdAyuda(chatId, cmd) {
         "El banner incluye precio de BTC y ETH, Fear & Greed Index, dominancia BTC y un mini gráfico de barras con los mejores y peores activos del dia.\n\n" +
         "Se envía como archivo (sin compresión) para que la subas directamente en Configuración de X. Actualízalo cuando el mercado tenga datos que merezcan mostrarse.",
     },
+    log: {
+      titulo: "📋 /log — Log de actividad del bot",
+      uso: "/log [N]",
+      ejemplo: "/log · /log 30 · /log 50",
+      detalle:
+        "Muestra las últimas N acciones del bot en esta sesión: publicaciones en canal y X, señales (publicadas o descartadas), alertas enviadas al canal, editoriales automáticos y errores.\n\n" +
+        "Por defecto muestra las últimas 15. Máximo 50. Ejemplo: <code>/log 30</code>.\n\n" +
+        "<b>Estados:</b>\n" +
+        "🟢 Publicado correctamente\n" +
+        "🔴 Error (se muestra el detalle)\n" +
+        "🔘 Descartado por el owner\n\n" +
+        "⚠️ <b>Importante:</b> El log vive en memoria. Se resetea cada vez que Railway reinicia el servidor (deploys, reinicios de plan). Para historial persistente de señales usa /historial; para publicaciones usa Notion (NOTION_PUBLICACIONES_DB).",
+    },
     cancelar_editorial: {
       titulo: "🚫 /cancelar_editorial — Cancela el tweet editorial pendiente",
       uso: "/cancelar_editorial",
@@ -2134,7 +2154,9 @@ async function cmdAyuda(chatId, cmd) {
     `Foto + <code>responde</code> → redacta respuesta al comentario\n\n` +
     `──────────────\n` +
     `<b>⚙️ Sistema</b>\n` +
+    `<code>/log</code> [N] — Actividad del bot en esta sesión (publ., errores, descartes)\n` +
     `<code>/stats</code> — Rendimiento señales 7 días\n` +
+    `<code>/historial</code> — Últimas señales con TP/SL\n` +
     `<code>/cancelar_editorial</code> — Cancela tweet editorial pendiente\n` +
     `<code>/estado</code> · <code>/pausa</code> · <code>/activa</code> · <code>/ayuda</code>\n\n` +
     `──────────────\n` +
@@ -2779,6 +2801,7 @@ async function procesarMensaje(msg) {
       case "/clearportada": await cmdClearPortada(chatId, argStr); break;
       case "/stats":        await cmdStats(chatId); break;
       case "/historial":    await cmdHistorial(chatId); break;
+      case "/log":          await cmdLog(chatId, argStr); break;
       case "/ayuda":
       case "/help":         await cmdAyuda(chatId, argStr); break;
       default:
@@ -2841,6 +2864,49 @@ export async function enviarSenalParaRevisar(mensaje) {
       },
     }),
   });
+}
+
+// /log [N] — log de actividad del bot en esta sesión
+async function cmdLog(chatId, argStr) {
+  const n = Math.min(parseInt(argStr) || 15, 50);
+  const zona = process.env.TIMEZONE || "Europe/Madrid";
+  const eventos = getLog(n);
+
+  if (!eventos.length) {
+    return reply(chatId,
+      "📋 <b>Log de actividad</b>\n\n" +
+      "Sin actividad registrada en esta sesión.\n" +
+      "<i>El log se llena conforme el bot publica, descarta o genera errores.</i>"
+    );
+  }
+
+  const TIPO_EMOJI = {
+    "Flash": "⚡", "Hilo": "📝", "Análisis": "📊", "Opinión": "🧠",
+    "Briefing": "☕", "Semanal": "📅", "Señal": "📡", "Editorial": "📰",
+    "Alerta": "🚨", "Otro": "🔹",
+  };
+
+  let msg = `📋 <b>Actividad del bot — últimas ${eventos.length}</b>\n\n`;
+  for (const e of eventos) {
+    const hora  = new Date(e.ts).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit", timeZone: zona });
+    const fecha = new Date(e.ts).toLocaleDateString("es-ES", { day: "numeric", month: "short", timeZone: zona });
+    const emoji = TIPO_EMOJI[e.tipo] || "🔹";
+    const estadoEmoji = e.estado === "OK" ? "🟢" : e.estado === "Descartado" ? "🔘" : "🔴";
+    const dest  = e.plataforma ? ` → ${e.plataforma}` : "";
+    msg += `${estadoEmoji} <b>${fecha} ${hora}</b>  ${emoji} ${e.tipo}${dest}\n`;
+    if (e.titulo) msg += `   <i>${e.titulo}</i>\n`;
+    if (e.estado !== "OK" && e.estado !== "Descartado") msg += `   ⚠️ ${e.estado}\n`;
+    msg += "\n";
+  }
+
+  const stats = getLogStats();
+  msg += `──────────────\n`;
+  msg += `24h: ${stats.ok} publicados`;
+  if (stats.err)  msg += ` · ${stats.err} errores`;
+  if (stats.des)  msg += ` · ${stats.des} descartados`;
+  msg += `\n<i>/log 30 para ver más · máx 50</i>`;
+
+  await reply(chatId, msg);
 }
 
 // /historial — últimas 10 señales con resultado
@@ -2937,6 +3003,7 @@ export async function iniciarBot() {
         { command: "semanal",    description: "Resumen semanal con preview + botones" },
         { command: "stats",      description: "Rendimiento de señales últimos 7 días" },
         { command: "historial",  description: "Últimas 10 señales con entrada, TP y resultado" },
+        { command: "log",        description: "Log de actividad del bot en esta sesión (/log 30)" },
         { command: "ayuda",      description: "Guía detallada de todos los comandos" },
       ],
     }),

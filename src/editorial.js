@@ -13,6 +13,8 @@ import { getEventosMacro } from "./calendar.js";
 import { publicarTweetUnico, subirImagenX } from "./twitter-post.js";
 import { enviarTelegram, enviarTelegramConFoto } from "./telegram.js";
 import { generarChartBarras, aplicarLogo } from "./media.js";
+import { logActividad } from "./activity.js";
+import { guardarPublicacionEnNotion } from "./notion.js";
 
 const client = new Anthropic();
 const PENDING_FILE = "./data/pending_editorial.json";
@@ -331,8 +333,12 @@ export async function ejecutarEditorial() {
           ? "✅ Tweet editorial publicado en X y en el canal."
           : "✅ Publicado en X. ⚠️ Fallo canal Telegram (ver logs).";
         await notificarOwner(resumen);
+        const plataformaEdit = telegramOk ? "Canal+X" : "X";
+        logActividad({ tipo: "Editorial", titulo: tweetTexto.slice(0, 80), plataforma: plataformaEdit, estado: "OK" });
+        guardarPublicacionEnNotion({ tipo: "Editorial", titulo: tweetTexto.slice(0, 80), texto: tweetTexto, plataforma: plataformaEdit, estado: "Publicado" }).catch(() => {});
       } catch (e) {
         console.warn("⚠️ Error publicando tweet editorial:", e.message);
+        logActividad({ tipo: "Editorial", plataforma: "X", estado: `Error: ${e.message.slice(0, 60)}` });
         await notificarOwner(`⚠️ <b>Error publicando tweet editorial</b>\n<code>${e.message.slice(0, 200)}</code>`);
       }
     }, DELAY_MIN * 60 * 1000);

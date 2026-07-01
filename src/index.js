@@ -15,6 +15,8 @@ import { getPortadaFija } from "./portadas_fijas.js";
 import { verificarResultados } from "./tracker.js";
 import { getPrices } from "./coindesk.js";
 import { iniciarBot, isPausado, verificarAlertasPrecios, monitorNoticias, ejecutarRecapDiario, enviarSenalParaRevisar } from "./bot.js";
+import { logActividad } from "./activity.js";
+import { guardarPublicacionEnNotion } from "./notion.js";
 import { iniciarWebhookServer } from "./webhook.js";
 import { publicarTweetUnico } from "./twitter-post.js";
 import { ejecutarEditorial } from "./editorial.js";
@@ -56,8 +58,10 @@ cron.schedule(
     if (isPausado()) return console.log("⏸ Briefing omitido (pausado)");
     try {
       await ejecutarBriefing();
+      logActividad({ tipo: "Briefing", titulo: "Briefing matinal automático", plataforma: "Canal+X", estado: "OK" });
     } catch (e) {
       console.error("❌ Error en el briefing:", e.message);
+      logActividad({ tipo: "Briefing", titulo: "Briefing matinal automático", plataforma: "Canal+X", estado: `Error: ${e.message.slice(0, 60)}` });
       await alertarOwner(`⚠️ <b>Briefing fallido</b>\n<code>${e.message.slice(0, 300)}</code>`);
     }
   },
@@ -115,6 +119,9 @@ cron.schedule(
           await enviarTelegram(alerta);
           // Aviso privado al owner — si quiere tuitearlo, usa /flash o /publicar
           alertarOwner(`📢 <b>Alerta publicada en el canal.</b>\nSi quieres tuitearlo, usa /publicar con el texto.`);
+          const tituloAlerta = alerta.replace(/<[^>]+>/g, "").split("\n").filter(Boolean)[1] || "Alerta de evento";
+          logActividad({ tipo: "Alerta", titulo: tituloAlerta, plataforma: "Canal", estado: "OK" });
+          guardarPublicacionEnNotion({ tipo: "Alerta", titulo: tituloAlerta, texto: alerta, plataforma: "Canal", estado: "Publicado" }).catch(() => {});
         }
       }
     } catch (e) {
