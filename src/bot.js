@@ -1340,7 +1340,11 @@ async function procesarCallback(callback) {
     if (!pendingPublish.has(pid)) return reply(chatId, "❌ El contenido ya expiró. Vuelve a generarlo.");
     await quitarBotones();
     await reply(chatId, "🎨 Generando portada IA... (30-60 seg)");
-    const textoParaImagen = pendingPublish.get(pid);
+    const textoRaw = pendingPublish.get(pid) || "";
+    const textoParaImagen = textoRaw
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+      .replace(/\s+/g, " ").trim().slice(0, 400);
     try {
       const buf = await generarPortadaEditorial(textoParaImagen);
       if (!buf) throw new Error("Sin imagen en respuesta");
@@ -1402,7 +1406,17 @@ async function procesarCallback(callback) {
     }
   };
 
-  // Genera UN tweet para X — aprovecha los 270-280 chars al máximo con el ángulo más potente
+  // Corta un tweet en el último fin de frase antes de maxLen (nunca en mitad de palabra)
+  const cortarEnFrase = (texto, maxLen) => {
+    if (texto.length <= maxLen) return texto;
+    const recorte = texto.slice(0, maxLen);
+    const puntos = [recorte.lastIndexOf(". "), recorte.lastIndexOf("? "), recorte.lastIndexOf("! "), recorte.lastIndexOf(".\n"), recorte.lastIndexOf("?\n"), recorte.lastIndexOf("!\n")];
+    const fin = Math.max(...puntos);
+    if (fin > maxLen * 0.55) return texto.slice(0, fin + 1).trimEnd();
+    return recorte.replace(/\s+\S*$/, "…");
+  };
+
+  // Genera UN tweet para X — prompts ajustados para dejar espacio a hashtags automáticos
   // Si el input es un titular corto (<160 chars), usa prompt de interpretación de noticia
   const generarTweetX = async (texto) => {
     const limpio = texto.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
@@ -1416,7 +1430,7 @@ async function procesarCallback(callback) {
 
 Titular de noticia: "${limpio}"
 
-Escribe UN tweet de 230-255 caracteres. NO resumas la noticia: interpreta qué SIGNIFICA para el mercado. Qué puede mover el precio, qué paradoja hay, o qué riesgo oculto implica. Si hay un número concreto en el titular, úsalo.
+Escribe UN tweet de 190-205 caracteres (el sistema añade hashtags automáticamente al final, no los incluyas). NO resumas la noticia: interpreta qué SIGNIFICA para el mercado. Qué puede mover el precio, qué paradoja hay, o qué riesgo oculto implica. Si hay un número concreto en el titular, úsalo.
 
 1 emoji relevante al inicio (🚨⚠️🔴🟢💥🎯). Termina con una pregunta directa a la comunidad o una afirmación que invite al debate.
 
@@ -1427,11 +1441,11 @@ Devuelve SOLO el tweet. Sin comillas ni etiquetas.${ctxDerivados}`
 Contenido del análisis:
 ${limpio.slice(0, 2000)}
 
-Escribe UN único tweet de 260-278 caracteres. No es un resumen: elige el ángulo MÁS POTENTE del análisis y desarróllalo completamente. Aprovecha cada carácter.
+Escribe UN único tweet de 210-225 caracteres (el sistema añade hashtags automáticamente al final, no los incluyas). No es un resumen: elige el ángulo MÁS POTENTE del análisis y desarróllalo completamente.
 
 Estructura (todo en un bloque continuo con salto de línea en el medio):
-— GANCHO (90-110 chars): el dato más impactante, la paradoja o el hecho que crea tensión. Para el scroll. NO empieces con "Hoy", "El mercado", el nombre de la coin ni "CriptoScope". 1 emoji si refuerza (🚨📊⚠️🔴🟢).
-— DESARROLLO (160-170 chars): qué implica ese dato para el precio, qué patrón hay detrás, nivel clave a vigilar. Datos concretos. Termina con una pregunta corta a la comunidad O con una afirmación que invite a debatir.
+GANCHO (80-100 chars): el dato más impactante, la paradoja o el hecho que crea tensión. Para el scroll. NO empieces con "Hoy", "El mercado", el nombre de la coin ni "CriptoScope". 1 emoji si refuerza (🚨📊⚠️🔴🟢).
+DESARROLLO (110-125 chars): qué implica ese dato para el precio, nivel clave a vigilar. Datos concretos. Termina con pregunta corta o afirmación que invite a debatir.
 
 Sin HTML. Sin guiones largos (– o —). Sin links. Sin hashtags. Sin mencionar "canal de Telegram".
 
@@ -1443,11 +1457,11 @@ Devuelve SOLO el tweet. Sin comillas, sin etiquetas, sin explicaciones.${ctxDeri
         messages: [{ role: "user", content: prompt }],
       });
       const tweet = limpiarDashes(res.content[0].text.trim());
-      return tweet.length <= 280 ? tweet : tweet.slice(0, 277).replace(/\s+\S*$/, "...");
+      return cortarEnFrase(tweet, 225);
     } catch {
       const lineas = limpio.split("\n").filter((l) => l.length > 30 && /[a-záéíóúñ]/.test(l) && !["CriptoScope", "consejo financiero", "FLASH", "ALERTA"].some((e) => l.toUpperCase().includes(e)));
       const fb = lineas[0] || limpio;
-      return fb.length <= 280 ? fb : fb.slice(0, 277).replace(/\s+\S*$/, "...");
+      return cortarEnFrase(fb, 225);
     }
   };
 
@@ -1890,11 +1904,14 @@ async function cmdAyuda(chatId, cmd) {
       ejemplo: "/senal ETH · /senal BTC · /senal SOL",
       detalle:
         "Igual que /analiza pero solo para ti — no publica nada en el canal. Descarga datos reales, calcula todos los indicadores y te devuelve la señal en privado.\n\n" +
-        "El sistema automático publica 4 análisis al día con ángulos distintos:\n" +
+        "El sistema automático genera 4 análisis al día con ángulos distintos y los envía primero para revisión:\n" +
         "🌅 07:00 Radar de apertura — sesgo del día y nivel clave en 4H\n" +
         "📈 11:00 Pulso técnico — momentum 1H, RSI y MACD actualizados\n" +
         "⚡ 15:00 On-chain y derivados — funding rate, OI y posicionamiento\n" +
         "🌙 19:00 Cierre europeo — balance del día y nivel asiático a vigilar\n\n" +
+        "<b>Botones de revisión de señal:</b>\n" +
+        "📣 <b>Solo canal</b> · 🐦 <b>Solo X</b>\n" +
+        "📢 <b>Canal + X</b> · ❌ <b>Descartar</b>\n\n" +
         "/senal te da la misma profundidad en cualquier momento bajo demanda.",
     },
     calendario: {
@@ -2088,10 +2105,17 @@ async function cmdAyuda(chatId, cmd) {
     `<code>/opinion</code> &lt;noticia&gt; — Análisis al estilo CriptoScope\n` +
     `<code>/analiza</code> &lt;coin&gt; — Análisis técnico con entrada, TP y SL\n` +
     `<code>/encuesta</code> [tema] — Poll nativo para el canal\n` +
+    `<code>/briefing</code> — Briefing matinal ahora mismo\n` +
     `<code>/semanal</code> — Resumen semanal bajo demanda\n` +
     `<code>/publicar</code> &lt;texto&gt; — Publica tu propio texto en X y/o canal\n` +
     `<code>/banner</code> — Genera portada para X (1500x500)\n` +
-    `<i>📸 Todos admiten portada — /ayuda flash para más detalle</i>\n\n` +
+    `<i>📸 Todos admiten portada · 🎨 Generar IA disponible en todos</i>\n\n` +
+    `──────────────\n` +
+    `<b>📡 Automáticos (llegan a ti para revisión)</b>\n` +
+    `Señales 07/11/15/19h → 📣 Solo canal · 🐦 Solo X · 📢 Canal+X · ❌ Descartar\n` +
+    `Alertas de evento → canal Telegram (aviso privado si quieres tuitearlo)\n` +
+    `Monitor RSS → ⚡ Flash · 📝 Hilo · 🐦 Tweet X · 🙈 Ignorar\n` +
+    `Editorial X → Lun/Mar/Mié/Sáb/Dom (auto tras revisión)\n\n` +
     `──────────────\n` +
     `<b>🔒 Solo para ti (privado)</b>\n` +
     `<code>/precio</code> &lt;coin&gt; — Precio actual con máx/mín\n` +
@@ -2109,12 +2133,7 @@ async function cmdAyuda(chatId, cmd) {
     `Foto → verificación + análisis + botones para publicar\n` +
     `Foto + <code>responde</code> → redacta respuesta al comentario\n\n` +
     `──────────────\n` +
-    `<b>📰 Monitor RSS (automático)</b>\n` +
-    `Noticias con keywords → ⚡ Flash · 📝 Hilo · 🐦 Tweet X · 🙈 Ignorar\n` +
-    `<i>/ayuda monitor para detalle</i>\n\n` +
-    `──────────────\n` +
     `<b>⚙️ Sistema</b>\n` +
-    `<code>/briefing</code> — Genera briefing ahora (portada auto + preview + botones)\n` +
     `<code>/stats</code> — Rendimiento señales 7 días\n` +
     `<code>/cancelar_editorial</code> — Cancela tweet editorial pendiente\n` +
     `<code>/estado</code> · <code>/pausa</code> · <code>/activa</code> · <code>/ayuda</code>\n\n` +

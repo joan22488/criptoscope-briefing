@@ -67,9 +67,16 @@ export async function publicarTweetUnico(texto, { mediaId } = {}) {
   const cuerpo   = limpiar(texto);
 
   // Reservar espacio para los hashtags al final
-  const espacio      = 280 - hashtags.length - 2; // 2 = "\n\n"
-  const cuerpoFinal  = cuerpo.length <= espacio ? cuerpo : cuerpo.slice(0, espacio - 3).replace(/\s+\S*$/, "...");
-  const tweetFinal   = `${cuerpoFinal}\n\n${hashtags}`;
+  const espacio = 280 - hashtags.length - 2; // 2 = "\n\n"
+  const cuerpoFinal = (() => {
+    if (cuerpo.length <= espacio) return cuerpo;
+    const recorte = cuerpo.slice(0, espacio);
+    const puntos = [recorte.lastIndexOf(". "), recorte.lastIndexOf("? "), recorte.lastIndexOf("! "), recorte.lastIndexOf(".\n"), recorte.lastIndexOf("?\n"), recorte.lastIndexOf("!\n")];
+    const fin = Math.max(...puntos);
+    if (fin > espacio * 0.55) return cuerpo.slice(0, fin + 1).trimEnd();
+    return recorte.replace(/\s+\S*$/, "…"); // '…' = 1 char
+  })();
+  const tweetFinal = `${cuerpoFinal}\n\n${hashtags}`;
 
   const payload = mediaId ? { media: { media_ids: [mediaId] } } : undefined;
   const result  = await rwClient.v2.tweet(tweetFinal, payload);
