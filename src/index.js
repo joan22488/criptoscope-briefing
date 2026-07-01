@@ -14,7 +14,7 @@ import { enviarTelegram, enviarTelegramConFoto, enviarTelegramConFotoId } from "
 import { getPortadaFija } from "./portadas_fijas.js";
 import { verificarResultados } from "./tracker.js";
 import { getPrices } from "./coindesk.js";
-import { iniciarBot, isPausado, verificarAlertasPrecios, monitorNoticias, ejecutarRecapDiario, enviarSenalParaRevisar } from "./bot.js";
+import { iniciarBot, isPausado, verificarAlertasPrecios, monitorNoticias, ejecutarRecapDiario, enviarSenalParaRevisar, notificarMencionesNuevas } from "./bot.js";
 import { logActividad } from "./activity.js";
 import { guardarPublicacionEnNotion } from "./notion.js";
 import { iniciarWebhookServer } from "./webhook.js";
@@ -214,6 +214,12 @@ cron.schedule("0 11 * * 6", async () => {    // Sábado — histórico
 cron.schedule("0 18 * * 0", async () => {    // Domingo — tweet principal
   if (isPausado()) return;
   await ejecutarEditorial().catch((e) => alertarOwner(`⚠️ Editorial domingo: ${e.message}`));
+}, { timezone: zona });
+
+// Auto-reply X — cada 30 min (Modo A: solo funciona con X API Basic plan)
+// Si el tier es Free, fetchMencionesNuevas lanza mentions_api_error y se ignora silenciosamente
+cron.schedule("*/30 * * * *", async () => {
+  await notificarMencionesNuevas().catch((e) => console.warn("⚠️ notificarMencionesNuevas:", e.message));
 }, { timezone: zona });
 
 // Recap diario privado al owner — 22:00

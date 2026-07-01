@@ -18,6 +18,7 @@ import { ejecutarBriefing, generarBriefing } from "./pipeline.js";
 import { getPortadaFija, setPortadaFija, clearPortadaFija } from "./portadas_fijas.js";
 import { cancelarEditorial } from "./editorial.js";
 import { logActividad, getLog, getLogStats } from "./activity.js";
+import { generarBorradorRespuesta, publicarRespuestaX, fetchMencionesNuevas } from "./x-replies.js";
 
 const client = new Anthropic();
 const API = () => `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}`;
@@ -63,6 +64,12 @@ const waitingPortadaFija = new Map(); // chatId → tipo "briefing"|"semanal" (e
 
 // ── Hilos pendientes (array de tweets para publicar en X como thread real) ──
 const hilosPendientes = new Map(); // pid → string[]
+// ── Threads del resumen semanal pendientes de publicar en X ──
+const pendingWeeklyThreads = new Map(); // pid → string[]
+// ── Borradores de respuesta en X pendientes de aprobación del owner ──
+const pendingReplies = new Map(); // rid → { mentionId, texto, autorUsername, tweetOriginalTexto, borrador }
+// ── Replies editadas: esperamos el siguiente mensaje del owner con el texto corregido ──
+const waitingEditReply = new Map(); // chatId → rid
 // ── Elección de gancho pendiente (flash con 2 opciones) ──
 const pendingGanchos = new Map(); // pickId → { ganchoA, ganchoB, cuerpo, portadaFid }
 
@@ -1839,6 +1846,166 @@ Devuelve SOLO el tweet. Sin comillas, sin etiquetas, sin explicaciones.${ctxDeri
     await reply(chatId, "🗑 Señal descartada.");
     logActividad({ tipo: "Señal", plataforma: "", estado: "Descartado" });
   }
+
+  // ── Thread semanal en X ───────────────────────
+  if (data.startsWith("thread_semanal:")) {
+    const pid = data.slice(15);
+    const tweetsX = pendingWeeklyThreads.get(pid);
+    if (!tweetsX?.length) return reply(chatId, "❌ El thread ya expiró (>30 min). Vuelve a ejecutar /semanal.");
+    if (!process.env.X_API_KEY) return reply(chatId, "⚠️ X no está configurado.");
+    await quitarBotones();
+    await reply(chatId, `🧵 Publicando thread de ${tweetsX.length} tweets en X...`);
+    const fileId = portadas.get(pid) || null;
+    let mediaId = null;
+    if (fileId) {
+      mediaId = await subirPortadaAX(fileId).catch((e) => { console.warn("⚠️ Media thread semanal:", e.message); return null; });
+    }
+    // Añadir hashtags al último tweet (igual que en /hilo)
+    const threadConHashtags = [...tweetsX];
+    const hashtags = extraerHashtags(pendingPublish.get(pid) || tweetsX.join(" "));
+    if (hashtags) threadConHashtags[threadConHashtags.length - 1] += `\n\n${hashtags}`;
+    try {
+      await publicarThread(threadConHashtags, { mediaId });
+      pendingWeeklyThreads.delete(pid);
+      await reply(chatId, `✅ Thread semanal publicado en X — ${threadConHashtags.length} tweets.`);
+      guardarPublicacionEnNotion({ tipo: "Semanal", titulo: "Thread semanal en X", texto: tweetsX.join("\n\n---\n\n"), plataforma: "X (thread)", estado: "Publicado" }).catch(() => {});
+      logActividad({ tipo: "Semanal", titulo: "Thread semanal", plataforma: "X (thread)", estado: "OK" });
+    } catch (e) {
+      await reply(chatId, `⚠️ Error publicando thread: <code>${e.message.slice(0, 150)}</code>`);
+      logActividad({ tipo: "Semanal", titulo: "Thread semanal", plataforma: "X (thread)", estado: `Error: ${e.message.slice(0, 60)}` });
+    }
+  }
+
+  // ── Borradores de respuesta en X ─────────────
+  if (data.startsWith("aprobar_reply:")) {
+    const rid = data.slice(14);
+    const r = pendingReplies.get(rid);
+    if (!r) return reply(chatId, "❌ Este borrador ya expiró o fue procesado.");
+    await quitarBotones();
+    try {
+      if (!r.mentionId) throw new Error("Sin ID de mención — usa modo manual con /reply");
+      await publicarRespuestaX(r.mentionId, r.borrador);
+      pendingReplies.delete(rid);
+      await reply(chatId, `✅ Respuesta publicada en X.\n\n<i>"${r.borrador}"</i>`);
+      logActividad({ tipo: "Reply X", titulo: r.borrador, plataforma: "X", estado: "OK" });
+    } catch (e) {
+      await reply(chatId, `⚠️ Error al responder en X: <code>${e.message.slice(0, 150)}</code>`);
+    }
+    return;
+  }
+
+  if (data.startsWith("ignorar_reply:")) {
+    const rid = data.slice(14);
+    pendingReplies.delete(rid);
+    await quitarBotones();
+    await reply(chatId, "🙈 Comentario ignorado.");
+    return;
+  }
+
+  if (data.startsWith("editar_reply:")) {
+    const rid = data.slice(13);
+    const r = pendingReplies.get(rid);
+    if (!r) return reply(chatId, "❌ Este borrador ya expiró.");
+    await quitarBotones();
+    waitingEditReply.set(chatId, rid);
+    await reply(chatId,
+      `✏️ Edita el borrador y mándamelo como mensaje:\n\n<code>${r.borrador}</code>\n\n<i>Tienes 10 minutos. Envía /cancelar para descartar.</i>`
+    );
+    setTimeout(() => waitingEditReply.delete(chatId), 10 * 60 * 1000);
+    return;
+  }
+}
+
+// ── X Auto-reply: enviar borrador al owner con botones ────────
+async function enviarBorradorAlOwner(chatId, rid, r) {
+  const encabezado =
+    `💬 <b>Nuevo comentario en X</b>\n` +
+    (r.autorUsername ? `De: @${r.autorUsername}\n` : "") +
+    (r.tweetOriginalTexto ? `\nTweet tuyo al que responde:\n<i>"${r.tweetOriginalTexto.slice(0, 120)}${r.tweetOriginalTexto.length > 120 ? "..." : ""}"</i>\n` : "") +
+    `\nComentario:\n"${r.texto}"\n\n` +
+    `📝 <b>Borrador de respuesta</b> (${r.borrador.length} chars):\n` +
+    `<code>${r.borrador}</code>`;
+
+  await fetch(`${API()}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text: encabezado,
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [[
+          { text: "✅ Publicar respuesta", callback_data: `aprobar_reply:${rid}` },
+          { text: "✏️ Editar", callback_data: `editar_reply:${rid}` },
+          { text: "🙈 Ignorar", callback_data: `ignorar_reply:${rid}` },
+        ]],
+      },
+    }),
+  });
+  setTimeout(() => pendingReplies.delete(rid), 30 * 60 * 1000);
+}
+
+// /reply <comentario> — Modo B manual: genera borrador sin necesitar la API de menciones
+async function cmdReply(chatId, argStr) {
+  if (!argStr) {
+    return reply(chatId,
+      "📖 <b>/reply</b> — Genera una respuesta en X (modo manual)\n\n" +
+      "Usa: <code>/reply @usuario: [texto del comentario que te llegó]</code>\n\n" +
+      "Ejemplo:\n<code>/reply @crypto_joe: ¿Por qué dices que el OI subiendo es alcista si el precio cayó ayer?</code>\n\n" +
+      "Claude generará un borrador en la voz de CriptoScope. Podrás editarlo o descartarlo antes de publicar."
+    );
+  }
+
+  if (!process.env.X_API_KEY) return reply(chatId, "⚠️ X no está configurado (falta X_API_KEY).");
+
+  // Separar "@usuario:" del texto si el owner lo incluye
+  let autor = "";
+  let comentario = argStr;
+  const matchAutor = argStr.match(/^@?(\w+):\s*([\s\S]+)/);
+  if (matchAutor) {
+    autor = matchAutor[1];
+    comentario = matchAutor[2].trim();
+  }
+
+  await reply(chatId, "⏳ Generando borrador de respuesta...");
+  try {
+    const borrador = await generarBorradorRespuesta({ comentario, autor });
+    const rid = Date.now().toString(36);
+    const r = { mentionId: null, texto: comentario, autorUsername: autor, tweetOriginalTexto: "", borrador };
+    pendingReplies.set(rid, r);
+    await enviarBorradorAlOwner(chatId, rid, r);
+  } catch (e) {
+    await reply(chatId, `⚠️ Error generando borrador: <code>${e.message.slice(0, 150)}</code>`);
+  }
+}
+
+// ── Notificar menciones nuevas al owner (llamado desde index.js cada 30 min) ──
+export async function notificarMencionesNuevas() {
+  const ownerId = process.env.TELEGRAM_OWNER_ID;
+  if (!ownerId || !process.env.X_API_KEY) return;
+  let menciones;
+  try {
+    menciones = await fetchMencionesNuevas();
+  } catch (e) {
+    if (e.message.startsWith("mentions_api_error:")) return; // Free tier: silencio
+    console.warn("⚠️ fetchMencionesNuevas:", e.message);
+    return;
+  }
+  for (const m of menciones) {
+    try {
+      const borrador = await generarBorradorRespuesta({
+        comentario: m.texto,
+        tweetOriginal: m.tweetOriginalTexto,
+        autor: m.autorUsername,
+      });
+      const rid = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+      const r = { mentionId: m.mentionId, texto: m.texto, autorUsername: m.autorUsername, tweetOriginalTexto: m.tweetOriginalTexto, borrador };
+      pendingReplies.set(rid, r);
+      await enviarBorradorAlOwner(ownerId, rid, r);
+    } catch (e) {
+      console.warn("⚠️ Error procesando mención:", e.message);
+    }
+  }
 }
 
 // /ayuda — guía detallada de comandos
@@ -2000,8 +2167,10 @@ async function cmdAyuda(chatId, cmd) {
       ejemplo: "/semanal",
       detalle:
         "Genera el resumen semanal ahora mismo, sin esperar al domingo. Analiza los movimientos de la semana, los mejores y peores activos, el Fear&Greed y las estadísticas de señales.\n\n" +
-        "Te muestra una preview con botones para publicar en canal, en X o en ambos. Puedes añadir portada antes de publicar.\n\n" +
-        "Útil si quieres publicar el resumen en un momento concreto (por ejemplo, el viernes por la tarde o tras un evento importante de la semana).",
+        "Botones disponibles:\n" +
+        "📢 <b>Canal + X</b> · 📣 <b>Solo canal</b> · 🐦 <b>Solo X</b> (tweet único)\n" +
+        "🧵 <b>Thread en X</b> — publica el resumen como 6 tweets encadenados con estructura: Hook · Balance · Evento 1 · Evento 2 · Lección · Lo que viene + CTA\n\n" +
+        "Puedes añadir el gráfico semanal BTC/ETH/SOL como imagen del primer tweet del thread.",
     },
     encuesta: {
       titulo: "🗳 /encuesta — Encuesta para el canal",
@@ -2084,6 +2253,22 @@ async function cmdAyuda(chatId, cmd) {
         "🔴 Error (se muestra el detalle)\n" +
         "🔘 Descartado por el owner\n\n" +
         "⚠️ <b>Importante:</b> El log vive en memoria. Se resetea cada vez que Railway reinicia el servidor (deploys, reinicios de plan). Para historial persistente de señales usa /historial; para publicaciones usa Notion (NOTION_PUBLICACIONES_DB).",
+    },
+    reply: {
+      titulo: "💬 /reply — Responder a un comentario en X",
+      uso: "/reply [@usuario:] <texto del comentario>",
+      ejemplo: "/reply @crypto_joe: ¿Por qué dices que el OI subiendo es alcista si el precio cayó?",
+      detalle:
+        "Genera un borrador de respuesta en la voz de CriptoScope para un comentario que hayas recibido en X.\n\n" +
+        "<b>Modo B — manual (gratuito):</b>\n" +
+        "Copia el texto del comentario y mándalo con <code>/reply</code>. Claude genera el borrador. Tú lo apruebas, editas o descartas.\n\n" +
+        "<b>Modo A — automático (requiere X API Basic, $100/mes):</b>\n" +
+        "El bot revisa menciones cada 30 min y te envía los borradores directamente. Sin que tengas que hacer nada.\n\n" +
+        "<b>Botones:</b>\n" +
+        "✅ <b>Publicar respuesta</b> — publica en X como reply\n" +
+        "✏️ <b>Editar</b> — te devuelve el borrador para que lo corrijas y lo mandas como mensaje\n" +
+        "🙈 <b>Ignorar</b> — descarta el borrador sin publicar\n\n" +
+        "El borrador expira en 30 minutos si no lo procesas.",
     },
     cancelar_editorial: {
       titulo: "🚫 /cancelar_editorial — Cancela el tweet editorial pendiente",
@@ -2540,7 +2725,8 @@ async function cmdSemanal(chatId) {
     const pid = Date.now().toString(36);
     pendingPublish.set(pid, mensaje);
     if (paquete?.tweet_x) pendingTweets.set(pid, paquete.tweet_x);
-    setTimeout(() => { pendingPublish.delete(pid); portadas.delete(pid); pendingTweets.delete(pid); }, 30 * 60 * 1000);
+    if (Array.isArray(paquete?.thread_x) && paquete.thread_x.length >= 3) pendingWeeklyThreads.set(pid, paquete.thread_x);
+    setTimeout(() => { pendingPublish.delete(pid); portadas.delete(pid); pendingTweets.delete(pid); pendingWeeklyThreads.delete(pid); }, 30 * 60 * 1000);
 
     const portadaFijaId = getPortadaFija("semanal");
 
@@ -2566,6 +2752,21 @@ async function cmdSemanal(chatId) {
     }
 
     await mostrarBotonesPublicacion(chatId, pid, mensaje);
+
+    // Si Claude generó el thread semanal, ofrecer botón extra
+    if (pendingWeeklyThreads.has(pid)) {
+      const threadPreview = pendingWeeklyThreads.get(pid);
+      await fetch(`${API()}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: `🧵 <b>Thread de X disponible</b> — ${threadPreview.length} tweets encadenados\n<i>${threadPreview[0].slice(0, 100)}…</i>`,
+          parse_mode: "HTML",
+          reply_markup: { inline_keyboard: [[{ text: "🧵 Publicar como Thread en X", callback_data: `thread_semanal:${pid}` }]] },
+        }),
+      });
+    }
   } catch (e) {
     await reply(chatId, `❌ No pude generar el resumen semanal: ${e.message}`);
   }
@@ -2729,6 +2930,18 @@ async function procesarMensaje(msg) {
     return;
   }
 
+  // ¿Estamos esperando el texto corregido de un borrador de reply en X?
+  if (waitingEditReply.has(chatId) && texto && !texto.startsWith("/")) {
+    const rid = waitingEditReply.get(chatId);
+    waitingEditReply.delete(chatId);
+    const r = pendingReplies.get(rid);
+    if (!r) return reply(chatId, "❌ El borrador expiró mientras editabas. Usa /reply para generar uno nuevo.");
+    r.borrador = texto.slice(0, 240);
+    pendingReplies.set(rid, r);
+    await enviarBorradorAlOwner(chatId, rid, r);
+    return;
+  }
+
   if (!texto.startsWith("/")) {
     await reply(chatId, "👋 Hola. Escribe <code>/ayuda</code> para ver todos los comandos.\n\nTambién puedes <b>enviarme una foto</b> de cualquier noticia y la analizo al estilo CriptoScope.");
     return;
@@ -2802,6 +3015,7 @@ async function procesarMensaje(msg) {
       case "/stats":        await cmdStats(chatId); break;
       case "/historial":    await cmdHistorial(chatId); break;
       case "/log":          await cmdLog(chatId, argStr); break;
+      case "/reply":        await cmdReply(chatId, argStr); break;
       case "/ayuda":
       case "/help":         await cmdAyuda(chatId, argStr); break;
       default:
@@ -3004,6 +3218,7 @@ export async function iniciarBot() {
         { command: "stats",      description: "Rendimiento de señales últimos 7 días" },
         { command: "historial",  description: "Últimas 10 señales con entrada, TP y resultado" },
         { command: "log",        description: "Log de actividad del bot en esta sesión (/log 30)" },
+        { command: "reply",      description: "Generar borrador de respuesta a un comentario en X" },
         { command: "ayuda",      description: "Guía detallada de todos los comandos" },
       ],
     }),

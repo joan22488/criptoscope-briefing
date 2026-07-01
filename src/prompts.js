@@ -83,6 +83,14 @@ Con el contexto semanal que te paso, genera un objeto JSON (responde SOLO el JSO
   "resumen": "Resumen de la semana en formato Telegram HTML. Estructura: 1) Balance de la semana: BTC y ETH en % semanal, qué pasó con el Fear & Greed durante la semana. 2) Los 3 eventos que definieron la semana y por qué. 3) Lo que aprendimos: qué patrón o lección queda para la semana siguiente. 4) Lo que viene: eventos o catalizadores a vigilar la próxima semana. Longitud: 1200-2000 caracteres.",
   "guion_video": "Guion de vídeo del resumen semanal para grabar, 90-120 segundos. Estructura: HOOK (el dato o movimiento más sorprendente de la semana, máx 12 palabras, que pare el scroll) → LOS 3 MOMENTOS (qué pasó, por qué importó cada uno, 40 seg) → LA LECCIÓN (qué nos enseña esta semana para la siguiente, 25 seg) → LO QUE VIENE (catalizadores clave de la próxima semana, 20 seg) → CTA (pregunta directa a la audiencia + cierre con llamada a seguir el canal). Escrito como se habla, frases cortas, cifras exactas siempre. PROHIBIDO guiones medios o largos.",
   "tweet_x": "UN único tweet de 200-215 caracteres para publicar en X (el sistema añade hashtags automáticamente, no los incluyas). Elige el dato o movimiento MÁS impactante de la semana. GANCHO (80-95 chars): cifra o paradoja que para el scroll. DESARROLLO (110-120 chars): qué implica para la semana siguiente. Termina con pregunta corta. Sin HTML. Sin guiones largos. Sin links. Sin hashtags. Sin mencionar Telegram.",
+  "thread_x": [
+    "TWEET 1 — HOOK (220-235 chars): El dato o movimiento más impactante de la semana. Para el scroll. PROHIBIDO empezar con 'Esta semana', 'El mercado', 'BTC ha'. 1 emoji (📊⚠️🔴🟢). Termina con la palabra 'Hilo:' o un salto de línea que indique que viene más.",
+    "TWEET 2 — BALANCE (220-235 chars): BTC y ETH con % semanal exacto. Fear & Greed al inicio y al final de la semana. Solo datos, sin adornos. Ejemplo: 'BTC +4.2% semanal. ETH -1.8%. Fear&Greed pasó de 34 a 61 en 7 días. Lo que eso significa:'",
+    "TWEET 3 — EVENTO 1 (220-235 chars): El primer evento que definió la semana. Qué pasó exactamente, qué implicó para el precio, dato concreto de impacto.",
+    "TWEET 4 — EVENTO 2 (220-235 chars): El segundo evento clave. Mismo formato: hecho concreto, implicación de precio, cifra exacta si existe.",
+    "TWEET 5 — LECCIÓN (220-235 chars): Qué patrón o aprendizaje queda de esta semana. Conectado a datos reales. Ejemplo: 'Cada vez que el funding colapsó a negativo con OI alto, el precio rebotó en 48-72h. Esta semana fue la cuarta vez.'",
+    "TWEET 6 — LO QUE VIENE + CTA (200-215 chars, el sistema añade hashtags automáticamente): 2-3 catalizadores a vigilar la próxima semana con fecha si la tienes. Termina con pregunta directa a la comunidad (elección forzada o predicción). Sin hashtags."
+  ],
   "pregunta_comunidad": "Una pregunta reflexiva sobre la semana para generar conversación. Sin mencionar Telegram ni ninguna plataforma."
 }
 `;
