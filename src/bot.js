@@ -2424,8 +2424,9 @@ async function cmdAyuda(chatId, cmd) {
     `<code>/analiza</code> &lt;coin&gt; — Análisis técnico con entrada, TP y SL\n` +
     `<code>/encuesta</code> [tema] — Poll nativo para el canal\n` +
     `<code>/briefing</code> — Briefing matinal ahora mismo\n` +
-    `<code>/semanal</code> — Resumen semanal bajo demanda\n` +
+    `<code>/semanal</code> — Resumen semanal (+ botón 🧵 thread de 6 tweets en X)\n` +
     `<code>/publicar</code> &lt;texto&gt; — Publica tu propio texto en X y/o canal\n` +
+    `<code>/reply</code> &lt;url + comentario&gt; — Respuesta a un comentario de X\n` +
     `<code>/banner</code> — Genera portada para X (1500x500)\n` +
     `<i>📸 Todos admiten portada · 🎨 Generar IA disponible en todos</i>\n\n` +
     `──────────────\n` +
@@ -2449,7 +2450,7 @@ async function cmdAyuda(chatId, cmd) {
     `──────────────\n` +
     `<b>📸 Fotos sin comando</b>\n` +
     `Foto → verificación + análisis + botones para publicar\n` +
-    `Foto + <code>responde</code> → redacta respuesta al comentario\n\n` +
+    `Foto + <code>responde</code> → 2 opciones de respuesta (A directa / B conversacional)\n\n` +
     `──────────────\n` +
     `<b>⚙️ Sistema</b>\n` +
     `<code>/log</code> [N] — Actividad del bot en esta sesión (publ., errores, descartes)\n` +
