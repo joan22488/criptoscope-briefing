@@ -8,7 +8,7 @@ import { loadJSON, saveJSON } from "./storage.js";
 import { getMarketContext, getPrices, getFearGreed, getGlobalMarket, puntuarNoticia } from "./coindesk.js";
 import { analizarSymbol, generarSenal, getVelas, calcEMA, getContextoDerivadosBTC } from "./signals.js";
 import { getEventosMacro, formatearAlertaMacro, formatearResumenSemana } from "./calendar.js";
-import { publicarThread, publicarTweetUnico, subirImagenX } from "./twitter-post.js";
+import { publicarThread, publicarTweetUnico, subirImagenX, getEscriturasXMes } from "./twitter-post.js";
 import { enviarTelegram, enviarTelegramConFoto } from "./telegram.js";
 import { ejecutarResumenSemanal } from "./weekly.js";
 import { guardarPublicacionEnNotion } from "./notion.js";
@@ -185,8 +185,9 @@ const guardarAlertas = (arr) => saveJSON("alertas.json", arr);
 // [{coin, precio, direccion, chatId}]  direccion: "sube"|"baja"
 let alertasPrecios = cargarAlertas();
 
-// ── Monitor de noticias (guid → timestamp) ──
-const noticiasVistas = new Map();
+// ── Monitor de noticias (guid → timestamp) — persistente para no re-alertar tras deploys ──
+const noticiasVistas = new Map(loadJSON("noticias_vistas.json", []));
+const persistirNoticiasVistas = () => saveJSON("noticias_vistas.json", [...noticiasVistas.entries()]);
 function limpiarNoticiasViejas() {
   const limite = Date.now() - 24 * 60 * 60 * 1000;
   for (const [guid, ts] of noticiasVistas) {
@@ -1147,6 +1148,14 @@ async function cmdEstado(chatId) {
     `<code>/pausa</code> · <code>/activa</code> · <code>/cancelar_editorial</code>\n` +
     `<code>/estado</code> · <code>/ayuda</code>\n\n` +
     `<i>📒 Notion: Publicaciones · Señales · Briefings</i>\n` +
+    (() => {
+      if (!process.env.X_API_KEY) return "";
+      const usados = getEscriturasXMes();
+      const limite = parseInt(process.env.X_MONTHLY_LIMIT || "500");
+      const pct = Math.round((usados / limite) * 100);
+      const icono = pct >= 80 ? "🚨" : pct >= 60 ? "⚠️" : "🐦";
+      return `${icono} Tweets X este mes: <b>${usados}/${limite}</b> (${pct}%)\n`;
+    })() +
     (process.env.TELEGRAM_X_CHAT_ID ? `📨 Grupo X: activo (borradores de reply y editorial van ahí)\n` : "") +
     (process.env.DATA_DIR ? `💾 DATA_DIR: <code>${process.env.DATA_DIR}</code> (persistente)\n` : `⚠️ Sin DATA_DIR: el estado se pierde en cada deploy\n`) +
     `🔗 Webhook TradingView: activo\n` +
@@ -2366,7 +2375,7 @@ async function cmdAyuda(chatId, cmd) {
         "🟢 Publicado correctamente\n" +
         "🔴 Error (se muestra el detalle)\n" +
         "🔘 Descartado por el owner\n\n" +
-        "⚠️ <b>Importante:</b> El log vive en memoria. Se resetea cada vez que Railway reinicia el servidor (deploys, reinicios de plan). Para historial persistente de señales usa /historial; para publicaciones usa Notion (NOTION_PUBLICACIONES_DB).",
+        "💾 El log se guarda en disco (últimos 150 eventos). Con un Volume en Railway (DATA_DIR) sobrevive a deploys y reinicios. Para historial completo de señales usa /historial; para publicaciones, Notion (NOTION_PUBLICACIONES_DB).",
     },
     reply: {
       titulo: "💬 /reply — Responder a un comentario en X",
@@ -2680,6 +2689,9 @@ export async function monitorNoticias() {
       console.warn(`⚠️  Monitor RSS ${fuente.nombre}:`, e.message);
     }
   }
+
+  // Persistir las vistas al final del ciclo — tras un deploy no se re-alertan noticias viejas
+  persistirNoticiasVistas();
 }
 
 // ──────────────────────────────────────────────

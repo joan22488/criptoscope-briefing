@@ -2,10 +2,35 @@
 // twitter-post.js - Publicar thread en X/Twitter
 // Requiere en .env: X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_SECRET
 // Obtener en: https://developer.twitter.com/en/portal/dashboard
-// Plan gratuito de X Developer permite hasta 1500 tweets/mes
+// El tier Free de X limita las publicaciones mensuales — el contador
+// de abajo lleva la cuenta (límite configurable con X_MONTHLY_LIMIT).
 // ============================================================
 
 import { TwitterApi } from "twitter-api-v2";
+import { loadJSON, saveJSON } from "./storage.js";
+
+// ── Contador de escrituras mensuales en X ────────────────────
+// Cada tweet publicado (único, de thread o reply) cuenta 1.
+const mesActual = () => new Date().toISOString().slice(0, 7); // "2026-07"
+
+export function registrarEscrituraX(n = 1) {
+  const data = loadJSON("x_writes.json", {});
+  const mes = mesActual();
+  data[mes] = (data[mes] || 0) + n;
+  const claves = Object.keys(data).sort();
+  while (claves.length > 3) delete data[claves.shift()]; // conservar 3 meses
+  saveJSON("x_writes.json", data);
+  const limite = parseInt(process.env.X_MONTHLY_LIMIT || "500");
+  if (data[mes] >= limite * 0.8) {
+    console.warn(`⚠️ X: ${data[mes]}/${limite} tweets este mes (${Math.round((data[mes] / limite) * 100)}% del límite)`);
+  }
+  return data[mes];
+}
+
+export function getEscriturasXMes() {
+  const data = loadJSON("x_writes.json", {});
+  return data[mesActual()] || 0;
+}
 
 // Hashtags para el thread del briefing: base fija + contextuales según contenido
 function generarHashtagsBriefing(tweets) {
@@ -81,6 +106,7 @@ export async function publicarTweetUnico(texto, { mediaId } = {}) {
   const payload = mediaId ? { media: { media_ids: [mediaId] } } : undefined;
   const result  = await rwClient.v2.tweet(tweetFinal, payload);
 
+  registrarEscrituraX(1);
   console.log(`✅ Tweet publicado en X`);
   return result.data.id;
 }
@@ -102,12 +128,14 @@ export async function publicarThread(tweets, { mediaId } = {}) {
   const primerPayload = mediaId ? { media: { media_ids: [mediaId] } } : undefined;
   const primerTweet = await rwClient.v2.tweet(limpiar(tweets[0]).slice(0, 280), primerPayload);
   let ultimoId = primerTweet.data.id;
+  registrarEscrituraX(1);
 
   // Resto como replies en cadena
   for (let i = 1; i < tweets.length; i++) {
     const texto = limpiar(tweets[i]).slice(0, 280);
     const reply = await rwClient.v2.tweet(texto, { reply: { in_reply_to_tweet_id: ultimoId } });
     ultimoId = reply.data.id;
+    registrarEscrituraX(1);
     await new Promise((r) => setTimeout(r, 1000));
   }
 

@@ -14,6 +14,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { TwitterApi } from "twitter-api-v2";
 import { loadJSON, saveJSON } from "./storage.js";
+import { registrarEscrituraX } from "./twitter-post.js";
 
 const client = new Anthropic();
 
@@ -56,6 +57,7 @@ export async function publicarRespuestaX(tweetId, texto) {
   const result = await xClient.readWrite.v2.tweet(texto, {
     reply: { in_reply_to_tweet_id: tweetId },
   });
+  registrarEscrituraX(1);
   return result.data.id;
 }
 

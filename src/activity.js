@@ -1,10 +1,12 @@
 // ============================================================
-// activity.js - Log de actividad en memoria del bot (sesión)
-// Ring buffer de 150 eventos. Se pierde al reiniciar Railway
-// pero cubre la sesión activa completa.
+// activity.js - Log de actividad del bot
+// Ring buffer de 150 eventos, persistido en DATA_DIR: con un
+// Volume en Railway sobrevive a deploys y reinicios.
 // ============================================================
 
-const log = [];
+import { loadJSON, saveJSON } from "./storage.js";
+
+const log = loadJSON("activity_log.json", []);
 const MAX = 150;
 
 export function logActividad({ tipo, titulo = "", plataforma = "", estado = "OK", detalle = "" }) {
@@ -17,6 +19,7 @@ export function logActividad({ tipo, titulo = "", plataforma = "", estado = "OK"
     detalle:  detalle.slice(0, 120),
   });
   if (log.length > MAX) log.shift();
+  saveJSON("activity_log.json", log);
 }
 
 // Devuelve los últimos n eventos en orden descendente (más reciente primero)

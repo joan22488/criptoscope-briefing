@@ -182,12 +182,12 @@ Cuando una señal toca TP1, TP2 o SL, recibes una **alerta privada** con todos l
 ### Sistema
 | Comando | Acción |
 |---------|--------|
-| `/estado` | Estado completo: hora Madrid, alertas activas, programadas y próximas ejecuciones automáticas |
+| `/estado` | Estado completo: hora Madrid, alertas, programadas, contador de tweets X del mes, grupo X, DATA_DIR y próximas ejecuciones |
 | `/pausa` | Pausar todas las publicaciones automáticas |
 | `/activa` | Reanudar publicaciones |
 | `/stats` | Rendimiento de señales de los últimos 7 días |
 | `/historial` | Últimas 10 señales con entrada, TP y resultado |
-| `/log [N]` | Log de actividad de la sesión: qué se publicó, dónde, errores y descartes (máx 50) |
+| `/log [N]` | Log de actividad persistente: qué se publicó, dónde, errores y descartes (máx 50) |
 | `/cancelar_editorial` | Cancela el tweet editorial pendiente antes de que se publique en X |
 | `/ayuda` | Guía completa. `/ayuda <comando>` para detalle de cada uno |
 
@@ -248,7 +248,8 @@ CRYPTOPANIC_TOKEN=...                 # cryptopanic.com → 7ª fuente RSS
 
 # ─── ORGANIZACIÓN (opcional) ─────────────────────────────────
 TELEGRAM_X_CHAT_ID=-100...            # Grupo dedicado a X: los borradores de reply y del editorial van ahí en vez del chat privado. Crea un grupo, añade el bot y desactiva su modo privacidad en @BotFather (/setprivacy → Disable) para que el botón Editar funcione
-DATA_DIR=/data                        # Directorio de estado persistente. En Railway: crea un Volume montado en /data para que alertas, señales, programadas y portadas sobrevivan a los deploys
+DATA_DIR=/data                        # Directorio de estado persistente. En Railway: crea un Volume montado en /data para que alertas, señales, programadas, portadas, log de actividad y contador de tweets sobrevivan a los deploys
+X_MONTHLY_LIMIT=500                   # Límite mensual de tweets de tu tier de X (Free ~500). /estado muestra el consumo y avisa al 60% y 80%
 
 # ─── CONFIGURACIÓN ────────────────────────────────────────────
 CLAUDE_MODEL=claude-sonnet-4-6
