@@ -112,7 +112,8 @@ Escríbele directamente al bot (chat privado):
 | `/analiza <coin>` | `/analiza AVAX` | Gráfico 4H + análisis técnico top-down con entrada, TP1, TP2, SL y R:R |
 | `/opinion <noticia>` | `/opinion SEC aprueba ETF` | Lectura de mercado estilo CriptoScope. Portada bajo demanda |
 | `/encuesta [tema]` | `/encuesta` · `/encuesta BTC esta semana` | Poll nativo para el canal con preview |
-| `/semanal` | `/semanal` | Resumen semanal bajo demanda — sin esperar al domingo |
+| `/semanal` | `/semanal` | Resumen semanal bajo demanda — incluye botón 🧵 para publicarlo como thread real de 6 tweets en X |
+| `/reply <url + comentario>` | `/reply https://x.com/user/status/123 ¿por qué...?` | Borrador de respuesta en voz CriptoScope con botones Publicar / Editar / Ignorar. Con URL publica por API; sin URL te da el texto para copiar |
 | `/publicar <texto>` | `/publicar BTC supera los 100k. Nivel clave: 98.000.` | Publica tu propio texto con portada gpt-image-1 auto-generada + todos los botones de destino |
 | `/banner` | `/banner` | Genera imagen de portada 1500×500 px con datos del día lista para subir a X |
 
@@ -184,6 +185,9 @@ Cuando una señal toca TP1, TP2 o SL, recibes una **alerta privada** con todos l
 | `/estado` | Estado completo: hora Madrid, alertas activas, programadas y próximas ejecuciones automáticas |
 | `/pausa` | Pausar todas las publicaciones automáticas |
 | `/activa` | Reanudar publicaciones |
+| `/stats` | Rendimiento de señales de los últimos 7 días |
+| `/historial` | Últimas 10 señales con entrada, TP y resultado |
+| `/log [N]` | Log de actividad de la sesión: qué se publicó, dónde, errores y descartes (máx 50) |
 | `/cancelar_editorial` | Cancela el tweet editorial pendiente antes de que se publique en X |
 | `/ayuda` | Guía completa. `/ayuda <comando>` para detalle de cada uno |
 

@@ -1882,8 +1882,14 @@ Devuelve SOLO el tweet. Sin comillas, sin etiquetas, sin explicaciones.${ctxDeri
     const r = pendingReplies.get(rid);
     if (!r) return reply(chatId, "❌ Este borrador ya expiró o fue procesado.");
     await quitarBotones();
+    // Sin URL del comentario no hay ID al que responder por API → entregar para copiar y pegar
+    if (!r.mentionId) {
+      pendingReplies.delete(rid);
+      await reply(chatId, `📋 Respuesta lista. Cópiala y pégala en X:\n\n<code>${r.borrador}</code>\n\n<i>Consejo: si la próxima vez incluyes la URL del comentario en /reply, la publico yo directamente.</i>`);
+      logActividad({ tipo: "Reply X", titulo: r.borrador, plataforma: "X (manual)", estado: "OK" });
+      return;
+    }
     try {
-      if (!r.mentionId) throw new Error("Sin ID de mención — usa modo manual con /reply");
       await publicarRespuestaX(r.mentionId, r.borrador);
       pendingReplies.delete(rid);
       await reply(chatId, `✅ Respuesta publicada en X.\n\n<i>"${r.borrador}"</i>`);
@@ -1946,32 +1952,48 @@ async function enviarBorradorAlOwner(chatId, rid, r) {
 }
 
 // /reply <comentario> — Modo B manual: genera borrador sin necesitar la API de menciones
+// Acepta opcionalmente la URL del comentario (x.com/usuario/status/123...) para poder
+// publicar la respuesta por API. Sin URL, el borrador se entrega para copiar y pegar.
 async function cmdReply(chatId, argStr) {
   if (!argStr) {
     return reply(chatId,
       "📖 <b>/reply</b> — Genera una respuesta en X (modo manual)\n\n" +
-      "Usa: <code>/reply @usuario: [texto del comentario que te llegó]</code>\n\n" +
-      "Ejemplo:\n<code>/reply @crypto_joe: ¿Por qué dices que el OI subiendo es alcista si el precio cayó ayer?</code>\n\n" +
-      "Claude generará un borrador en la voz de CriptoScope. Podrás editarlo o descartarlo antes de publicar."
+      "Usa: <code>/reply [URL del comentario] [texto del comentario]</code>\n\n" +
+      "Ejemplos:\n" +
+      "<code>/reply https://x.com/crypto_joe/status/1234567 ¿Por qué dices que el OI subiendo es alcista?</code>\n" +
+      "<code>/reply @crypto_joe: ¿Por qué dices que el OI subiendo es alcista?</code>\n\n" +
+      "Con URL: el bot publica la respuesta en X directamente al aprobar.\n" +
+      "Sin URL: te devuelve el texto listo para copiar y pegar tú mismo."
     );
   }
 
   if (!process.env.X_API_KEY) return reply(chatId, "⚠️ X no está configurado (falta X_API_KEY).");
 
-  // Separar "@usuario:" del texto si el owner lo incluye
+  // ¿Incluye la URL del comentario? → podemos publicar por API
   let autor = "";
+  let mentionId = null;
   let comentario = argStr;
-  const matchAutor = argStr.match(/^@?(\w+):\s*([\s\S]+)/);
+  const matchUrl = argStr.match(/https?:\/\/(?:www\.)?(?:x|twitter)\.com\/(\w+)\/status\/(\d+)\S*/);
+  if (matchUrl) {
+    autor = matchUrl[1];
+    mentionId = matchUrl[2];
+    comentario = argStr.replace(matchUrl[0], "").trim();
+  }
+
+  // Separar "@usuario:" del texto si el owner lo incluye
+  const matchAutor = comentario.match(/^@?(\w+):\s*([\s\S]+)/);
   if (matchAutor) {
-    autor = matchAutor[1];
+    autor = autor || matchAutor[1];
     comentario = matchAutor[2].trim();
   }
+
+  if (!comentario) return reply(chatId, "❌ Falta el texto del comentario. Pégalo después de la URL.");
 
   await reply(chatId, "⏳ Generando borrador de respuesta...");
   try {
     const borrador = await generarBorradorRespuesta({ comentario, autor });
     const rid = Date.now().toString(36);
-    const r = { mentionId: null, texto: comentario, autorUsername: autor, tweetOriginalTexto: "", borrador };
+    const r = { mentionId, texto: comentario, autorUsername: autor, tweetOriginalTexto: "", borrador };
     pendingReplies.set(rid, r);
     await enviarBorradorAlOwner(chatId, rid, r);
   } catch (e) {
@@ -2256,17 +2278,16 @@ async function cmdAyuda(chatId, cmd) {
     },
     reply: {
       titulo: "💬 /reply — Responder a un comentario en X",
-      uso: "/reply [@usuario:] <texto del comentario>",
-      ejemplo: "/reply @crypto_joe: ¿Por qué dices que el OI subiendo es alcista si el precio cayó?",
+      uso: "/reply [URL del comentario] <texto del comentario>",
+      ejemplo: "/reply https://x.com/crypto_joe/status/123456 ¿Por qué dices que el OI subiendo es alcista?",
       detalle:
         "Genera un borrador de respuesta en la voz de CriptoScope para un comentario que hayas recibido en X.\n\n" +
-        "<b>Modo B — manual (gratuito):</b>\n" +
-        "Copia el texto del comentario y mándalo con <code>/reply</code>. Claude genera el borrador. Tú lo apruebas, editas o descartas.\n\n" +
-        "<b>Modo A — automático (requiere X API Basic, $100/mes):</b>\n" +
-        "El bot revisa menciones cada 30 min y te envía los borradores directamente. Sin que tengas que hacer nada.\n\n" +
+        "<b>Con URL del comentario:</b> al aprobar, el bot publica la respuesta en X directamente como reply.\n" +
+        "<b>Sin URL:</b> al aprobar, te devuelve el texto listo para copiar y pegar tú mismo en X.\n\n" +
+        "Para conseguir la URL: en X, toca el comentario → Compartir → Copiar enlace.\n\n" +
         "<b>Botones:</b>\n" +
-        "✅ <b>Publicar respuesta</b> — publica en X como reply\n" +
-        "✏️ <b>Editar</b> — te devuelve el borrador para que lo corrijas y lo mandas como mensaje\n" +
+        "✅ <b>Publicar respuesta</b> — publica en X (o te da el texto si no hay URL)\n" +
+        "✏️ <b>Editar</b> — corriges el borrador y lo mandas como mensaje\n" +
         "🙈 <b>Ignorar</b> — descarta el borrador sin publicar\n\n" +
         "El borrador expira en 30 minutos si no lo procesas.",
     },
