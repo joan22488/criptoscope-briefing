@@ -159,7 +159,7 @@ Escríbele directamente al bot (chat privado):
 | Acción | Resultado |
 |--------|-----------|
 | Foto de noticia | Verificación de credibilidad (✅ VERIFICADA · 🟡 PROBABLE · ⚠️ DUDOSA · 🚫 FALSA) + análisis + botones para publicar |
-| Foto + pie `responde` | Redacta una respuesta al comentario de la imagen (solo para ti) |
+| Foto + pie `responde` | Genera 2 opciones de respuesta al comentario de la captura: A directa con datos, B conversacional con pregunta. Eliges con botones y pasa al flujo Publicar / Editar / Ignorar |
 
 ### Monitor automático de noticias
 Cada 15 min el sistema revisa **6 fuentes RSS en paralelo**: CoinDesk · Cointelegraph · The Block · Decrypt · BeInCrypto · CryptoPanic. Si detecta una noticia con tus keywords (`MONITOR_KEYWORDS`) te la manda en privado con botones y una **puntuación editorial automática**.
@@ -245,6 +245,10 @@ SIGNALS_SYMBOLS=BTC,ETH,SOL,AVAX,LINK,BNB,XRP  # Monedas en el análisis automá
 # ─── INTEGRACIONES EXTERNAS (opcional) ───────────────────────
 WEBHOOK_SECRET=criptoscope-tv         # Token para webhooks de TradingView
 CRYPTOPANIC_TOKEN=...                 # cryptopanic.com → 7ª fuente RSS
+
+# ─── ORGANIZACIÓN (opcional) ─────────────────────────────────
+TELEGRAM_X_CHAT_ID=-100...            # Grupo dedicado a X: los borradores de reply y del editorial van ahí en vez del chat privado. Crea un grupo, añade el bot y desactiva su modo privacidad en @BotFather (/setprivacy → Disable) para que el botón Editar funcione
+DATA_DIR=/data                        # Directorio de estado persistente. En Railway: crea un Volume montado en /data para que alertas, señales, programadas y portadas sobrevivan a los deploys
 
 # ─── CONFIGURACIÓN ────────────────────────────────────────────
 CLAUDE_MODEL=claude-sonnet-4-6

@@ -4,7 +4,7 @@
 // ============================================================
 
 import Anthropic from "@anthropic-ai/sdk";
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
+import { loadJSON, saveJSON } from "./storage.js";
 import { getNews } from "./coindesk.js";
 import { getContextoDerivadosBTC } from "./signals.js";
 
@@ -24,20 +24,13 @@ const KEYWORDS_CRITICAS = [
 ];
 
 // Cache persistente de noticias ya alertadas — sobrevive reinicios
-const ALERTADAS_FILE = "./data/alertadas.json";
 function cargarAlertadas() {
-  try {
-    if (!existsSync(ALERTADAS_FILE)) return new Map();
-    const entries = JSON.parse(readFileSync(ALERTADAS_FILE, "utf8"));
-    const limite = Date.now() - 24 * 60 * 60 * 1000;
-    return new Map(entries.filter(([, ts]) => ts > limite));
-  } catch { return new Map(); }
+  const entries = loadJSON("alertadas.json", []);
+  const limite = Date.now() - 24 * 60 * 60 * 1000;
+  return new Map(entries.filter(([, ts]) => ts > limite));
 }
 function guardarAlertadas() {
-  try {
-    if (!existsSync("./data")) mkdirSync("./data", { recursive: true });
-    writeFileSync(ALERTADAS_FILE, JSON.stringify([...alertadas.entries()]));
-  } catch {}
+  saveJSON("alertadas.json", [...alertadas.entries()]);
 }
 const alertadas = cargarAlertadas(); // Map: key → timestamp
 

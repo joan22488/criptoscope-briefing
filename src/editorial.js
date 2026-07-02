@@ -6,7 +6,7 @@
 // ============================================================
 
 import Anthropic from "@anthropic-ai/sdk";
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
+import { loadJSON, saveJSON } from "./storage.js";
 import { getMarketContext } from "./coindesk.js";
 import { getContextoDerivadosBTC } from "./signals.js";
 import { getEventosMacro } from "./calendar.js";
@@ -17,12 +17,12 @@ import { logActividad } from "./activity.js";
 import { guardarPublicacionEnNotion } from "./notion.js";
 
 const client = new Anthropic();
-const PENDING_FILE = "./data/pending_editorial.json";
 
 // ── Utilidades ────────────────────────────────────────────────
 
 function notificarOwner(texto) {
-  const ownerId = process.env.TELEGRAM_OWNER_ID;
+  // Los borradores editoriales son tweets de X → van al grupo de X si existe
+  const ownerId = process.env.TELEGRAM_X_CHAT_ID || process.env.TELEGRAM_OWNER_ID;
   if (!ownerId) return Promise.resolve();
   return fetch(
     `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`,
@@ -35,15 +35,11 @@ function notificarOwner(texto) {
 }
 
 function guardarPendiente(data) {
-  if (!existsSync("./data")) mkdirSync("./data", { recursive: true });
-  writeFileSync(PENDING_FILE, JSON.stringify({ ...data, ts: Date.now() }));
+  saveJSON("pending_editorial.json", { ...data, ts: Date.now() });
 }
 
 function leerPendiente() {
-  try {
-    if (!existsSync(PENDING_FILE)) return null;
-    return JSON.parse(readFileSync(PENDING_FILE, "utf8"));
-  } catch { return null; }
+  return loadJSON("pending_editorial.json", null);
 }
 
 export function cancelarEditorial() {

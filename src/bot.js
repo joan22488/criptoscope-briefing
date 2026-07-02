@@ -4,7 +4,7 @@
 // ============================================================
 
 import Anthropic from "@anthropic-ai/sdk";
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
+import { loadJSON, saveJSON } from "./storage.js";
 import { getMarketContext, getPrices, getFearGreed, getGlobalMarket, puntuarNoticia } from "./coindesk.js";
 import { analizarSymbol, generarSenal, getVelas, calcEMA, getContextoDerivadosBTC } from "./signals.js";
 import { getEventosMacro, formatearAlertaMacro, formatearResumenSemana } from "./calendar.js";
@@ -23,6 +23,9 @@ import { generarBorradorRespuesta, publicarRespuestaX, fetchMencionesNuevas } fr
 const client = new Anthropic();
 const API = () => `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}`;
 const OWNER = () => process.env.TELEGRAM_OWNER_ID;
+// Chat dedicado a asuntos de X (grupo aparte para no llenar el chat del bot).
+// Si no está configurado, todo va al chat privado del owner como siempre.
+const X_CHAT = () => process.env.TELEGRAM_X_CHAT_ID || process.env.TELEGRAM_OWNER_ID;
 
 // Elimina guiones medios/largos que cuela Claude — delatan texto de IA
 const limpiarDashes = (s) => typeof s === "string"
@@ -50,9 +53,56 @@ function checkCooldown(chatId, cmd, segundos) {
   return 0;
 }
 
-// ── Publicaciones programadas ──────────────────
-const programadas = new Map(); // id → { descripcion, timer }
+// ── Publicaciones programadas (persistentes — sobreviven reinicios) ──
+const programadas = new Map(); // id → { descripcion, timer, horaStr, tipo, contenido, chatId, tsEjecucion }
 let progContador = 1;
+
+function persistirProgramadas() {
+  const arr = [...programadas.entries()].map(([id, p]) => ({
+    id, tipo: p.tipo, contenido: p.contenido, horaStr: p.horaStr, chatId: p.chatId, tsEjecucion: p.tsEjecucion,
+  }));
+  saveJSON("programadas.json", arr);
+}
+
+function agendarProgramada(id, { tipo, contenido, horaStr, chatId, tsEjecucion }) {
+  const descripcion = `/${tipo} a las ${horaStr} → "${contenido.slice(0, 50)}"`;
+  const msHasta = Math.max(0, tsEjecucion - Date.now());
+  const timer = setTimeout(async () => {
+    programadas.delete(id);
+    persistirProgramadas();
+    console.log(`⏰ Ejecutando programada #${id}: ${descripcion}`);
+    try {
+      if (tipo === "flash") await cmdFlash(chatId, contenido);
+      else if (tipo === "hilo") await cmdHilo(chatId, contenido);
+      else if (tipo === "opinion") await cmdOpinion(chatId, contenido);
+    } catch (e) {
+      await reply(chatId, `❌ Error en publicación programada #${id}: ${e.message}`).catch(() => {});
+    }
+  }, msHasta);
+  programadas.set(id, { descripcion, timer, horaStr, tipo, contenido, chatId, tsEjecucion });
+}
+
+// Al arrancar: reconstruye los timers desde disco. Las que ya pasaron
+// mientras el servidor estaba caído se notifican al owner, no se ejecutan
+// (el contenido podría estar obsoleto).
+function restaurarProgramadas() {
+  const arr = loadJSON("programadas.json", []);
+  if (!arr.length) return;
+  const perdidas = [];
+  let restauradas = 0;
+  for (const p of arr) {
+    if (p.id >= progContador) progContador = p.id + 1;
+    if (!p.tsEjecucion || p.tsEjecucion <= Date.now()) { perdidas.push(p); continue; }
+    agendarProgramada(p.id, p);
+    restauradas++;
+  }
+  persistirProgramadas();
+  if (restauradas) console.log(`⏰ ${restauradas} programada(s) restaurada(s) tras el reinicio`);
+  if (perdidas.length && OWNER()) {
+    const lista = perdidas.map((p) => `#${p.id} · /${p.tipo} · ${p.horaStr} · "${(p.contenido || "").slice(0, 40)}"`).join("\n");
+    reply(OWNER(), `⚠️ <b>Programadas perdidas durante un reinicio</b>\n\n${lista}\n\nNo se ejecutaron porque su hora ya pasó. Vuelve a programarlas si siguen siendo relevantes.`).catch(() => {});
+  }
+}
 
 // ── Tweets X pre-generados (briefing y semanal guardan tweet_x aquí) ──
 const pendingTweets = new Map(); // pid → string (tweet limpio listo para X)
@@ -72,6 +122,8 @@ const pendingReplies = new Map(); // rid → { mentionId, texto, autorUsername, 
 const waitingEditReply = new Map(); // chatId → rid
 // ── Elección de gancho pendiente (flash con 2 opciones) ──
 const pendingGanchos = new Map(); // pickId → { ganchoA, ganchoB, cuerpo, portadaFid }
+// ── Respuestas A/B a comentario en captura (foto + "responde") ──
+const pendingRespuestasFoto = new Map(); // fid → { a, b }
 
 // ── Señales pendientes de revisión (owner aprueba antes de publicar al canal) ──
 const senalesPendientes = new Map(); // pid → mensaje
@@ -128,20 +180,8 @@ export function descartarSenalPendiente(pid) {
 }
 
 // ── Alertas de precio (persistentes) ──────────
-const ALERTAS_FILE = "./data/alertas.json";
-function cargarAlertas() {
-  try {
-    if (!existsSync("./data")) mkdirSync("./data", { recursive: true });
-    if (existsSync(ALERTAS_FILE)) return JSON.parse(readFileSync(ALERTAS_FILE, "utf8"));
-  } catch {}
-  return [];
-}
-function guardarAlertas(arr) {
-  try {
-    if (!existsSync("./data")) mkdirSync("./data", { recursive: true });
-    writeFileSync(ALERTAS_FILE, JSON.stringify(arr, null, 2));
-  } catch {}
-}
+const cargarAlertas = () => loadJSON("alertas.json", []);
+const guardarAlertas = (arr) => saveJSON("alertas.json", arr);
 // [{coin, precio, direccion, chatId}]  direccion: "sube"|"baja"
 let alertasPrecios = cargarAlertas();
 
@@ -1107,6 +1147,8 @@ async function cmdEstado(chatId) {
     `<code>/pausa</code> · <code>/activa</code> · <code>/cancelar_editorial</code>\n` +
     `<code>/estado</code> · <code>/ayuda</code>\n\n` +
     `<i>📒 Notion: Publicaciones · Señales · Briefings</i>\n` +
+    (process.env.TELEGRAM_X_CHAT_ID ? `📨 Grupo X: activo (borradores de reply y editorial van ahí)\n` : "") +
+    (process.env.DATA_DIR ? `💾 DATA_DIR: <code>${process.env.DATA_DIR}</code> (persistente)\n` : `⚠️ Sin DATA_DIR: el estado se pierde en cada deploy\n`) +
     `🔗 Webhook TradingView: activo\n` +
     (process.env.X_PROFILE_URL ? `🐦 <a href="${process.env.X_PROFILE_URL}">${process.env.X_PROFILE_URL.replace("https://x.com/", "@")}</a>` : "");
   await reply(chatId, msg);
@@ -1265,26 +1307,56 @@ async function cmdRespondeComentario(chatId, photo, caption) {
 
   try {
     const base64 = await descargarFoto(photo);
-    await reply(chatId, "🧠 Redactando respuesta...");
+    await reply(chatId, "🧠 Redactando 2 opciones de respuesta...");
 
     const respuesta = await client.messages.create({
       model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
-      max_tokens: 600,
-      system: `Eres CriptoScope. Te mandan una captura de un comentario o mensaje de redes sociales. Redacta una respuesta en la voz de CriptoScope: directa, educada pero firme, con conocimiento de mercados. Sin hype, sin insultos, argumentada. Máx 3 frases. Solo texto plano, sin HTML.`,
+      max_tokens: 700,
+      system: `Eres CriptoScope. Te mandan una captura de un comentario o mensaje de redes sociales. Redacta DOS respuestas alternativas en la voz de CriptoScope, cada una con un enfoque distinto:
+
+A: DIRECTA. Responde al fondo del comentario con datos o argumento técnico. Educada pero firme. Si el comentario tiene razón en algo, reconócelo; si está equivocado, corrígelo con precisión.
+B: CONVERSACIONAL. Responde más breve y devuelve una pregunta concreta que invite a seguir la conversación. Genera engagement sin ser vacía.
+
+Ambas: máx 240 caracteres cada una, sin hype, sin insultos, sin emojis tribales, sin guiones largos, sin hashtags, sin links. Texto plano.
+
+Devuelve SOLO este JSON sin markdown:
+{"a":"respuesta directa","b":"respuesta conversacional"}`,
       messages: [{
         role: "user",
         content: [
           { type: "image", source: { type: "base64", media_type: "image/jpeg", data: base64 } },
-          { type: "text", text: caption?.replace(/responde|respóndeme|replica|contesta|reply|contestar|respuesta/gi, "").trim() || "Redacta una respuesta a este comentario." },
+          { type: "text", text: caption?.replace(/responde|respóndeme|replica|contesta|reply|contestar|respuesta/gi, "").trim() || "Redacta las respuestas a este comentario." },
         ],
       }],
     });
 
-    const respuestaTexto = respuesta.content[0].text.trim();
-    await reply(chatId,
-      `💬 <b>Propuesta de respuesta</b>\n\n<i>${respuestaTexto}</i>\n\n` +
-      `<i>Solo para ti · cópiala y pégala donde quieras</i>`
-    );
+    const raw = respuesta.content[0].text.trim().replace(/^```json?\s*|\s*```$/g, "");
+    const opciones = JSON.parse(raw);
+    if (!opciones.a || !opciones.b) throw new Error("Claude no devolvió las 2 opciones");
+
+    const fid = Date.now().toString(36);
+    pendingRespuestasFoto.set(fid, { a: opciones.a.slice(0, 240), b: opciones.b.slice(0, 240) });
+    setTimeout(() => pendingRespuestasFoto.delete(fid), 30 * 60 * 1000);
+
+    await fetch(`${API()}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        parse_mode: "HTML",
+        text:
+          `💬 <b>Dos opciones de respuesta</b>\n\n` +
+          `<b>A — Directa:</b>\n<i>${opciones.a}</i>\n\n` +
+          `<b>B — Conversacional:</b>\n<i>${opciones.b}</i>`,
+        reply_markup: {
+          inline_keyboard: [[
+            { text: "✅ Opción A", callback_data: `resp_foto_a:${fid}` },
+            { text: "✅ Opción B", callback_data: `resp_foto_b:${fid}` },
+            { text: "❌ Descartar", callback_data: "nopub" },
+          ]],
+        },
+      }),
+    });
   } catch (e) {
     await reply(chatId, `❌ Error: ${e.message}`);
   }
@@ -1920,6 +1992,22 @@ Devuelve SOLO el tweet. Sin comillas, sin etiquetas, sin explicaciones.${ctxDeri
     setTimeout(() => waitingEditReply.delete(chatId), 10 * 60 * 1000);
     return;
   }
+
+  // ── Respuesta A/B elegida (foto + "responde") ──
+  if (data.startsWith("resp_foto_a:") || data.startsWith("resp_foto_b:")) {
+    const fid = data.slice(12);
+    const opciones = pendingRespuestasFoto.get(fid);
+    if (!opciones) return reply(chatId, "❌ Las opciones ya expiraron (>30 min). Vuelve a mandar la foto.");
+    const elegida = data.startsWith("resp_foto_a:") ? opciones.a : opciones.b;
+    pendingRespuestasFoto.delete(fid);
+    await quitarBotones();
+    // Enchufar al flujo de borradores: sin mentionId → al aprobar entrega el texto para copiar
+    const rid = Date.now().toString(36);
+    const r = { mentionId: null, texto: "(comentario en captura)", autorUsername: "", tweetOriginalTexto: "", borrador: elegida };
+    pendingReplies.set(rid, r);
+    await enviarBorradorAlOwner(chatId, rid, r);
+    return;
+  }
 }
 
 // ── X Auto-reply: enviar borrador al owner con botones ────────
@@ -1995,15 +2083,18 @@ async function cmdReply(chatId, argStr) {
     const rid = Date.now().toString(36);
     const r = { mentionId, texto: comentario, autorUsername: autor, tweetOriginalTexto: "", borrador };
     pendingReplies.set(rid, r);
-    await enviarBorradorAlOwner(chatId, rid, r);
+    const destino = X_CHAT();
+    await enviarBorradorAlOwner(destino, rid, r);
+    if (String(destino) !== String(chatId)) await reply(chatId, "📨 Borrador enviado al grupo de X.");
   } catch (e) {
     await reply(chatId, `⚠️ Error generando borrador: <code>${e.message.slice(0, 150)}</code>`);
   }
 }
 
-// ── Notificar menciones nuevas al owner (llamado desde index.js cada 30 min) ──
+// ── Notificar menciones nuevas (llamado desde index.js cada 30 min) ──
+// Van al grupo de X si TELEGRAM_X_CHAT_ID está configurado; si no, al owner.
 export async function notificarMencionesNuevas() {
-  const ownerId = process.env.TELEGRAM_OWNER_ID;
+  const ownerId = X_CHAT();
   if (!ownerId || !process.env.X_API_KEY) return;
   let menciones;
   try {
@@ -2181,7 +2272,8 @@ async function cmdAyuda(chatId, cmd) {
         "Comandos relacionados:\n" +
         "<code>/programadas</code> — lista de publicaciones pendientes\n" +
         "<code>/cancelar 1</code> — cancela la publicación con ID 1\n\n" +
-        "⚠️ Las programadas viven en memoria — si el servidor se reinicia se pierden.",
+        "💾 Las programadas se guardan en disco y se restauran tras un reinicio. Si su hora pasó mientras el servidor estaba caído, recibes un aviso en vez de ejecutarse con contenido obsoleto.\n\n" +
+        "<i>Para que sobrevivan a los deploys de Railway, monta un Volume y define DATA_DIR.</i>",
     },
     semanal: {
       titulo: "📊 /semanal — Resumen semanal bajo demanda",
@@ -2626,21 +2718,8 @@ async function cmdProgramar(chatId, argStr) {
   const msHasta = objetivo.getTime() - ahora.getTime();
 
   const id = progContador++;
-  const descripcion = `/${tipo} a las ${horaStr} → "${contenido.slice(0, 50)}"`;
-
-  const timer = setTimeout(async () => {
-    programadas.delete(id);
-    console.log(`⏰ Ejecutando programada #${id}: ${descripcion}`);
-    try {
-      if (tipo === "flash") await cmdFlash(chatId, contenido);
-      else if (tipo === "hilo") await cmdHilo(chatId, contenido);
-      else if (tipo === "opinion") await cmdOpinion(chatId, contenido);
-    } catch (e) {
-      await reply(chatId, `❌ Error en publicación programada #${id}: ${e.message}`).catch(() => {});
-    }
-  }, msHasta);
-
-  programadas.set(id, { descripcion, timer, horaStr, tipo, contenido, chatId });
+  agendarProgramada(id, { tipo, contenido, horaStr, chatId, tsEjecucion: Date.now() + msHasta });
+  persistirProgramadas();
 
   const esMañana = objetivo.getDate() !== ahora.getDate();
   await reply(chatId,
@@ -2671,6 +2750,7 @@ async function cmdCancelar(chatId, argStr) {
   const p = programadas.get(id);
   clearTimeout(p.timer);
   programadas.delete(id);
+  persistirProgramadas();
   await reply(chatId, `🗑 Publicación #${id} cancelada: ${p.descripcion}`);
 }
 
@@ -2964,7 +3044,10 @@ async function procesarMensaje(msg) {
   }
 
   if (!texto.startsWith("/")) {
-    await reply(chatId, "👋 Hola. Escribe <code>/ayuda</code> para ver todos los comandos.\n\nTambién puedes <b>enviarme una foto</b> de cualquier noticia y la analizo al estilo CriptoScope.");
+    // En grupos (ej. el grupo de X) no saludar a cada mensaje — solo en chat privado
+    if (msg.chat.type === "private") {
+      await reply(chatId, "👋 Hola. Escribe <code>/ayuda</code> para ver todos los comandos.\n\nTambién puedes <b>enviarme una foto</b> de cualquier noticia y la analizo al estilo CriptoScope.");
+    }
     return;
   }
 
@@ -3209,6 +3292,9 @@ export async function ejecutarRecapDiario() {
 
 export async function iniciarBot() {
   console.log("🤖 Bot de comandos iniciado (long-polling)");
+
+  // Reconstruir publicaciones programadas que sobrevivieron al reinicio
+  restaurarProgramadas();
 
   // Registrar comandos en Telegram para el autocompletado
   await fetch(`${API()}/setMyCommands`, {

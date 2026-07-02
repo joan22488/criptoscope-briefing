@@ -13,24 +13,12 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { TwitterApi } from "twitter-api-v2";
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
+import { loadJSON, saveJSON } from "./storage.js";
 
 const client = new Anthropic();
-const STATE_FILE = "./data/x_state.json";
 
-function loadState() {
-  try {
-    if (!existsSync(STATE_FILE)) return {};
-    return JSON.parse(readFileSync(STATE_FILE, "utf8"));
-  } catch { return {}; }
-}
-
-function saveState(state) {
-  try {
-    if (!existsSync("./data")) mkdirSync("./data", { recursive: true });
-    writeFileSync(STATE_FILE, JSON.stringify(state));
-  } catch {}
-}
+const loadState = () => loadJSON("x_state.json", {});
+const saveState = (state) => saveJSON("x_state.json", state);
 
 function getClient() {
   const { X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_SECRET } = process.env;

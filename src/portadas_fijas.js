@@ -1,11 +1,11 @@
 // Portadas fijas: file_id de Telegram guardados en disco.
 // Los file_id de Telegram no caducan (están en sus servidores).
-// Para persistencia entre redeploys en Railway: copia el file_id a la variable de entorno
-// BRIEFING_PORTADA_FILE_ID o SEMANAL_PORTADA_FILE_ID en el dashboard de Railway.
+// Para persistencia entre redeploys en Railway: usa un Volume con DATA_DIR,
+// o copia el file_id a la variable de entorno BRIEFING_PORTADA_FILE_ID
+// o SEMANAL_PORTADA_FILE_ID en el dashboard de Railway.
 
-import { readFileSync, writeFileSync, mkdirSync } from "fs";
+import { loadJSON, saveJSON } from "./storage.js";
 
-const PATH = "./data/portadas_fijas.json";
 let cache = null;
 
 function cargar() {
@@ -15,12 +15,8 @@ function cargar() {
     briefing: process.env.BRIEFING_PORTADA_FILE_ID || null,
     semanal:  process.env.SEMANAL_PORTADA_FILE_ID  || null,
   };
-  try {
-    const disco = JSON.parse(readFileSync(PATH, "utf8"));
-    cache = { ...desde_env, ...disco }; // disco sobreescribe env (más reciente)
-  } catch {
-    cache = desde_env;
-  }
+  const disco = loadJSON("portadas_fijas.json", {});
+  cache = { ...desde_env, ...disco }; // disco sobreescribe env (más reciente)
   return cache;
 }
 
@@ -31,14 +27,12 @@ export function getPortadaFija(tipo) {
 export function setPortadaFija(tipo, fileId) {
   const data = { ...cargar(), [tipo]: fileId };
   cache = data;
-  mkdirSync("./data", { recursive: true });
-  writeFileSync(PATH, JSON.stringify(data, null, 2), "utf8");
+  saveJSON("portadas_fijas.json", data);
 }
 
 export function clearPortadaFija(tipo) {
   const data = { ...cargar() };
   delete data[tipo];
   cache = data;
-  mkdirSync("./data", { recursive: true });
-  writeFileSync(PATH, JSON.stringify(data, null, 2), "utf8");
+  saveJSON("portadas_fijas.json", data);
 }
