@@ -14,7 +14,7 @@ import { enviarTelegram, enviarTelegramConFoto, enviarTelegramConFotoId } from "
 import { getPortadaFija } from "./portadas_fijas.js";
 import { verificarResultados } from "./tracker.js";
 import { getPrices } from "./coindesk.js";
-import { iniciarBot, isPausado, verificarAlertasPrecios, monitorNoticias, ejecutarRecapDiario, enviarSenalParaRevisar, notificarMencionesNuevas } from "./bot.js";
+import { iniciarBot, isPausado, verificarAlertasPrecios, monitorNoticias, ejecutarRecapDiario, enviarSenalParaRevisar, notificarMencionesNuevas, publicarEncuestaAutomatica } from "./bot.js";
 import { logActividad } from "./activity.js";
 import { guardarPublicacionEnNotion } from "./notion.js";
 import { iniciarWebhookServer } from "./webhook.js";
@@ -57,8 +57,16 @@ cron.schedule(
   async () => {
     if (isPausado()) return console.log("⏸ Briefing omitido (pausado)");
     try {
-      await ejecutarBriefing();
+      const paquete = await ejecutarBriefing();
       logActividad({ tipo: "Briefing", titulo: "Briefing matinal automático", plataforma: "Canal+X", estado: "OK" });
+
+      // Encuesta del día: poll nativo en el canal un rato después del briefing,
+      // sembrado con la pregunta_comunidad que genera el propio briefing
+      if (paquete?.pregunta_comunidad && process.env.AUTO_POLL !== "off") {
+        const delayMin = parseInt(process.env.AUTO_POLL_DELAY_MIN || "60");
+        setTimeout(() => publicarEncuestaAutomatica(paquete.pregunta_comunidad).catch(() => {}), delayMin * 60 * 1000);
+        console.log(`🗳 Encuesta del día programada en ${delayMin} min`);
+      }
     } catch (e) {
       console.error("❌ Error en el briefing:", e.message);
       logActividad({ tipo: "Briefing", titulo: "Briefing matinal automático", plataforma: "Canal+X", estado: `Error: ${e.message.slice(0, 60)}` });

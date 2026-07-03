@@ -111,7 +111,7 @@ Escríbele directamente al bot (chat privado):
 | `/hilo <URL>` | `/hilo https://coindesk.com/...` | Hilo basado en el contenido real del artículo |
 | `/analiza <coin>` | `/analiza AVAX` | Gráfico 4H + análisis técnico top-down con entrada, TP1, TP2, SL y R:R |
 | `/opinion <noticia>` | `/opinion SEC aprueba ETF` | Lectura de mercado estilo CriptoScope. Portada bajo demanda |
-| `/encuesta [tema]` | `/encuesta` · `/encuesta BTC esta semana` | Poll nativo para el canal con preview |
+| `/encuesta [tema]` | `/encuesta` · `/encuesta BTC esta semana` | Poll nativo para el canal con preview. Además, cada mañana se publica sola la **encuesta del día** ~1h tras el briefing (desactivable con `AUTO_POLL=off`) |
 | `/semanal` | `/semanal` | Resumen semanal bajo demanda — incluye botón 🧵 para publicarlo como thread real de 6 tweets en X |
 | `/reply <url + comentario>` | `/reply https://x.com/user/status/123 ¿por qué...?` | Borrador de respuesta en voz CriptoScope con botones Publicar / Editar / Ignorar. Con URL publica por API; sin URL te da el texto para copiar |
 | `/publicar <texto>` | `/publicar BTC supera los 100k. Nivel clave: 98.000.` | Publica tu propio texto con portada gpt-image-1 auto-generada + todos los botones de destino |
@@ -259,6 +259,8 @@ SIGNALS_SCHEDULE=0 7,11,15,19 * * *
 WEEKLY_SCHEDULE=0 9 * * 0
 ALERTS_SCHEDULE=*/30 * * * *
 EDITORIAL_DELAY_MIN=10                # Minutos entre borrador y publicación en X (editorial autónomo)
+AUTO_POLL_DELAY_MIN=60                # Minutos tras el briefing para publicar la encuesta del día en el canal
+AUTO_POLL=off                         # Descomenta para desactivar la encuesta del día automática
 ```
 
 ---

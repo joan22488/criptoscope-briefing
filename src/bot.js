@@ -1125,6 +1125,7 @@ async function cmdEstado(chatId) {
     statsStr + `\n\n` +
     `<b>Automático:</b>\n` +
     `☕ Briefing: 07:00 diario → Telegram + X\n` +
+    (process.env.AUTO_POLL !== "off" ? `🗳 Encuesta del día: ~${7 + Math.round(parseInt(process.env.AUTO_POLL_DELAY_MIN || "60") / 60)}:00 (tras el briefing) → canal\n` : "") +
     `📅 Macro semana: lunes 08:00 → canal\n` +
     `📊 Señales (7 monedas) → privado para revisión:\n` +
     `   🌅 07:00  📈 11:00  ⚡ 15:00  🌙 19:00\n` +
@@ -2352,7 +2353,8 @@ async function cmdAyuda(chatId, cmd) {
         "✅ <b>Enviar al canal</b> — publica la encuesta nativa de Telegram\n" +
         "🔄 <b>Regenerar</b> — genera otra diferente sobre el mismo tema\n" +
         "❌ <b>Cancelar</b> — descártala sin publicar\n\n" +
-        "Las encuestas son anónimas por defecto. La comunidad vota directamente en el canal.",
+        "Las encuestas son anónimas por defecto. La comunidad vota directamente en el canal.\n\n" +
+        "🤖 <b>Encuesta del día automática:</b> cada mañana, ~1 hora después del briefing, se publica sola una encuesta en el canal basada en la pregunta del día del briefing. Configurable con <code>AUTO_POLL_DELAY_MIN</code> (minutos, def. 60) y desactivable con <code>AUTO_POLL=off</code>.",
     },
     foto: {
       titulo: "📸 Foto de noticia — Análisis con verificación",
@@ -2489,7 +2491,8 @@ async function cmdAyuda(chatId, cmd) {
     `Señales 07/11/15/19h → 📣 Solo canal · 🐦 Solo X · 📢 Canal+X · ❌ Descartar\n` +
     `Alertas de evento → canal Telegram (aviso privado si quieres tuitearlo)\n` +
     `Monitor RSS → ⚡ Flash · 📝 Hilo · 🐦 Tweet X · 🙈 Ignorar\n` +
-    `Editorial X → Lun/Mar/Mié/Sáb/Dom (auto tras revisión)\n\n` +
+    `Editorial X → Lun/Mar/Mié/Sáb/Dom (auto tras revisión)\n` +
+    `Encuesta del día → poll en el canal ~1h tras el briefing\n\n` +
     `──────────────\n` +
     `<b>🔒 Solo para ti (privado)</b>\n` +
     `<code>/precio</code> &lt;coin&gt; — Precio actual con máx/mín\n` +
@@ -2933,9 +2936,8 @@ async function cmdSemanal(chatId) {
 }
 
 // /encuesta — genera encuesta para el canal basada en el mercado actual
-async function cmdEncuesta(chatId, temaManual) {
-  await reply(chatId, "🗳 Generando encuesta...");
-
+// Genera el JSON de una encuesta con contexto de mercado live (usado por /encuesta y la automática)
+async function generarEncuestaJSON(temaManual) {
   const [precios, fearGreed] = await Promise.all([
     getPrices().catch(() => ({})),
     getFearGreed().catch(() => null),
@@ -2964,10 +2966,45 @@ Reglas:
     }],
   });
 
+  const txt = response.content[0].text;
+  return JSON.parse(txt.slice(txt.indexOf("{"), txt.lastIndexOf("}") + 1));
+}
+
+// Encuesta del día automática: se programa tras el briefing matinal (index.js).
+// Publica directamente en el canal sin preview y avisa al owner.
+export async function publicarEncuestaAutomatica(temaSemilla) {
+  if (process.env.AUTO_POLL === "off") return;
+  if (isPausado()) return console.log("⏸ Encuesta del día omitida (pausado)");
+  try {
+    const enc = await generarEncuestaJSON(temaSemilla);
+    if (!enc?.pregunta || !Array.isArray(enc.opciones) || enc.opciones.length < 2) throw new Error("encuesta inválida");
+    const pollRes = await fetch(`${API()}/sendPoll`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: process.env.TELEGRAM_CHAT_ID,
+        question: enc.pregunta.slice(0, 300),
+        options: enc.opciones.slice(0, 4).map((text) => ({ text: String(text).slice(0, 100) })),
+        is_anonymous: true,
+      }),
+    });
+    const pollJson = await pollRes.json();
+    if (!pollJson.ok) throw new Error(pollJson.description);
+    console.log("🗳 Encuesta del día publicada en el canal");
+    logActividad({ tipo: "Encuesta", titulo: enc.pregunta, plataforma: "Canal", estado: "OK" });
+    if (OWNER()) reply(OWNER(), `🗳 <b>Encuesta del día publicada en el canal:</b>\n\n${enc.pregunta}`).catch(() => {});
+  } catch (e) {
+    console.warn("⚠️ Encuesta automática falló:", e.message);
+    logActividad({ tipo: "Encuesta", titulo: "Encuesta del día", plataforma: "Canal", estado: `Error: ${e.message.slice(0, 60)}` });
+  }
+}
+
+async function cmdEncuesta(chatId, temaManual) {
+  await reply(chatId, "🗳 Generando encuesta...");
+
   let encuesta;
   try {
-    const txt = response.content[0].text;
-    encuesta = JSON.parse(txt.slice(txt.indexOf("{"), txt.lastIndexOf("}") + 1));
+    encuesta = await generarEncuestaJSON(temaManual);
   } catch {
     return reply(chatId, "❌ No pude generar la encuesta. Inténtalo de nuevo.");
   }
