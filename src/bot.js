@@ -120,6 +120,8 @@ const pendingWeeklyThreads = new Map(); // pid → string[]
 const pendingReplies = new Map(); // rid → { mentionId, texto, autorUsername, tweetOriginalTexto, borrador }
 // ── Replies editadas: esperamos el siguiente mensaje del owner con el texto corregido ──
 const waitingEditReply = new Map(); // chatId → rid
+// ── /reply con solo URL: esperamos el texto del tweet en el siguiente mensaje ──
+const waitingReplyTexto = new Map(); // chatId → { mentionId, autor }
 // ── Elección de gancho pendiente (flash con 2 opciones) ──
 const pendingGanchos = new Map(); // pickId → { ganchoA, ganchoB, cuerpo, portadaFid }
 // ── Respuestas A/B a comentario en captura (foto + "responde") ──
@@ -2095,9 +2097,27 @@ async function enviarBorradorAlOwner(chatId, rid, r) {
   setTimeout(() => pendingReplies.delete(rid), 30 * 60 * 1000);
 }
 
+// Genera el borrador con Claude y lo envía al owner/grupo de X
+async function generarYEnviarBorrador(chatId, { mentionId, autor, comentario }) {
+  await reply(chatId, "⏳ Generando borrador de respuesta...");
+  try {
+    const borrador = await generarBorradorRespuesta({ comentario, autor });
+    const rid = Date.now().toString(36);
+    const r = { mentionId, texto: comentario, autorUsername: autor, tweetOriginalTexto: "", borrador };
+    pendingReplies.set(rid, r);
+    const destino = X_CHAT();
+    await enviarBorradorAlOwner(destino, rid, r);
+    if (String(destino) !== String(chatId)) await reply(chatId, "📨 Borrador enviado al grupo de X.");
+  } catch (e) {
+    await reply(chatId, `⚠️ Error generando borrador: <code>${e.message.slice(0, 150)}</code>`);
+  }
+}
+
 // /reply <comentario> — Modo B manual: genera borrador sin necesitar la API de menciones
 // Acepta opcionalmente la URL del comentario (x.com/usuario/status/123...) para poder
 // publicar la respuesta por API. Sin URL, el borrador se entrega para copiar y pegar.
+// Si solo se pasa la URL (sin texto), el bot pide el texto como siguiente mensaje
+// en vez de fallar — el tier gratuito de X no permite leer el contenido del tweet.
 async function cmdReply(chatId, argStr) {
   if (!argStr) {
     return reply(chatId,
@@ -2106,6 +2126,7 @@ async function cmdReply(chatId, argStr) {
       "Ejemplos:\n" +
       "<code>/reply https://x.com/crypto_joe/status/1234567 ¿Por qué dices que el OI subiendo es alcista?</code>\n" +
       "<code>/reply @crypto_joe: ¿Por qué dices que el OI subiendo es alcista?</code>\n\n" +
+      "También puedes mandar solo la URL: te pediré el texto del tweet en el siguiente mensaje.\n\n" +
       "Con URL: el bot publica la respuesta en X directamente al aprobar.\n" +
       "Sin URL: te devuelve el texto listo para copiar y pegar tú mismo."
     );
@@ -2131,20 +2152,18 @@ async function cmdReply(chatId, argStr) {
     comentario = matchAutor[2].trim();
   }
 
-  if (!comentario) return reply(chatId, "❌ Falta el texto del comentario. Pégalo después de la URL.");
-
-  await reply(chatId, "⏳ Generando borrador de respuesta...");
-  try {
-    const borrador = await generarBorradorRespuesta({ comentario, autor });
-    const rid = Date.now().toString(36);
-    const r = { mentionId, texto: comentario, autorUsername: autor, tweetOriginalTexto: "", borrador };
-    pendingReplies.set(rid, r);
-    const destino = X_CHAT();
-    await enviarBorradorAlOwner(destino, rid, r);
-    if (String(destino) !== String(chatId)) await reply(chatId, "📨 Borrador enviado al grupo de X.");
-  } catch (e) {
-    await reply(chatId, `⚠️ Error generando borrador: <code>${e.message.slice(0, 150)}</code>`);
+  // Solo mandó la URL, sin texto → pedir el texto como siguiente mensaje en vez de fallar
+  if (!comentario) {
+    if (!matchUrl) return reply(chatId, "❌ Falta el texto del comentario. Pégalo después de la URL.");
+    waitingReplyTexto.set(chatId, { mentionId, autor });
+    setTimeout(() => waitingReplyTexto.delete(chatId), 10 * 60 * 1000);
+    return reply(chatId,
+      `📋 Copia el texto de ese tweet${autor ? ` de @${autor}` : ""} y mándamelo ahora en un mensaje.\n\n` +
+      `<i>Tienes 10 minutos. Envía /cancelar para descartar.</i>`
+    );
   }
+
+  await generarYEnviarBorrador(chatId, { mentionId, autor, comentario });
 }
 
 // ── Notificar menciones nuevas (llamado desde index.js cada 30 min) ──
@@ -2430,10 +2449,11 @@ async function cmdAyuda(chatId, cmd) {
       uso: "/reply [URL del comentario] <texto del comentario>",
       ejemplo: "/reply https://x.com/crypto_joe/status/123456 ¿Por qué dices que el OI subiendo es alcista?",
       detalle:
-        "Genera un borrador de respuesta en la voz de CriptoScope para un comentario que hayas recibido en X.\n\n" +
+        "Genera un borrador de respuesta en la voz de CriptoScope para cualquier tweet o comentario de X (tuyo o de otra cuenta).\n\n" +
         "<b>Con URL del comentario:</b> al aprobar, el bot publica la respuesta en X directamente como reply.\n" +
         "<b>Sin URL:</b> al aprobar, te devuelve el texto listo para copiar y pegar tú mismo en X.\n\n" +
-        "Para conseguir la URL: en X, toca el comentario → Compartir → Copiar enlace.\n\n" +
+        "Para conseguir la URL: en X, toca el tweet → Compartir → Copiar enlace.\n\n" +
+        "💡 El tier gratuito de X no permite que el bot lea el contenido del tweet por su cuenta — necesita que le pegues el texto. Si mandas solo la URL sin texto, el bot te lo pide en el siguiente mensaje en vez de fallar.\n\n" +
         "<b>Botones:</b>\n" +
         "✅ <b>Publicar respuesta</b> — publica en X (o te da el texto si no hay URL)\n" +
         "✏️ <b>Editar</b> — corriges el borrador y lo mandas como mensaje\n" +
@@ -3124,6 +3144,14 @@ async function procesarMensaje(msg) {
     pendingPublish.set(pid, texto);
     await reply(chatId, "✅ Texto actualizado. Nueva preview:");
     await mostrarBotonesPublicacion(chatId, pid, texto);
+    return;
+  }
+
+  // ¿Estamos esperando el texto de un tweet para /reply (mandó solo la URL)?
+  if (waitingReplyTexto.has(chatId) && texto && !texto.startsWith("/")) {
+    const { mentionId, autor } = waitingReplyTexto.get(chatId);
+    waitingReplyTexto.delete(chatId);
+    await generarYEnviarBorrador(chatId, { mentionId, autor, comentario: texto });
     return;
   }
 

@@ -113,7 +113,7 @@ Escríbele directamente al bot (chat privado):
 | `/opinion <noticia>` | `/opinion SEC aprueba ETF` | Lectura de mercado estilo CriptoScope. Portada bajo demanda |
 | `/encuesta [tema]` | `/encuesta` · `/encuesta BTC esta semana` | Poll nativo para el canal con preview. Además, cada mañana se publica sola la **encuesta del día** ~1h tras el briefing (desactivable con `AUTO_POLL=off`) |
 | `/semanal` | `/semanal` | Resumen semanal bajo demanda — incluye botón 🧵 para publicarlo como thread real de 6 tweets en X |
-| `/reply <url + comentario>` | `/reply https://x.com/user/status/123 ¿por qué...?` | Borrador de respuesta en voz CriptoScope con botones Publicar / Editar / Ignorar. Con URL publica por API; sin URL te da el texto para copiar |
+| `/reply <url + comentario>` | `/reply https://x.com/user/status/123 ¿por qué...?` | Borrador de respuesta en voz CriptoScope con botones Publicar / Editar / Ignorar. Con URL publica por API; sin URL te da el texto para copiar. Si mandas solo la URL, te pide el texto del tweet en el siguiente mensaje (el tier gratuito de X no permite leerlo automáticamente) |
 | `/publicar <texto>` | `/publicar BTC supera los 100k. Nivel clave: 98.000.` | Publica tu propio texto con portada gpt-image-1 auto-generada + todos los botones de destino |
 | `/banner` | `/banner` | Genera imagen de portada 1500×500 px con datos del día lista para subir a X |
 
