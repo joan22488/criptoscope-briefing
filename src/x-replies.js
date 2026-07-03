@@ -27,6 +27,16 @@ function getClient() {
   return new TwitterApi({ appKey: X_API_KEY, appSecret: X_API_SECRET, accessToken: X_ACCESS_TOKEN, accessSecret: X_ACCESS_SECRET });
 }
 
+// Corta en el límite de frase más cercano en vez de partir a mitad de palabra
+function cortarEnFrase(texto, maxLen) {
+  if (texto.length <= maxLen) return texto;
+  const recorte = texto.slice(0, maxLen);
+  const puntos = [recorte.lastIndexOf(". "), recorte.lastIndexOf("? "), recorte.lastIndexOf("! "), recorte.lastIndexOf(".\n"), recorte.lastIndexOf("?\n"), recorte.lastIndexOf("!\n")];
+  const fin = Math.max(...puntos);
+  if (fin > maxLen * 0.55) return recorte.slice(0, fin + 1).trimEnd();
+  return recorte.replace(/\s+\S*$/, "…");
+}
+
 // Genera un borrador de respuesta con Claude en la voz de CriptoScope
 export async function generarBorradorRespuesta({ comentario, tweetOriginal = "", autor = "" }) {
   const contexto = tweetOriginal ? `\n\nTweet original al que responde:\n"${tweetOriginal}"` : "";
@@ -37,7 +47,7 @@ export async function generarBorradorRespuesta({ comentario, tweetOriginal = "",
 Comentario recibido de ${autorStr}:
 "${comentario}"${contexto}
 
-Escribe UNA respuesta directa, bien argumentada y en la voz de CriptoScope. Máximo 240 caracteres. Tono: educado pero firme, analítico, sin condescender. Si el comentario tiene razón en algo, reconócelo. Si está equivocado, corrígelo con datos. Si es una pregunta, respóndela directamente.
+Escribe UNA respuesta directa, bien argumentada y en la voz de CriptoScope. Entre 180 y 210 caracteres (deja margen, no lo apures: si te pasas, se corta). Tono: educado pero firme, analítico, sin condescender. Si el comentario tiene razón en algo, reconócelo. Si está equivocado, corrígelo con datos. Si es una pregunta, respóndela directamente. Termina la idea con un punto, no la dejes a medias.
 
 PROHIBIDO: emojis tribales (🚀💎🙌), lenguaje de hype, respuestas vagas ("Buen punto", "Gracias"), guiones largos (– o —), links, hashtags, mencionar Telegram.
 
@@ -48,7 +58,7 @@ Devuelve SOLO la respuesta. Sin comillas ni etiquetas.`;
     max_tokens: 200,
     messages: [{ role: "user", content: prompt }],
   });
-  return res.content[0].text.trim().slice(0, 240);
+  return cortarEnFrase(res.content[0].text.trim(), 240);
 }
 
 // Publica una respuesta a un tweet concreto
