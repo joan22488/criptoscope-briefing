@@ -124,6 +124,8 @@ const waitingEditReply = new Map(); // chatId → rid
 const pendingGanchos = new Map(); // pickId → { ganchoA, ganchoB, cuerpo, portadaFid }
 // ── Respuestas A/B a comentario en captura (foto + "responde") ──
 const pendingRespuestasFoto = new Map(); // fid → { a, b }
+// ── Fotos con veredicto FALSA — el owner puede forzar el análisis ──
+const pendingFotosFalsas = new Map(); // ffid → { photo, caption }
 
 // ── Señales pendientes de revisión (owner aprueba antes de publicar al canal) ──
 const senalesPendientes = new Map(); // pid → mensaje
@@ -1194,7 +1196,8 @@ function esModoRespuesta(caption) {
 }
 
 // Foto con noticia → verificar credibilidad y generar opinión
-async function cmdFoto(chatId, photo, caption) {
+// opts.forzar = true → salta la verificación (botón "Analizar igualmente" tras un FALSA)
+async function cmdFoto(chatId, photo, caption, opts = {}) {
 
   // MODO PUBLICAR MANUAL — foto + caption "/publicar texto"
   if ((caption || "").trimStart().toLowerCase().startsWith("/publicar")) {
@@ -1219,42 +1222,71 @@ async function cmdFoto(chatId, photo, caption) {
     const ctxPrecio = `BTC $${precios["BTC-USD"]?.precio?.toFixed(0) || "?"} · ETH $${precios["ETH-USD"]?.precio?.toFixed(0) || "?"}`;
 
     // PASO 1: Claude verifica credibilidad
-    const verificacion = await client.messages.create({
-      model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
-      max_tokens: 600,
-      system: `Eres un fact-checker experto en cripto y mercados. Analiza la imagen y evalúa la credibilidad de la noticia. Devuelve SOLO este JSON sin markdown:
-{"titular":"titular exacto de la imagen","fuente":"fuente visible o 'desconocida'","veredicto":"VERIFICADA|PROBABLE|DUDOSA|FALSA","confianza":0-100,"razon":"1 frase explicando el veredicto","señales_alarma":["lista","de","señales"] o []}`,
-      messages: [{
-        role: "user",
-        content: [
-          { type: "image", source: { type: "base64", media_type: "image/jpeg", data: base64 } },
-          { type: "text", text: "Evalúa la credibilidad de esta noticia." },
-        ],
-      }],
-    });
-
     let check;
-    try {
-      const txt = verificacion.content[0].text;
-      check = JSON.parse(txt.slice(txt.indexOf("{"), txt.lastIndexOf("}") + 1));
-    } catch {
-      check = { titular: "Sin titular", fuente: "desconocida", veredicto: "DUDOSA", confianza: 50, razon: "No se pudo verificar", señales_alarma: [] };
+    if (opts.forzar) {
+      // El owner pidió analizar sin verificación (botón tras un veredicto FALSA)
+      check = { titular: "", fuente: "desconocida", veredicto: "SIN VERIFICAR", confianza: 0, razon: "Análisis forzado por el owner sin verificación", señales_alarma: [] };
+    } else {
+      const hoyStr = new Date().toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: process.env.TIMEZONE || "Europe/Madrid" });
+      const verificacion = await client.messages.create({
+        model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
+        max_tokens: 600,
+        system: `Eres un fact-checker experto en cripto y mercados. Analiza la imagen y evalúa la credibilidad de la noticia.
+
+FECHA ACTUAL: hoy es ${hoyStr}. Tu memoria interna del calendario y de precios está DESACTUALIZADA respecto a esta fecha. Reglas estrictas:
+- Una fecha de publicación igual o anterior a hoy es NORMAL. NUNCA la uses como señal de falsedad ni la llames "fecha futura".
+- NUNCA marques precios como no verificables o falsos solo porque no coincidan con los que recuerdas: usa el contexto de mercado live que se te pasa como referencia.
+- Céntrate en señales reales de manipulación: tipografía inconsistente, recortes, fuentes inventadas, cifras internamente contradictorias, capturas editadas.
+
+Devuelve SOLO este JSON sin markdown:
+{"titular":"titular exacto de la imagen","fuente":"fuente visible o 'desconocida'","veredicto":"VERIFICADA|PROBABLE|DUDOSA|FALSA","confianza":0-100,"razon":"1 frase explicando el veredicto","señales_alarma":["lista","de","señales"] o []}`,
+        messages: [{
+          role: "user",
+          content: [
+            { type: "image", source: { type: "base64", media_type: "image/jpeg", data: base64 } },
+            { type: "text", text: `Evalúa la credibilidad de esta noticia. Contexto de mercado live (para comparar precios): ${ctxPrecio}.` },
+          ],
+        }],
+      });
+
+      try {
+        const txt = verificacion.content[0].text;
+        check = JSON.parse(txt.slice(txt.indexOf("{"), txt.lastIndexOf("}") + 1));
+      } catch {
+        check = { titular: "Sin titular", fuente: "desconocida", veredicto: "DUDOSA", confianza: 50, razon: "No se pudo verificar", señales_alarma: [] };
+      }
     }
 
     // Emoji y color según veredicto
-    const veredictoEmoji = { VERIFICADA: "✅", PROBABLE: "🟡", DUDOSA: "⚠️", FALSA: "🚫" }[check.veredicto] || "⚠️";
+    const veredictoEmoji = { VERIFICADA: "✅", PROBABLE: "🟡", DUDOSA: "⚠️", FALSA: "🚫", "SIN VERIFICAR": "🔎" }[check.veredicto] || "⚠️";
     const bloqueCheck =
       `${veredictoEmoji} <b>Verificación: ${check.veredicto}</b> (confianza ${check.confianza}%)\n` +
       `Fuente: ${check.fuente}\n` +
       `${check.razon}` +
       (check.señales_alarma?.length ? `\n⚠️ Señales: ${check.señales_alarma.join(" · ")}` : "");
 
-    // Si es FALSA, avisar y no ofrecer publicar
+    // Si es FALSA, avisar — pero dejar la puerta abierta si el owner discrepa
     if (check.veredicto === "FALSA") {
-      await reply(chatId,
-        `🚫 <b>Noticia probablemente FALSA</b>\n\n${bloqueCheck}\n\n` +
-        `<i>No se recomienda publicar esta información.</i>`
-      );
+      const ffid = Date.now().toString(36);
+      pendingFotosFalsas.set(ffid, { photo, caption });
+      setTimeout(() => pendingFotosFalsas.delete(ffid), 30 * 60 * 1000);
+      await fetch(`${API()}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: chatId,
+          parse_mode: "HTML",
+          text:
+            `🚫 <b>Noticia probablemente FALSA</b>\n\n${bloqueCheck}\n\n` +
+            `<i>No se recomienda publicar esta información. Si crees que el verificador se equivoca, puedes analizarla de todos modos.</i>`,
+          reply_markup: {
+            inline_keyboard: [[
+              { text: "🔎 Analizar igualmente", callback_data: `foto_force:${ffid}` },
+              { text: "🗑 Descartar", callback_data: "nopub" },
+            ]],
+          },
+        }),
+      });
       return;
     }
 
@@ -1300,6 +1332,9 @@ PROHIBIDO: guiones medios o largos (– o —), 🚀💎🙌, clickbait, consejo
     let advertencia = check.veredicto === "DUDOSA"
       ? "\n\n⚠️ <i>Credibilidad dudosa — revisa la fuente antes de publicar.</i>"
       : "";
+    if (check.veredicto === "SIN VERIFICAR") {
+      advertencia = "\n\n🔎 <i>Análisis sin verificación (el verificador la marcó como FALSA). Publicar queda bajo tu criterio.</i>";
+    }
     if (!fuenteConocida) {
       advertencia += "\n\n📌 <i>Fuente no detectada — se publicará sin atribución. Puedes añadirla respondiendo al mensaje si quieres.</i>";
     }
@@ -1999,6 +2034,17 @@ Devuelve SOLO el tweet. Sin comillas, sin etiquetas, sin explicaciones.${ctxDeri
       `✏️ Edita el borrador y mándamelo como mensaje:\n\n<code>${r.borrador}</code>\n\n<i>Tienes 10 minutos. Envía /cancelar para descartar.</i>`
     );
     setTimeout(() => waitingEditReply.delete(chatId), 10 * 60 * 1000);
+    return;
+  }
+
+  // ── Analizar foto pese al veredicto FALSA ──
+  if (data.startsWith("foto_force:")) {
+    const ffid = data.slice(11);
+    const guardado = pendingFotosFalsas.get(ffid);
+    if (!guardado) return reply(chatId, "❌ La foto ya expiró (>30 min). Vuelve a enviarla.");
+    pendingFotosFalsas.delete(ffid);
+    await quitarBotones();
+    await cmdFoto(chatId, guardado.photo, guardado.caption, { forzar: true });
     return;
   }
 

@@ -50,6 +50,9 @@ const TERMINOS_TEMA = [
   "selloff", "crash", "collapse",
   "halving", "upgrade", "fork",
   "presion", "presión", "bajista", "bullish", "bearish",
+  "empleo", "empleos", "nfp", "payroll", "nomina", "nómina", "jobs",
+  "dovish", "hawkish", "recorte", "rate cut", "tipos de interes", "tipos de interés",
+  "pce", "gdp", "pib", "desempleo", "unemployment",
 ];
 
 function fingerprintAlerta(texto) {
@@ -58,7 +61,7 @@ function fingerprintAlerta(texto) {
 }
 
 function esDuplicadoReciente(nuevoTexto) {
-  const SEIS_HORAS = 6 * 60 * 60 * 1000;
+  const VENTANA = 12 * 60 * 60 * 1000; // 12h: un dato macro no merece dos alertas el mismo día
   const ahora = Date.now();
   const nuevoFp = fingerprintAlerta(nuevoTexto);
   if (!nuevoFp) return false;
@@ -66,7 +69,7 @@ function esDuplicadoReciente(nuevoTexto) {
 
   for (const [key, ts] of alertadas.entries()) {
     if (!key.startsWith("fp:")) continue;
-    if (ahora - ts > SEIS_HORAS) continue;
+    if (ahora - ts > VENTANA) continue;
     const existingSet = new Set(key.slice(3).split(",").filter(Boolean));
     if (!existingSet.size) continue;
     const interseccion = [...nuevoSet].filter((t) => existingSet.has(t)).length;
@@ -111,7 +114,7 @@ export async function verificarAlertas() {
       messages: [{
         role: "user",
         content: `Evalúa estas noticias y devuelve:
-{"urgente": true|false, "noticia": "título de la más urgente si urgente=true", "por_que": "1 frase del impacto esperado", "alerta": "mensaje de alerta para Telegram en HTML, máx 300 caracteres, con <b>negritas</b>"}
+{"urgente": true|false, "noticia": "título de la más urgente si urgente=true", "por_que": "1 frase del impacto esperado", "alerta": "mensaje de alerta para Telegram en HTML, máx 300 caracteres, con <b>negritas</b>. PROHIBIDO usar guiones medios o largos (– o —): sustituye por punto o dos puntos."}
 ${ctxDerivados}
 NOTICIAS:
 ${nuevas.slice(0, 5).map((n) => `- ${n.titulo}: ${n.resumen?.slice(0, 150)}`).join("\n")}`,
@@ -123,7 +126,7 @@ ${nuevas.slice(0, 5).map((n) => `- ${n.titulo}: ${n.resumen?.slice(0, 150)}`).jo
     const resultado = JSON.parse(txt.slice(inicio, fin + 1));
 
     if (resultado.urgente) {
-      const textoAlerta = resultado.alerta || "";
+      const textoAlerta = (resultado.alerta || "").replace(/ [–—] /g, ": ").replace(/[–—]/g, ".");
       nuevas.forEach((n) => alertadas.set(n.titulo?.toLowerCase().slice(0, 60), Date.now()));
       // Guardar fingerprint tanto del texto generado como del contenido de artículos
       const fp = fingerprintAlerta(textoAlerta);
