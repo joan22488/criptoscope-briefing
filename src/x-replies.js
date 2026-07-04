@@ -14,7 +14,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { TwitterApi } from "twitter-api-v2";
 import { loadJSON, saveJSON } from "./storage.js";
-import { cortarEnFrase } from "./text.js";
+import { cortarEnFrase, aCashtags } from "./text.js";
 import { registrarEscrituraX } from "./twitter-post.js";
 
 const client = new Anthropic();
@@ -40,6 +40,8 @@ Comentario recibido de ${autorStr}:
 
 Escribe UNA respuesta directa, bien argumentada y en la voz de CriptoScope. Entre 180 y 210 caracteres (deja margen, no lo apures: si te pasas, se corta). Tono: educado pero firme, analítico, sin condescender. Si el comentario tiene razón en algo, reconócelo. Si está equivocado, corrígelo con datos. Si es una pregunta, respóndela directamente. Termina la idea con un punto, no la dejes a medias.
 
+Cuando menciones el ticker de una moneda, escríbelo siempre con el símbolo $ delante: $BTC, $ETH, $XRP, $SOL, $MSTR. Nunca sin el $.
+
 PROHIBIDO: emojis tribales (🚀💎🙌), lenguaje de hype, respuestas vagas ("Buen punto", "Gracias"), guiones largos (– o —), links, hashtags, mencionar Telegram.
 
 Devuelve SOLO la respuesta. Sin comillas ni etiquetas.`;
@@ -49,7 +51,7 @@ Devuelve SOLO la respuesta. Sin comillas ni etiquetas.`;
     max_tokens: 200,
     messages: [{ role: "user", content: prompt }],
   });
-  return cortarEnFrase(res.content[0].text.trim(), 240);
+  return aCashtags(cortarEnFrase(res.content[0].text.trim(), 240));
 }
 
 // Publica una respuesta a un tweet concreto

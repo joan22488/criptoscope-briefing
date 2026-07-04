@@ -143,6 +143,7 @@ const VOZ = `REGLAS DE VOZ (innegociable):
 - Sin HTML, sin links, sin menciones, sin CTAs de Telegram.
 - Sin hashtags. Sin firma.
 - Máx 3 emojis funcionales (📊🔴🟢⚠️🚨🎯). Nunca al final de frase.
+- Tickers de monedas siempre con $ delante: $BTC, $ETH, $XRP, $SOL, $MSTR. Nunca sin el $.
 - Responde SOLO el texto del tweet, sin comillas ni explicación.`;
 
 function promptLunesEtf(ctx) {

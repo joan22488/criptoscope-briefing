@@ -8,7 +8,7 @@
 
 import { TwitterApi } from "twitter-api-v2";
 import { loadJSON, saveJSON } from "./storage.js";
-import { cortarEnFrase } from "./text.js";
+import { cortarEnFrase, aCashtags } from "./text.js";
 
 // ── Contador de escrituras mensuales en X ────────────────────
 // Cada tweet publicado (único, de thread o reply) cuenta 1.
@@ -90,7 +90,7 @@ export async function publicarTweetUnico(texto, { mediaId } = {}) {
   const limpiar  = (t) => t.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
 
   const hashtags = generarHashtagsBriefing([texto]);
-  const cuerpo   = limpiar(texto);
+  const cuerpo   = aCashtags(limpiar(texto));
 
   // Reservar espacio para los hashtags al final
   const espacio    = 280 - hashtags.length - 2; // 2 = "\n\n"
@@ -115,8 +115,8 @@ export async function publicarThread(tweets, { mediaId } = {}) {
   const client = getClient();
   const rwClient = client.readWrite;
 
-  // Limpiar HTML del briefing para X (texto plano)
-  const limpiar = (t) => t.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
+  // Limpiar HTML del briefing para X (texto plano) + convertir tickers a cashtag
+  const limpiar = (t) => aCashtags(t.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim());
 
   // Primer tweet (con imagen si hay mediaId)
   const primerPayload = mediaId ? { media: { media_ids: [mediaId] } } : undefined;
