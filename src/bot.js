@@ -926,7 +926,12 @@ async function cmdCalendario(chatId) {
   try {
     const eventos = await getEventosMacro();
     const msg = formatearResumenSemana(eventos);
-    if (!msg) return reply(chatId, "📅 No hay eventos macro relevantes esta semana");
+    if (!msg) {
+      return reply(chatId, eventos.agotadaPorFinDeSemana
+        ? "📅 Sin eventos por delante: la fuente (ForexFactory) solo cubre lunes-viernes y ya se agotó la semana en curso.\n\n<i>Suele publicar la semana siguiente el domingo por la noche o el lunes a primera hora — vuelve a intentarlo entonces.</i>"
+        : "📅 No hay eventos macro relevantes de EE.UU., Eurozona, Reino Unido, Japón, China o Australia esta semana."
+      );
+    }
     await fetch(`${API()}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -2273,8 +2278,9 @@ async function cmdAyuda(chatId, cmd) {
       uso: "/calendario",
       ejemplo: "/calendario",
       detalle:
-        "Muestra los eventos macroeconómicos de alto impacto de <b>toda la semana</b>: Fed, CPI, NFP, FOMC, datos de empleo... agrupados por día, con hora exacta en ET.\n\n" +
-        "Datos de ForexFactory JSON (alta precisión). El bot incluye los eventos del día en el briefing matinal, y cada <b>lunes a las 08:00</b> publica automáticamente el resumen completo de la semana en el canal.\n\n" +
+        "Muestra los eventos macroeconómicos de alto impacto de <b>toda la semana</b> en 🇺🇸 EE.UU., 🇪🇺 Eurozona, 🇬🇧 Reino Unido, 🇯🇵 Japón, 🇨🇳 China y 🇦🇺 Australia: Fed, CPI, NFP, FOMC, PMI, datos de empleo... agrupados por día, con hora exacta en ET.\n\n" +
+        "Datos de ForexFactory JSON (alta precisión), pero la fuente solo cubre lunes-viernes de la semana en curso. De sábado a domingo puede salir vacío hasta que publiquen la semana siguiente (normalmente domingo noche o lunes) — el bot te avisa si es por eso.\n\n" +
+        "El bot incluye los eventos del día en el briefing matinal, y cada <b>lunes a las 08:00</b> publica automáticamente el resumen completo de la semana en el canal.\n\n" +
         "Debajo del calendario aparece el botón <b>📊 Generar post para publicar</b>: Claude analiza los eventos más importantes, redacta un post al estilo CriptoScope con título y análisis de impacto en BTC/ETH, y te muestra una preview con botones para publicar en canal, X o ambos.\n\n" +
         "Útil antes de abrir posiciones para saber si hay riesgo de volatilidad macro, y para publicar análisis macro en el canal con un clic.",
     },

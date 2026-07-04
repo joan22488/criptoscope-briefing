@@ -3,7 +3,15 @@
 // Fuente: ForexFactory RSS (gratis, sin key)
 // ============================================================
 
+// Única fuente disponible gratis: cubre lun-vie de la semana en curso.
+// No existe endpoint de "semana siguiente" en este servicio (probado: 404) —
+// de sáb a dom, hasta que la fuente publique la semana nueva, no habrá eventos futuros.
 const FF_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json";
+
+// Países cuyos datos macro nos interesan (más allá de solo EE.UU.)
+const PAISES = ["USD", "EUR", "GBP", "JPY", "CNY", "AUD"];
+const BANDERAS = { USD: "🇺🇸", EUR: "🇪🇺", GBP: "🇬🇧", JPY: "🇯🇵", CNY: "🇨🇳", AUD: "🇦🇺" };
+const banderaDe = (country) => BANDERAS[country] || "🌐";
 
 const PALABRAS_CLAVE = [
   "nonfarm payrolls", "nfp",
@@ -27,25 +35,25 @@ const DIAS_ES = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
 const MESES_ES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
 
 function filtrarRelevantes(eventos) {
-  const usd = eventos.filter((e) => e.country === "USD");
+  const paises = eventos.filter((e) => PAISES.includes(e.country));
 
-  // 1ª prioridad: High + keyword cripto
-  let relevantes = usd.filter((e) => {
+  // 1ª prioridad: Alto impacto + keyword cripto/macro
+  let relevantes = paises.filter((e) => {
     if (e.impact !== "High") return false;
     return PALABRAS_CLAVE.some((k) => e.title.toLowerCase().includes(k));
   });
 
-  // 2ª prioridad: High o Medium + keyword cripto
+  // 2ª prioridad: Alto o Medio + keyword cripto/macro
   if (!relevantes.length) {
-    relevantes = usd.filter((e) => {
+    relevantes = paises.filter((e) => {
       if (!["High", "Medium"].includes(e.impact)) return false;
       return PALABRAS_CLAVE.some((k) => e.title.toLowerCase().includes(k));
     });
   }
 
-  // 3ª prioridad: cualquier High USD (semana sin datos)
+  // 3ª prioridad: cualquier Alto impacto de los países que seguimos (semana sin datos claros)
   if (!relevantes.length) {
-    relevantes = usd.filter((e) => e.impact === "High");
+    relevantes = paises.filter((e) => e.impact === "High");
   }
 
   return relevantes;
@@ -53,7 +61,6 @@ function filtrarRelevantes(eventos) {
 
 export async function getEventosMacro() {
   try {
-    // ForexFactory ofrece JSON además del XML — más fácil de parsear
     const res = await fetch(FF_URL, {
       headers: { "User-Agent": "Mozilla/5.0 (compatible; CriptoScope/1.0)" },
       signal: AbortSignal.timeout(10000),
@@ -66,7 +73,6 @@ export async function getEventosMacro() {
     const ahora = new Date();
     const hoyMedNoche = new Date(ahora); hoyMedNoche.setHours(0, 0, 0, 0);
     const mananaMedNoche = new Date(hoyMedNoche); mananaMedNoche.setDate(hoyMedNoche.getDate() + 1);
-    const pasadoMedNoche = new Date(mananaMedNoche); pasadoMedNoche.setDate(mananaMedNoche.getDate() + 1);
 
     const hoy     = [];
     const manana  = [];
@@ -83,10 +89,16 @@ export async function getEventosMacro() {
       else if (d.getTime() === mananaMedNoche.getTime()) manana.push(e);
     }
 
-    return { hoy, manana, semana };
+    // La fuente solo cubre lun-vie de la semana en curso. Si no queda nada por
+    // delante y estamos en fin de semana, no es que no haya datos: es que la
+    // fuente aún no ha publicado la semana siguiente (suele actualizar el domingo).
+    const diaSemana = ahora.getDay(); // 0 domingo, 6 sábado
+    const agotadaPorFinDeSemana = semana.length === 0 && (diaSemana === 0 || diaSemana === 6);
+
+    return { hoy, manana, semana, agotadaPorFinDeSemana };
   } catch (e) {
     console.warn("⚠️  Calendario económico no disponible:", e.message);
-    return { hoy: [], manana: [], semana: [] };
+    return { hoy: [], manana: [], semana: [], agotadaPorFinDeSemana: false };
   }
 }
 
@@ -100,7 +112,7 @@ export function formatearAlertaMacro(eventos) {
     msg += `<b>📅 HOY</b>\n`;
     for (const e of eventos.hoy) {
       const imp = e.impact === "High" ? "🔴" : "🟡";
-      msg += `${imp} <b>${e.title}</b> — ${e.time || "?"} ET`;
+      msg += `${imp} ${banderaDe(e.country)} <b>${e.title}</b> — ${e.time || "?"} ET`;
       if (e.forecast) msg += ` · Prev: ${e.forecast}`;
       if (e.previous) msg += ` · Ant: ${e.previous}`;
       msg += "\n";
@@ -112,7 +124,7 @@ export function formatearAlertaMacro(eventos) {
     msg += `<b>📅 MAÑANA</b>\n`;
     for (const e of eventos.manana) {
       const imp = e.impact === "High" ? "🔴" : "🟡";
-      msg += `${imp} <b>${e.title}</b> — ${e.time || "?"} ET`;
+      msg += `${imp} ${banderaDe(e.country)} <b>${e.title}</b> — ${e.time || "?"} ET`;
       if (e.forecast) msg += ` · Prev: ${e.forecast}`;
       if (e.previous) msg += ` · Ant: ${e.previous}`;
       msg += "\n";
@@ -161,7 +173,7 @@ export function formatearResumenSemana(eventos) {
       const datos = [];
       if (e.previous) datos.push(`Anterior: ${e.previous}`);
       if (e.forecast) datos.push(`Previsión: ${e.forecast}`);
-      if (datos.length) msg += `   🇺🇸 ${datos.join(" · ")}\n`;
+      if (datos.length) msg += `   ${banderaDe(e.country)} ${datos.join(" · ")}\n`;
     }
     msg += "\n";
   }

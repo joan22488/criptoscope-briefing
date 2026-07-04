@@ -143,7 +143,7 @@ Escríbele directamente al bot (chat privado):
 | `/precio <coin>` | `/precio BTC` | Precio + máx/mín/vol 24h |
 | `/quepasa` | `/quepasa` | Resumen mercado ahora mismo |
 | `/senal <coin>` | `/senal ETH` | Señal técnica privada (no publica en canal) |
-| `/calendario` | `/calendario` | Eventos macro de la semana con hora exacta |
+| `/calendario` | `/calendario` | Eventos macro de la semana (EE.UU., Eurozona, UK, Japón, China, Australia) en formato tarjeta con hora exacta. Fuente solo cubre lun-vie: de sáb a dom puede avisar de que la semana siguiente aún no está publicada |
 | `/alerta <coin> <precio>` | `/alerta BTC 70000` · `/alerta ETH <1800` | Aviso cuando llegue al nivel |
 | `/alertas` | `/alertas` | Lista tus alertas activas |
 | `/borralalerta <n>` | `/borralalerta 1` | Elimina la alerta número 1 |
