@@ -72,8 +72,9 @@ ${INSTRUCCIONES_RESUMEN_SEMANAL}`,
   });
 
   const txt = response.content.filter((b) => b.type === "text").map((b) => b.text).join("");
-  const inicio = txt.indexOf("{"); const fin = txt.lastIndexOf("}");
-  const limpio = txt.slice(inicio, fin + 1);
+  const inicio = txt.indexOf("{");
+  const fin = txt.lastIndexOf("}");
+  const limpio = inicio !== -1 && fin !== -1 ? txt.slice(inicio, fin + 1) : txt.replace(/```json|```/g, "").trim();
   let paquete;
   try {
     paquete = JSON.parse(limpio);
@@ -89,6 +90,20 @@ ${INSTRUCCIONES_RESUMEN_SEMANAL}`,
       guion_video: extraer("guion_video"),
       pregunta_comunidad: extraer("pregunta_comunidad"),
     };
+  }
+
+  // Si ni el JSON.parse ni el rescate por regex encontraron un resumen, algo fue muy mal
+  // (respuesta vacía o con formato inesperado) — avisar al owner en vez de publicar vacío
+  if (!paquete.resumen && process.env.TELEGRAM_OWNER_ID) {
+    fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: process.env.TELEGRAM_OWNER_ID,
+        text: "⚠️ <b>Resumen semanal:</b> Claude no devolvió un resumen parseable. Revisa antes de confiar en el mensaje generado.",
+        parse_mode: "HTML",
+      }),
+    }).catch(() => {});
   }
 
   const gl = gainersLosers;
@@ -136,7 +151,7 @@ ${INSTRUCCIONES_RESUMEN_SEMANAL}`,
         text: `🎬 <b>Guion semanal — ${paquete.titular}</b>\n\n${paquete.guion_video}`,
         parse_mode: "HTML",
       }),
-    }).catch(() => {});
+    }).catch((e) => console.warn("⚠️ Guion de vídeo semanal no se pudo enviar al owner:", e.message));
   }
 
   console.log(`   ✓ Resumen semanal generado: ${paquete.titular}${chartBuffer ? " + gráfico" : ""}`);

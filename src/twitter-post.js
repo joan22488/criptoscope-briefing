@@ -8,6 +8,7 @@
 
 import { TwitterApi } from "twitter-api-v2";
 import { loadJSON, saveJSON } from "./storage.js";
+import { cortarEnFrase } from "./text.js";
 
 // ── Contador de escrituras mensuales en X ────────────────────
 // Cada tweet publicado (único, de thread o reply) cuenta 1.
@@ -92,15 +93,8 @@ export async function publicarTweetUnico(texto, { mediaId } = {}) {
   const cuerpo   = limpiar(texto);
 
   // Reservar espacio para los hashtags al final
-  const espacio = 280 - hashtags.length - 2; // 2 = "\n\n"
-  const cuerpoFinal = (() => {
-    if (cuerpo.length <= espacio) return cuerpo;
-    const recorte = cuerpo.slice(0, espacio);
-    const puntos = [recorte.lastIndexOf(". "), recorte.lastIndexOf("? "), recorte.lastIndexOf("! "), recorte.lastIndexOf(".\n"), recorte.lastIndexOf("?\n"), recorte.lastIndexOf("!\n")];
-    const fin = Math.max(...puntos);
-    if (fin > espacio * 0.55) return cuerpo.slice(0, fin + 1).trimEnd();
-    return recorte.replace(/\s+\S*$/, "…"); // '…' = 1 char
-  })();
+  const espacio    = 280 - hashtags.length - 2; // 2 = "\n\n"
+  const cuerpoFinal = cortarEnFrase(cuerpo, espacio);
   const tweetFinal = `${cuerpoFinal}\n\n${hashtags}`;
 
   const payload = mediaId ? { media: { media_ids: [mediaId] } } : undefined;

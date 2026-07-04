@@ -4,6 +4,8 @@
 // Todas gratuitas, sin API key
 // ============================================================
 
+import { cortarEnFrase } from "./text.js";
+
 async function apiFetch(url) {
   const headers = { Accept: "application/json" };
   if (process.env.COINGECKO_API_KEY) headers["x-cg-demo-api-key"] = process.env.COINGECKO_API_KEY;
@@ -64,8 +66,11 @@ export async function getMSTRPrice() {
     const meta   = json.chart?.result?.[0]?.meta;
     const closes = json.chart?.result?.[0]?.indicators?.quote?.[0]?.close;
     if (!meta || !closes) throw new Error("Sin datos");
-    const precio   = meta.regularMarketPrice;
-    const anterior = closes.filter(Boolean).at(-2) || precio;
+    const precio  = meta.regularMarketPrice;
+    const validos = closes.filter(Boolean);
+    // Con menos de 2 cierres no hay referencia real de "anterior" — mejor omitir el dato que publicar un falso 0.00%
+    if (validos.length < 2) throw new Error("Sin cierre anterior suficiente para calcular % MSTR");
+    const anterior = validos.at(-2);
     const cambio   = ((precio - anterior) / anterior) * 100;
     return { precio: parseFloat(precio.toFixed(2)), cambio_pct: parseFloat(cambio.toFixed(2)) };
   } catch (e) {
@@ -91,7 +96,7 @@ export async function getNews(limit = 25) {
       };
       const noticia = {
         titulo: get("title"),
-        resumen: get("description").replace(/<[^>]+>/g, "").slice(0, 400),
+        resumen: cortarEnFrase(get("description").replace(/<[^>]+>/g, ""), 400),
         fuente: "CoinDesk",
         fecha: get("pubDate"),
         categorias: get("category"),

@@ -57,7 +57,7 @@ const TIPO_POR_DIA = {
   2: "martes_institucional",
   3: "miercoles_educativo",
   6: "sabado_historico",
-  // 4 (jue) y 5 (vie): solo si hay macro — no se programa automático
+  // 4 (jue) y 5 (vie): sin slot fijo — se activan solo si hay macro relevante ese día (ver ejecutarEditorial)
 };
 
 // ── Contexto de mercado ───────────────────────────────────────
@@ -229,22 +229,50 @@ LÍNEA 2 (contexto, 70-80 chars): dato de derivados que amplifica (OI, top L/S, 
 LÍNEA 3 (tensión, 50-60 chars): qué señal falta para confirmar dirección. Sin resolver.`;
 }
 
+function promptMacroDelDia(ctx) {
+  return `${VOZ}
+
+Datos actuales de mercado:
+${ctx.resumen}
+
+Evento macro de alto impacto hoy:
+${ctx.macroHoy}
+
+Noticias recientes:
+${ctx.noticias}
+
+TIPO HOY: Jueves/Viernes sin slot fijo — activado porque hay un evento macro de alto impacto (CPI, NFP, FOMC, PCE...). Conecta ese dato con cripto.
+
+Escribe UN tweet de 210-240 caracteres:
+LÍNEA 1 (gancho, 90-110 chars): el dato macro con cifra exacta y qué esperaba el mercado (sorpresa al alza/baja). Para el scroll.
+LÍNEA 2 (desarrollo, 110-130 chars): qué implica para BTC/ETH, nivel exacto a vigilar, termina con pregunta o tensión sin resolver.`;
+}
+
 const PROMPTS = {
   lunes_etf:            promptLunesEtf,
   martes_institucional: promptMartesInstitucional,
   miercoles_educativo:  promptMiercolesEducativo,
   sabado_historico:     promptSabadoHistorico,
   domingo_principal:    promptDomingoPrincipal,
+  macro_del_dia:        promptMacroDelDia,
 };
 
 // ── Pipeline principal ────────────────────────────────────────
 
 export async function ejecutarEditorial() {
   const dia  = new Date().getDay();
-  const tipo = TIPO_POR_DIA[dia];
+  let tipo   = TIPO_POR_DIA[dia];
+  let macroHoy = null;
+
+  // Jueves (4) y viernes (5) no tienen slot fijo — solo se activan si hay macro de alto impacto hoy
+  if (!tipo && (dia === 4 || dia === 5)) {
+    const eventosMacro = await getEventosMacro().catch(() => null);
+    macroHoy = (eventosMacro?.hoy || []).filter((e) => e.impact === "High");
+    if (macroHoy.length) tipo = "macro_del_dia";
+  }
 
   if (!tipo) {
-    console.log("📝 Editorial: sin slot automático hoy (jue/vie — solo con macro)");
+    console.log("📝 Editorial: sin slot automático hoy (jue/vie sin macro relevante)");
     return;
   }
 
@@ -253,6 +281,9 @@ export async function ejecutarEditorial() {
 
   try {
     const ctx      = await construirContexto();
+    if (macroHoy?.length) {
+      ctx.macroHoy = macroHoy.map((e) => `${e.title}${e.forecast ? ` (prev: ${e.forecast})` : ""}${e.actual ? ` → real: ${e.actual}` : ""}`).join(" | ");
+    }
     const promptFn = PROMPTS[tipo];
 
     const response = await client.messages.create({

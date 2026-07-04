@@ -529,13 +529,13 @@ export async function ejecutarAnalisisTecnico() {
   for (const d of datos) {
     const s = senales[d.nombre];
     if (s && s.op !== "ESPERAR" && s.entrada) {
-      await registrarSenal(d.nombre, s, d.precio).catch(() => {});
+      await registrarSenal(d.nombre, s, d.precio).catch((e) => console.warn(`⚠️  registrarSenal ${d.nombre}:`, e.message));
     }
   }
 
   // Verificar resultados de señales anteriores
   const precios = Object.fromEntries(datos.map((d) => [d.nombre, d.precio]));
-  const actualizadas = await verificarResultados(precios).catch(() => []);
+  const actualizadas = await verificarResultados(precios).catch((e) => { console.warn("⚠️  verificarResultados:", e.message); return []; });
   if (actualizadas.length) {
     console.log(`   📊 ${actualizadas.length} señal(es) con resultado actualizado`);
   }

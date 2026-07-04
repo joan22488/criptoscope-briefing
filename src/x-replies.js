@@ -14,6 +14,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { TwitterApi } from "twitter-api-v2";
 import { loadJSON, saveJSON } from "./storage.js";
+import { cortarEnFrase } from "./text.js";
 import { registrarEscrituraX } from "./twitter-post.js";
 
 const client = new Anthropic();
@@ -25,16 +26,6 @@ function getClient() {
   const { X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_SECRET } = process.env;
   if (!X_API_KEY) throw new Error("X_API_KEY no configurado");
   return new TwitterApi({ appKey: X_API_KEY, appSecret: X_API_SECRET, accessToken: X_ACCESS_TOKEN, accessSecret: X_ACCESS_SECRET });
-}
-
-// Corta en el límite de frase más cercano en vez de partir a mitad de palabra
-function cortarEnFrase(texto, maxLen) {
-  if (texto.length <= maxLen) return texto;
-  const recorte = texto.slice(0, maxLen);
-  const puntos = [recorte.lastIndexOf(". "), recorte.lastIndexOf("? "), recorte.lastIndexOf("! "), recorte.lastIndexOf(".\n"), recorte.lastIndexOf("?\n"), recorte.lastIndexOf("!\n")];
-  const fin = Math.max(...puntos);
-  if (fin > maxLen * 0.55) return recorte.slice(0, fin + 1).trimEnd();
-  return recorte.replace(/\s+\S*$/, "…");
 }
 
 // Genera un borrador de respuesta con Claude en la voz de CriptoScope

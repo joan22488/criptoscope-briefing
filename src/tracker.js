@@ -3,30 +3,15 @@
 // Persiste en Notion si está configurado, si no en archivo local
 // ============================================================
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
+import { loadJSON, saveJSON } from "./storage.js";
 import { guardarSenalEnNotion, obtenerSenalesPendientes, actualizarResultadoSenal, obtenerSenalesSemana } from "./notion.js";
 
-const DATA_DIR = process.env.DATA_DIR || "./data";
-const SIGNALS_FILE = `${DATA_DIR}/signals.json`;
 const USA_NOTION = !!process.env.NOTION_TOKEN;
 
 // ─── Persistencia local (fallback sin Notion) ───────────────
 
-function leerSeñalesLocales() {
-  try {
-    if (!existsSync(SIGNALS_FILE)) return [];
-    return JSON.parse(readFileSync(SIGNALS_FILE, "utf-8"));
-  } catch { return []; }
-}
-
-function guardarSeñalesLocales(senales) {
-  try {
-    if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
-    writeFileSync(SIGNALS_FILE, JSON.stringify(senales, null, 2));
-  } catch (e) {
-    console.warn("⚠️  No se pudo guardar señales localmente:", e.message);
-  }
-}
+const leerSeñalesLocales = () => loadJSON("signals.json", []);
+const guardarSeñalesLocales = (senales) => saveJSON("signals.json", senales);
 
 // ─── Registrar nueva señal ───────────────────────────────────
 

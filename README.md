@@ -17,7 +17,7 @@ Sistema que monitoriza el mercado cripto 24/7, genera análisis con IA (Claude) 
 | Cada 30 min | ✅ Verificación automática de resultados de señales |
 | Lunes 08:00 | 📅 Macro de la semana → canal (ForexFactory JSON, eventos alto impacto) |
 | Domingos 09:00 | 📅 Resumen semanal con estadísticas de señales |
-| Lun 16:30 · Mar 10:00 · Mié 12:00 · Sáb 11:00 · Dom 18:00 | 📝 Pipeline editorial autónomo — tweet de crecimiento → borrador privado + X |
+| Lun 16:30 · Mar 10:00 · Mié 12:00 · Jue/Vie 14:00 (solo si hay macro) · Sáb 11:00 · Dom 18:00 | 📝 Pipeline editorial autónomo — tweet de crecimiento → borrador privado + X |
 | Bajo demanda | 🤖 Bot de Telegram con comandos en cualquier momento |
 
 ---
@@ -418,7 +418,7 @@ O conecta el repositorio de GitHub en el dashboard de Railway para despliegue au
 
 **SDK Notion v5:** La versión 5 del SDK eliminó `databases.query`. Se usa `notion.request()` directamente contra la REST API para las consultas.
 
-**Pipeline editorial autónomo:** `editorial.js` genera un tweet por día según el tipo (lunes ETF, martes institucional, miércoles educativo, sábado histórico, domingo principal). Flujo: contexto → Claude → borrador al owner → `EDITORIAL_DELAY_MIN` minutos de espera → publica en X con imagen. Cancelable con `/cancelar_editorial`.
+**Pipeline editorial autónomo:** `editorial.js` genera un tweet por día según el tipo (lunes ETF, martes institucional, miércoles educativo, sábado histórico, domingo principal). Jueves y viernes no tienen slot fijo: se activan solo si el calendario económico (`calendar.js`) marca un evento de alto impacto ese día (CPI, NFP, FOMC, PCE...), conectándolo con cripto. Flujo: contexto → Claude → borrador al owner → `EDITORIAL_DELAY_MIN` minutos de espera → publica en X con imagen. Cancelable con `/cancelar_editorial`.
 
 **Banner X (1500×500):** `generarBannerX()` en media.js construye el banner como SVG en memoria y lo convierte a PNG con Sharp. Si Sharp falla, cae a `generarChartBarras`. El resultado se envía como documento (sin compresión) para preservar la resolución.
 

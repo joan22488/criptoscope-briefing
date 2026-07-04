@@ -5,6 +5,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { loadJSON, saveJSON } from "./storage.js";
+import { cortarEnFrase } from "./text.js";
 import { getMarketContext, getPrices, getFearGreed, getGlobalMarket, puntuarNoticia } from "./coindesk.js";
 import { analizarSymbol, generarSenal, getVelas, calcEMA, getContextoDerivadosBTC } from "./signals.js";
 import { getEventosMacro, formatearAlertaMacro, formatearResumenSemana } from "./calendar.js";
@@ -1136,7 +1137,7 @@ async function cmdEstado(chatId) {
     `🚨 Monitor eventos: cada 30 min\n` +
     `🔔 Alertas precio: cada 5 min\n` +
     `📰 Monitor RSS: cada 15 min\n` +
-    `📝 Editorial: lun 16:30 · mar 10:00 · mié 12:00 · sáb 11:00 · dom 18:00\n` +
+    `📝 Editorial: lun 16:30 · mar 10:00 · mié 12:00 · jue/vie 14:00 (si hay macro) · sáb 11:00 · dom 18:00\n` +
     `🌙 Recap diario: 22:00\n\n` +
     `<b>Publicación manual:</b>\n` +
     `<code>/briefing</code> · <code>/flash</code> · <code>/hilo</code> · <code>/analiza</code> · <code>/opinion</code>\n` +
@@ -1531,16 +1532,6 @@ async function procesarCallback(callback) {
       console.warn("⚠️ No se pudo subir portada a X:", e.message);
       return null;
     }
-  };
-
-  // Corta un tweet en el último fin de frase antes de maxLen (nunca en mitad de palabra)
-  const cortarEnFrase = (texto, maxLen) => {
-    if (texto.length <= maxLen) return texto;
-    const recorte = texto.slice(0, maxLen);
-    const puntos = [recorte.lastIndexOf(". "), recorte.lastIndexOf("? "), recorte.lastIndexOf("! "), recorte.lastIndexOf(".\n"), recorte.lastIndexOf("?\n"), recorte.lastIndexOf("!\n")];
-    const fin = Math.max(...puntos);
-    if (fin > maxLen * 0.55) return texto.slice(0, fin + 1).trimEnd();
-    return recorte.replace(/\s+\S*$/, "…");
   };
 
   // Genera UN tweet para X — prompts ajustados para dejar espacio a hashtags automáticos
@@ -2470,6 +2461,7 @@ async function cmdAyuda(chatId, cmd) {
         "📅 Lunes 16:30 — Flujo ETF\n" +
         "📅 Martes 10:00 — Angulo institucional\n" +
         "📅 Miercoles 12:00 — Concepto educativo\n" +
+        "📅 Jueves/Viernes 14:00 — Solo si hay evento macro de alto impacto ese día (CPI, NFP, FOMC, PCE...)\n" +
         "📅 Sábado 11:00 — Patron historico\n" +
         "📅 Domingo 18:00 — Tweet principal de la semana\n\n" +
         "Cuando el pipeline genera un borrador, recibes el texto en privado y tienes EDITORIAL_DELAY_MIN minutos para cancelarlo antes de que se publique en X.",
@@ -2511,7 +2503,7 @@ async function cmdAyuda(chatId, cmd) {
     `Señales 07/11/15/19h → 📣 Solo canal · 🐦 Solo X · 📢 Canal+X · ❌ Descartar\n` +
     `Alertas de evento → canal Telegram (aviso privado si quieres tuitearlo)\n` +
     `Monitor RSS → ⚡ Flash · 📝 Hilo · 🐦 Tweet X · 🙈 Ignorar\n` +
-    `Editorial X → Lun/Mar/Mié/Sáb/Dom (auto tras revisión)\n` +
+    `Editorial X → Lun/Mar/Mié/Sáb/Dom (auto) · Jue/Vie solo si hay macro relevante\n` +
     `Encuesta del día → poll en el canal ~1h tras el briefing\n\n` +
     `──────────────\n` +
     `<b>🔒 Solo para ti (privado)</b>\n` +

@@ -34,7 +34,7 @@ console.log(`  Señales:   ${horarioSenales} (${zona})`);
 console.log(`  Semanal:   ${horarioSemanal} (${zona})`);
 console.log(`  Macro lun: 0 8 * * 1 (${zona})`);
 console.log(`  Alertas:   ${horarioAlertas}`);
-console.log(`  Editorial: lun 16:30 · mar 10:00 · mié 12:00 · sáb 11:00 · dom 18:00`);
+console.log(`  Editorial: lun 16:30 · mar 10:00 · mié 12:00 · jue/vie 14:00 (si hay macro) · sáb 11:00 · dom 18:00`);
 console.log(`  Bot:       activo (long-polling)`);
 console.log("═══════════════════════════════════════");
 
@@ -217,6 +217,11 @@ cron.schedule("0 12 * * 3", async () => {    // Miércoles — educativo
 cron.schedule("0 11 * * 6", async () => {    // Sábado — histórico
   if (isPausado()) return;
   await ejecutarEditorial().catch((e) => alertarOwner(`⚠️ Editorial sábado: ${e.message}`));
+}, { timezone: zona });
+
+cron.schedule("0 14 * * 4,5", async () => {  // Jueves y Viernes — solo si hay macro de alto impacto hoy (CPI, NFP, FOMC, PCE...)
+  if (isPausado()) return;
+  await ejecutarEditorial().catch((e) => alertarOwner(`⚠️ Editorial jue/vie: ${e.message}`));
 }, { timezone: zona });
 
 cron.schedule("0 18 * * 0", async () => {    // Domingo — tweet principal

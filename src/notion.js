@@ -5,6 +5,7 @@
 // ============================================================
 
 import { Client } from "@notionhq/client";
+import { cortarEnFrase } from "./text.js";
 
 function getClient() {
   if (!process.env.NOTION_TOKEN) throw new Error("NOTION_TOKEN no configurado");
@@ -47,9 +48,9 @@ export async function guardarBriefingEnNotion(paquete, contexto, { conPortada = 
       "Con Portada":        { checkbox: conPortada },
       Narrativa:            { rich_text: [{ text: { content: paquete.narrativa_caliente || "" } }] },
       "Pregunta Comunidad": { rich_text: [{ text: { content: paquete.pregunta_comunidad || "" } }] },
-      "Palabra del Día":    { rich_text: [{ text: { content: (paquete.palabra_del_dia || "").slice(0, 2000) } }] },
-      "Tweet X":            { rich_text: [{ text: { content: (paquete.tweet_x || "").slice(0, 2000) } }] },
-      "Guion Vídeo":        { rich_text: [{ text: { content: (paquete.guion_video || "").slice(0, 2000) } }] },
+      "Palabra del Día":    { rich_text: [{ text: { content: cortarEnFrase(paquete.palabra_del_dia || "", 2000) } }] },
+      "Tweet X":            { rich_text: [{ text: { content: cortarEnFrase(paquete.tweet_x || "", 2000) } }] },
+      "Guion Vídeo":        { rich_text: [{ text: { content: cortarEnFrase(paquete.guion_video || "", 2000) } }] },
     },
     children: [
       {
@@ -58,7 +59,7 @@ export async function guardarBriefingEnNotion(paquete, contexto, { conPortada = 
       },
       {
         object: "block", type: "paragraph",
-        paragraph: { rich_text: [{ text: { content: (paquete.briefing || "").replace(/<[^>]+>/g, "").slice(0, 2000) } }] },
+        paragraph: { rich_text: [{ text: { content: cortarEnFrase((paquete.briefing || "").replace(/<[^>]+>/g, ""), 2000) } }] },
       },
       {
         object: "block", type: "heading_2",
@@ -66,7 +67,7 @@ export async function guardarBriefingEnNotion(paquete, contexto, { conPortada = 
       },
       ...(paquete.thread || []).map((t) => ({
         object: "block", type: "bulleted_list_item",
-        bulleted_list_item: { rich_text: [{ text: { content: t.replace(/<[^>]+>/g, "").slice(0, 2000) } }] },
+        bulleted_list_item: { rich_text: [{ text: { content: cortarEnFrase(t.replace(/<[^>]+>/g, ""), 2000) } }] },
       })),
       {
         object: "block", type: "heading_2",
@@ -74,7 +75,7 @@ export async function guardarBriefingEnNotion(paquete, contexto, { conPortada = 
       },
       {
         object: "block", type: "paragraph",
-        paragraph: { rich_text: [{ text: { content: (paquete.guion_video || "").replace(/<[^>]+>/g, "").slice(0, 2000) } }] },
+        paragraph: { rich_text: [{ text: { content: cortarEnFrase((paquete.guion_video || "").replace(/<[^>]+>/g, ""), 2000) } }] },
       },
     ],
   });
