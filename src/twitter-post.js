@@ -10,6 +10,18 @@ import { TwitterApi } from "twitter-api-v2";
 import { loadJSON, saveJSON } from "./storage.js";
 import { cortarEnFrase, aCashtags } from "./text.js";
 
+// Extrae el detalle real de un error de la API de X (twitter-api-v2 adjunta
+// el cuerpo JSON del error en e.data). "Request failed with code 403" solo
+// dice el código HTTP — esto añade el motivo real (permisos, duplicado, etc.)
+export function detalleErrorX(e) {
+  const partes = [e.message];
+  if (e.data?.detail) partes.push(e.data.detail);
+  if (e.data?.title && e.data.title !== e.data.detail) partes.push(e.data.title);
+  if (Array.isArray(e.data?.errors)) partes.push(e.data.errors.map((x) => x.message).filter(Boolean).join("; "));
+  if (e.code) partes.push(`HTTP ${e.code}`);
+  return [...new Set(partes.filter(Boolean))].join(" — ");
+}
+
 // ── Contador de escrituras mensuales en X ────────────────────
 // Cada tweet publicado (único, de thread o reply) cuenta 1.
 const mesActual = () => new Date().toISOString().slice(0, 7); // "2026-07"

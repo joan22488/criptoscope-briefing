@@ -9,7 +9,7 @@ import { cortarEnFrase } from "./text.js";
 import { getMarketContext, getPrices, getFearGreed, getGlobalMarket, puntuarNoticia } from "./coindesk.js";
 import { analizarSymbol, generarSenal, getVelas, calcEMA, getContextoDerivadosBTC } from "./signals.js";
 import { getEventosMacro, formatearAlertaMacro, formatearResumenSemana } from "./calendar.js";
-import { publicarThread, publicarTweetUnico, subirImagenX, getEscriturasXMes } from "./twitter-post.js";
+import { publicarThread, publicarTweetUnico, subirImagenX, getEscriturasXMes, detalleErrorX } from "./twitter-post.js";
 import { enviarTelegram, enviarTelegramConFoto } from "./telegram.js";
 import { ejecutarResumenSemanal } from "./weekly.js";
 import { guardarPublicacionEnNotion } from "./notion.js";
@@ -2011,7 +2011,14 @@ Devuelve SOLO el tweet. Sin comillas, sin etiquetas, sin explicaciones.${ctxDeri
       await reply(chatId, `✅ Respuesta publicada en X.\n\n<i>"${r.borrador}"</i>`);
       logActividad({ tipo: "Reply X", titulo: r.borrador, plataforma: "X", estado: "OK" });
     } catch (e) {
-      await reply(chatId, `⚠️ Error al responder en X: <code>${e.message.slice(0, 150)}</code>`);
+      const detalle = detalleErrorX(e);
+      console.warn("⚠️ Error publicando reply en X:", detalle);
+      let pista = "";
+      if (e.code === 403) {
+        pista = "\n\n💡 El 403 suele ser por permisos: en developer.twitter.com → tu app → <b>User authentication settings</b>, comprueba que el nivel de acceso sea <b>Read and Write</b> (no solo Read). Si lo cambiaste, hay que <b>regenerar</b> Access Token y Secret y actualizarlos en Railway — el cambio no aplica a tokens ya emitidos.";
+      }
+      await reply(chatId, `⚠️ Error al responder en X: <code>${detalle.slice(0, 250)}</code>${pista}`);
+      logActividad({ tipo: "Reply X", titulo: r.borrador, plataforma: "X", estado: `Error: ${detalle.slice(0, 60)}` });
     }
     return;
   }
