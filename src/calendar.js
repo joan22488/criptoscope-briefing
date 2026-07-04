@@ -125,10 +125,9 @@ export function formatearAlertaMacro(eventos) {
 }
 
 // Para /calendario y el cron de los lunes — resumen completo de la semana
+// Formato tarjeta: separador por día, evento con bandera+hora, título y "Anterior" en su propia línea.
 export function formatearResumenSemana(eventos) {
   if (!eventos.semana?.length) return null;
-
-  let msg = `📅 <b>CRIPTOSCOPE | Macro de la semana</b>\n\n`;
 
   // Agrupar por día
   const porDia = {};
@@ -142,19 +141,27 @@ export function formatearResumenSemana(eventos) {
   }
 
   const ordenado = Object.values(porDia).sort((a, b) => a.fecha - b.fecha);
+  const DIVISOR = "▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬";
+  const primero = ordenado[0].fecha;
+  const ultimo  = ordenado[ordenado.length - 1].fecha;
+  const rango = primero.getTime() === ultimo.getTime()
+    ? `${primero.getDate()} ${MESES_ES[primero.getMonth()]}`
+    : `${primero.getDate()} ${MESES_ES[primero.getMonth()]} – ${ultimo.getDate()} ${MESES_ES[ultimo.getMonth()]}`;
+
+  let msg = `📅 <b>CRIPTOSCOPE | Macro de la semana</b>\n<i>${rango}</i>\n\n`;
 
   for (const { fecha, eventos: evs } of ordenado) {
-    const diaNom = DIAS_ES[fecha.getDay()];
+    const diaNom = DIAS_ES[fecha.getDay()].toUpperCase();
     const diaNum = fecha.getDate();
     const mesNom = MESES_ES[fecha.getMonth()];
-    msg += `<b>${diaNom} ${diaNum} ${mesNom}</b>\n`;
+    msg += `${DIVISOR}\n<b>${diaNom} ${diaNum} ${mesNom}</b>\n${DIVISOR}\n`;
     for (const e of evs) {
       const imp = e.impact === "High" ? "🔴" : "🟡";
-      msg += `${imp} <b>${e.title}</b>`;
-      if (e.time) msg += ` — ${e.time} ET`;
-      if (e.forecast) msg += `\n   Prev: ${e.forecast}`;
-      if (e.previous) msg += ` · Ant: ${e.previous}`;
-      msg += "\n";
+      msg += `${imp} ${e.time ? `${e.time} ET · ` : ""}<b>${e.title}</b>\n`;
+      const datos = [];
+      if (e.previous) datos.push(`Anterior: ${e.previous}`);
+      if (e.forecast) datos.push(`Previsión: ${e.forecast}`);
+      if (datos.length) msg += `   🇺🇸 ${datos.join(" · ")}\n`;
     }
     msg += "\n";
   }
