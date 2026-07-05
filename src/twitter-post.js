@@ -8,7 +8,7 @@
 
 import { TwitterApi } from "twitter-api-v2";
 import { loadJSON, saveJSON } from "./storage.js";
-import { cortarEnFrase, aCashtags } from "./text.js";
+import { cortarEnFrase, aCashtags, limpiarDashes } from "./text.js";
 
 // Extrae el detalle real de un error de la API de X (twitter-api-v2 adjunta
 // el cuerpo JSON del error en e.data). "Request failed with code 403" solo
@@ -99,7 +99,7 @@ export async function publicarTweetUnico(texto, { mediaId } = {}) {
 
   const client   = getClient();
   const rwClient = client.readWrite;
-  const limpiar  = (t) => t.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
+  const limpiar  = (t) => limpiarDashes(t.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim());
 
   const hashtags = generarHashtagsBriefing([texto]);
   const cuerpo   = aCashtags(limpiar(texto));
@@ -127,8 +127,8 @@ export async function publicarThread(tweets, { mediaId } = {}) {
   const client = getClient();
   const rwClient = client.readWrite;
 
-  // Limpiar HTML del briefing para X (texto plano) + convertir tickers a cashtag
-  const limpiar = (t) => aCashtags(t.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim());
+  // Limpiar HTML del briefing para X (texto plano) + guiones/~ + convertir tickers a cashtag
+  const limpiar = (t) => aCashtags(limpiarDashes(t.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim()));
 
   // Primer tweet (con imagen si hay mediaId)
   const primerPayload = mediaId ? { media: { media_ids: [mediaId] } } : undefined;

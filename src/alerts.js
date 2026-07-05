@@ -5,6 +5,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { loadJSON, saveJSON } from "./storage.js";
+import { limpiarDashes } from "./text.js";
 import { getNews } from "./coindesk.js";
 import { getContextoDerivadosBTC } from "./signals.js";
 
@@ -114,7 +115,7 @@ export async function verificarAlertas() {
       messages: [{
         role: "user",
         content: `Evalúa estas noticias y devuelve:
-{"urgente": true|false, "noticia": "título de la más urgente si urgente=true", "por_que": "1 frase del impacto esperado", "alerta": "mensaje de alerta para Telegram en HTML, máx 300 caracteres, con <b>negritas</b>. PROHIBIDO usar guiones medios o largos (– o —): sustituye por punto o dos puntos."}
+{"urgente": true|false, "noticia": "título de la más urgente si urgente=true", "por_que": "1 frase del impacto esperado", "alerta": "mensaje de alerta para Telegram en HTML, máx 300 caracteres, con <b>negritas</b>. PROHIBIDO usar guiones medios o largos (– o —) ni el símbolo ~: sustituye por punto o dos puntos."}
 ${ctxDerivados}
 NOTICIAS:
 ${nuevas.slice(0, 5).map((n) => `- ${n.titulo}: ${n.resumen?.slice(0, 150)}`).join("\n")}`,
@@ -126,7 +127,7 @@ ${nuevas.slice(0, 5).map((n) => `- ${n.titulo}: ${n.resumen?.slice(0, 150)}`).jo
     const resultado = JSON.parse(txt.slice(inicio, fin + 1));
 
     if (resultado.urgente) {
-      const textoAlerta = (resultado.alerta || "").replace(/ [–—] /g, ": ").replace(/[–—]/g, ".");
+      const textoAlerta = limpiarDashes(resultado.alerta || "");
       nuevas.forEach((n) => alertadas.set(n.titulo?.toLowerCase().slice(0, 60), Date.now()));
       // Guardar fingerprint tanto del texto generado como del contenido de artículos
       const fp = fingerprintAlerta(textoAlerta);

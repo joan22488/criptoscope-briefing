@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { limpiarDashes } from "./text.js";
 import { registrarSenal, verificarResultados, calcularCorrelacion } from "./tracker.js";
 
 const client = new Anthropic();
@@ -65,12 +66,6 @@ El campo "cuando" debe nombrar el nivel asiático a vigilar. Si OI sube + ls_top
     pie: "Cierre europeo. La sesión asiática abre en unas horas.",
   },
 };
-
-// Elimina guiones medios/largos que cuela Claude — delatan texto de IA
-function sanitizarDashes(s) {
-  if (typeof s !== "string") return s;
-  return s.replace(/ [–—] /g, ": ").replace(/[–—]/g, ".");
-}
 
 // Convierte "BTCUSDT" → "BTC-USDT", mapea intervalos Binance → OKX
 const toOKXId = (sym) => sym.replace("USDT", "-USDT");
@@ -303,7 +298,7 @@ export async function generarSenal(datos, slot = "apertura") {
   const sistema = `Eres el analista de CriptoScope. Voz directa de trader a trader — sin relleno, sin frases de IA. El precio manda.
 Metodologia: 4H estructura → 1H confirma RSI/MACD → 15m gatillo. RSI14 MACD 12/26/9.
 Divergencias en 1H/4H contra el setup = tamaño REDUCIDO o ESPERAR. RR minimo 1:1.5. Analisis educativo.
-PROHIBIDO usar guiones medios o largos (– o —). Usa punto, dos puntos o reestructura la frase.
+PROHIBIDO usar guiones medios o largos (– o —) y PROHIBIDO usar el símbolo ~. Usa punto, dos puntos o reestructura la frase.
 
 ${cfg.sistema_extra}`;
 
@@ -341,7 +336,7 @@ DATOS: ` + JSON.stringify(datos);
     const campos = ["sesgo", "por_que", "cuando", "alerta", "rr"];
     for (const sym of Object.keys(parsed)) {
       for (const campo of campos) {
-        if (parsed[sym]?.[campo]) parsed[sym][campo] = sanitizarDashes(parsed[sym][campo]);
+        if (parsed[sym]?.[campo]) parsed[sym][campo] = limpiarDashes(parsed[sym][campo]);
       }
     }
     return parsed;

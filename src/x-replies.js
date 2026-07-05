@@ -14,7 +14,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { TwitterApi } from "twitter-api-v2";
 import { loadJSON, saveJSON } from "./storage.js";
-import { cortarEnFrase, aCashtags } from "./text.js";
+import { cortarEnFrase, aCashtags, limpiarDashes } from "./text.js";
 import { registrarEscrituraX } from "./twitter-post.js";
 
 const client = new Anthropic();
@@ -42,7 +42,7 @@ Escribe UNA respuesta directa, bien argumentada y en la voz de CriptoScope. Entr
 
 X solo admite 1 cashtag por tuit: escribe $ delante SOLO de la primera moneda que menciones, el resto de tickers en texto normal sin $.
 
-PROHIBIDO: emojis tribales (🚀💎🙌), lenguaje de hype, respuestas vagas ("Buen punto", "Gracias"), guiones largos (– o —), links, hashtags, mencionar Telegram.
+PROHIBIDO: emojis tribales (🚀💎🙌), lenguaje de hype, respuestas vagas ("Buen punto", "Gracias"), guiones largos (– o —), el símbolo ~, links, hashtags, mencionar Telegram.
 
 Devuelve SOLO la respuesta. Sin comillas ni etiquetas.`;
 
@@ -51,7 +51,7 @@ Devuelve SOLO la respuesta. Sin comillas ni etiquetas.`;
     max_tokens: 200,
     messages: [{ role: "user", content: prompt }],
   });
-  return aCashtags(cortarEnFrase(res.content[0].text.trim(), 240));
+  return aCashtags(cortarEnFrase(limpiarDashes(res.content[0].text.trim()), 240));
 }
 
 // Publica una respuesta a un tweet concreto

@@ -7,6 +7,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { loadJSON, saveJSON } from "./storage.js";
+import { limpiarDashes } from "./text.js";
 import { getMarketContext } from "./coindesk.js";
 import { getContextoDerivadosBTC } from "./signals.js";
 import { getEventosMacro } from "./calendar.js";
@@ -138,7 +139,7 @@ async function construirContexto() {
 const VOZ = `REGLAS DE VOZ (innegociable):
 - Castellano neutro y directo. Cero frases de IA.
 - Voz activa. Frases cortas.
-- PROHIBIDO guiones medios o largos (– o —): sustitúyelos por punto o dos puntos.
+- PROHIBIDO guiones medios o largos (– o —) ni el símbolo ~: sustitúyelos por punto o dos puntos.
 - PROHIBIDO empezar con "Hoy", "El mercado" o "BTC ha".
 - Sin HTML, sin links, sin menciones, sin CTAs de Telegram.
 - Sin hashtags. Sin firma.
@@ -294,13 +295,11 @@ export async function ejecutarEditorial() {
       messages:   [{ role: "user", content: promptFn(ctx) }],
     });
 
-    const tweetTexto = response.content
+    const tweetTexto = limpiarDashes(response.content
       .filter((b) => b.type === "text")
       .map((b) => b.text)
       .join("")
-      .trim()
-      .replace(/ [–—] /g, ": ")
-      .replace(/[–—]/g, ".");
+      .trim());
 
     if (!tweetTexto) throw new Error("Claude devolvió texto vacío");
 

@@ -5,7 +5,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { loadJSON, saveJSON } from "./storage.js";
-import { cortarEnFrase } from "./text.js";
+import { cortarEnFrase, limpiarDashes } from "./text.js";
 import { getMarketContext, getPrices, getFearGreed, getGlobalMarket, puntuarNoticia } from "./coindesk.js";
 import { analizarSymbol, generarSenal, getVelas, calcEMA, getContextoDerivadosBTC } from "./signals.js";
 import { getEventosMacro, formatearAlertaMacro, formatearResumenSemana } from "./calendar.js";
@@ -27,11 +27,6 @@ const OWNER = () => process.env.TELEGRAM_OWNER_ID;
 // Chat dedicado a asuntos de X (grupo aparte para no llenar el chat del bot).
 // Si no está configurado, todo va al chat privado del owner como siempre.
 const X_CHAT = () => process.env.TELEGRAM_X_CHAT_ID || process.env.TELEGRAM_OWNER_ID;
-
-// Elimina guiones medios/largos que cuela Claude — delatan texto de IA
-const limpiarDashes = (s) => typeof s === "string"
-  ? s.replace(/ [–—] /g, ": ").replace(/[–—]/g, ".").replace(/ - /g, ": ")
-  : s;
 
 // Estado global
 export let pausado = false;
@@ -159,7 +154,7 @@ Ejemplo de formato:
 RSI 1H saliendo de sobreventa con MACD cruzando. OI creciendo + top traders largos confirman.
 
 X solo admite 1 cashtag por tuit: pon $ delante SOLO en la primera moneda que menciones (ej. $BTC), el resto de tickers en texto normal sin $.
-PROHIBIDO: guiones medios o largos (– o —), HTML, links, menciones.
+PROHIBIDO: guiones medios o largos (– o —) ni el símbolo ~, HTML, links, menciones.
 Devuelve SOLO el tweet, sin comillas ni etiquetas.`,
       }],
     });
@@ -552,7 +547,7 @@ async function cmdHilo(chatId, tema, portadaFileId = null) {
   const response = await client.messages.create({
     model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
     max_tokens: 1500,
-    system: `Eres CriptoScope. Genera un hilo educativo de 5 tweets sobre el tema. Cada tweet es autónomo: funciona aunque el lector entre por el tweet 3. Numerados (1/5, 2/5...). Máx 260 chars cada uno.\nVoz directa y fría. Tweet 1: la tesis en una frase, sin contexto. Tweets 2-4: un punto concreto por tweet con datos o niveles exactos. Tweet 5: conclusión o regla práctica aplicable.\nPROHIBIDO: guiones medios o largos (– o —), 🚀💎🙌WAGMI, clickbait, consejos financieros directos, predicciones sin datos.\nDevuelve SOLO JSON: {"tweets": ["tweet1", "tweet2", ...]}`,
+    system: `Eres CriptoScope. Genera un hilo educativo de 5 tweets sobre el tema. Cada tweet es autónomo: funciona aunque el lector entre por el tweet 3. Numerados (1/5, 2/5...). Máx 260 chars cada uno.\nVoz directa y fría. Tweet 1: la tesis en una frase, sin contexto. Tweets 2-4: un punto concreto por tweet con datos o niveles exactos. Tweet 5: conclusión o regla práctica aplicable.\nPROHIBIDO: guiones medios o largos (– o —) ni el símbolo ~, 🚀💎🙌WAGMI, clickbait, consejos financieros directos, predicciones sin datos.\nDevuelve SOLO JSON: {"tweets": ["tweet1", "tweet2", ...]}`,
     messages: [{ role: "user", content: `TEMA: ${tema}${contextoExtra}` }],
   });
 
@@ -792,7 +787,7 @@ Entrada: X · TP1: X · TP2: X · SL: X · R:R X
 
 Si no hay setup, una frase explicando por qué esperar.
 
-Voz directa, sin relleno. PROHIBIDO: guiones medios o largos (– o —), emojis no funcionales, predicciones sin base.`,
+Voz directa, sin relleno. PROHIBIDO: guiones medios o largos (– o —) ni el símbolo ~, emojis no funcionales, predicciones sin base.`,
       messages: [{
         role: "user",
         content: `${nombre}/USDT ${tfLabel}
@@ -833,7 +828,7 @@ async function cmdOpinion(chatId, noticia, portadaFileId = null) {
 
 REGLA DE APERTURA: Abre con la conclusión de la noticia, no con el precio de BTC. El precio de mercado es contexto de fondo. Si la noticia no tiene relación directa con BTC, no lo menciones en la apertura.
 Voz directa y fría. Distingue entre lo que dice la noticia y lo que podría implicar para el precio. Si hay incertidumbre, nómbrala. 2-3 párrafos. HTML Telegram (<b>, <i>).
-PROHIBIDO: guiones medios o largos (– o —), 🚀💎🙌, clickbait, consejos financieros directos, predicciones sin datos.`,
+PROHIBIDO: guiones medios o largos (– o —) ni el símbolo ~, 🚀💎🙌, clickbait, consejos financieros directos, predicciones sin datos.`,
     messages: [{
       role: "user",
       content: `NOTICIA: ${noticia}\n\nCONTEXTO (úsalo si es relevante): BTC $${precios["BTC-USD"]?.precio?.toFixed(0) || "?"} (${precios["BTC-USD"]?.cambio24h_pct?.toFixed(2) || "?"}% 24h)`,
@@ -888,7 +883,7 @@ async function cmdQuePasa(chatId, portadaFileId = null) {
   const response = await client.messages.create({
     model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
     max_tokens: 500,
-    system: `Eres CriptoScope. Resume el estado del mercado ahora mismo en 3-4 frases directas. Abre con el dato más relevante, no con contexto. Qué domina, qué vigilar, si hay oportunidad o no. Niveles exactos cuando los haya. Voz activa. PROHIBIDO: guiones medios o largos (– o —), rodeos, emojis decorativos, consejos de compra/venta.`,
+    system: `Eres CriptoScope. Resume el estado del mercado ahora mismo en 3-4 frases directas. Abre con el dato más relevante, no con contexto. Qué domina, qué vigilar, si hay oportunidad o no. Niveles exactos cuando los haya. Voz activa. PROHIBIDO: guiones medios o largos (– o —) ni el símbolo ~, rodeos, emojis decorativos, consejos de compra/venta.`,
     messages: [{
       role: "user",
       content: `BTC: $${btcQP?.precio?.toFixed(0)} (${btcQP?.cambio24h_pct?.toFixed(2)}%)\nETH: $${precios["ETH-USD"]?.precio?.toFixed(0)} (${precios["ETH-USD"]?.cambio24h_pct?.toFixed(2)}%)\nSOL: $${precios["SOL-USD"]?.precio?.toFixed(0)} (${precios["SOL-USD"]?.cambio24h_pct?.toFixed(2)}%)\nFear&Greed: ${fearGreed?.valor} (${fearGreed?.clasificacion})\nDominancia BTC: ${globalMarket?.dominancia_btc}%`,
@@ -979,7 +974,7 @@ ${contexto}
 REGLAS DE VOZ (innegociable):
 - Castellano neutro y directo. Cero frases de IA.
 - Voz activa. Frases cortas.
-- PROHIBIDO guiones medios o largos (en vez de esos guiones usa punto o dos puntos).
+- PROHIBIDO guiones medios o largos y el símbolo ~ (en vez de esos guiones usa punto o dos puntos).
 - Sin hashtags. Sin links. Sin menciones.
 - Maximo 3 emojis funcionales.
 
@@ -1310,7 +1305,7 @@ Devuelve SOLO este JSON sin markdown:
 
 REGLA DE APERTURA: Abre con la conclusión de la noticia de la imagen, no con el precio de BTC. El precio de mercado es contexto de fondo, no el gancho de apertura.
 Voz directa y fría. 2-3 párrafos. HTML Telegram (<b>, <i>). Distingue entre lo que dice la noticia y lo que podría implicar. Si hay incertidumbre, nómbrala.
-PROHIBIDO: guiones medios o largos (– o —), 🚀💎🙌, clickbait, consejos financieros directos.`,
+PROHIBIDO: guiones medios o largos (– o —) ni el símbolo ~, 🚀💎🙌, clickbait, consejos financieros directos.`,
       messages: [{
         role: "user",
         content: [

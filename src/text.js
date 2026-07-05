@@ -38,3 +38,14 @@ export function aCashtags(texto) {
     return `$${ticker}`;
   });
 }
+
+// Elimina guiones medios/largos (– —) y el símbolo ~ que cuela Claude —
+// delatan texto de IA. Prohibidos en cualquier contenido publicado.
+export function limpiarDashes(texto) {
+  if (typeof texto !== "string") return texto;
+  return texto
+    .replace(/ [–—] /g, ": ")
+    .replace(/[–—]/g, ".")
+    .replace(/ - /g, ": ")
+    .replace(/~/g, "");
+}
