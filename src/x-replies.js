@@ -40,7 +40,7 @@ Comentario recibido de ${autorStr}:
 
 Escribe UNA respuesta directa, bien argumentada y en la voz de CriptoScope. Entre 180 y 210 caracteres (deja margen, no lo apures: si te pasas, se corta). Tono: educado pero firme, analítico, sin condescender. Si el comentario tiene razón en algo, reconócelo. Si está equivocado, corrígelo con datos. Si es una pregunta, respóndela directamente. Termina la idea con un punto, no la dejes a medias.
 
-Cuando menciones el ticker de una moneda, escríbelo siempre con el símbolo $ delante: $BTC, $ETH, $XRP, $SOL, $MSTR. Nunca sin el $.
+X solo admite 1 cashtag por tuit: escribe $ delante SOLO de la primera moneda que menciones, el resto de tickers en texto normal sin $.
 
 PROHIBIDO: emojis tribales (🚀💎🙌), lenguaje de hype, respuestas vagas ("Buen punto", "Gracias"), guiones largos (– o —), links, hashtags, mencionar Telegram.
 

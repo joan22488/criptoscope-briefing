@@ -158,7 +158,7 @@ Ejemplo de formato:
 🟢 BTC LONG. Entrada $104.500. TP $107K / SL $103K. R:R 1.8x.
 RSI 1H saliendo de sobreventa con MACD cruzando. OI creciendo + top traders largos confirman.
 
-Tickers de monedas siempre con $ delante: $BTC, $ETH, $XRP, $SOL.
+X solo admite 1 cashtag por tuit: pon $ delante SOLO en la primera moneda que menciones (ej. $BTC), el resto de tickers en texto normal sin $.
 PROHIBIDO: guiones medios o largos (– o —), HTML, links, menciones.
 Devuelve SOLO el tweet, sin comillas ni etiquetas.`,
       }],
@@ -1558,7 +1558,7 @@ Escribe UN tweet de 190-205 caracteres (el sistema añade hashtags automáticame
 
 1 emoji relevante al inicio (🚨⚠️🔴🟢💥🎯). Termina con una pregunta directa a la comunidad o una afirmación que invite al debate.
 
-Sin HTML. Sin guiones largos (– o —). Sin links. Sin hashtags. Sin mencionar "canal de Telegram". Tickers de monedas siempre con $ delante: $BTC, $ETH, $XRP.
+Sin HTML. Sin guiones largos (– o —). Sin links. Sin hashtags. Sin mencionar "canal de Telegram". X solo admite 1 cashtag por tuit: $ delante SOLO de la primera moneda que menciones, el resto en texto normal sin $.
 Devuelve SOLO el tweet. Sin comillas ni etiquetas.${ctxDerivados}`
       : `Eres el redactor de X/Twitter de CriptoScope, análisis cripto en español.
 
@@ -1571,7 +1571,7 @@ Estructura (todo en un bloque continuo con salto de línea en el medio):
 GANCHO (80-100 chars): el dato más impactante, la paradoja o el hecho que crea tensión. Para el scroll. NO empieces con "Hoy", "El mercado", el nombre de la coin ni "CriptoScope". 1 emoji si refuerza (🚨📊⚠️🔴🟢).
 DESARROLLO (110-125 chars): qué implica ese dato para el precio, nivel clave a vigilar. Datos concretos. Termina con pregunta corta o afirmación que invite a debatir.
 
-Sin HTML. Sin guiones largos (– o —). Sin links. Sin hashtags. Sin mencionar "canal de Telegram". Tickers de monedas siempre con $ delante: $BTC, $ETH, $XRP.
+Sin HTML. Sin guiones largos (– o —). Sin links. Sin hashtags. Sin mencionar "canal de Telegram". X solo admite 1 cashtag por tuit: $ delante SOLO de la primera moneda que menciones, el resto en texto normal sin $.
 
 Devuelve SOLO el tweet. Sin comillas, sin etiquetas, sin explicaciones.${ctxDerivados}`;
     try {
