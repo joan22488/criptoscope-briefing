@@ -13,7 +13,7 @@ import { getEventosMacro, formatearResumenSemana } from "./calendar.js";
 import { enviarTelegram, enviarTelegramConFoto, enviarTelegramConFotoId } from "./telegram.js";
 import { getPortadaFija } from "./portadas_fijas.js";
 import { verificarResultados } from "./tracker.js";
-import { getPrices } from "./coindesk.js";
+import { getPrices, registrarPuntoMercado } from "./coindesk.js";
 import { iniciarBot, isPausado, verificarAlertasPrecios, monitorNoticias, ejecutarRecapDiario, enviarSenalParaRevisar, notificarMencionesNuevas, publicarEncuestaAutomatica } from "./bot.js";
 import { logActividad } from "./activity.js";
 import { guardarPublicacionEnNotion } from "./notion.js";
@@ -233,6 +233,11 @@ cron.schedule("0 18 * * 0", async () => {    // Domingo — tweet principal
 // Si el tier es Free, fetchMencionesNuevas lanza mentions_api_error y se ignora silenciosamente
 cron.schedule("*/30 * * * *", async () => {
   await notificarMencionesNuevas().catch((e) => console.warn("⚠️ notificarMencionesNuevas:", e.message));
+}, { timezone: zona });
+
+// Punto de historial del mercado (cap + volumen) — cada hora, alimenta la curva de /mercado
+cron.schedule("5 * * * *", async () => {
+  await registrarPuntoMercado().catch(() => {});
 }, { timezone: zona });
 
 // Recap diario privado al owner — 22:00

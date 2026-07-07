@@ -6,7 +6,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { loadJSON, saveJSON } from "./storage.js";
 import { cortarEnFrase, limpiarDashes } from "./text.js";
-import { getMarketContext, getPrices, getFearGreed, getGlobalMarket, puntuarNoticia } from "./coindesk.js";
+import { getMarketContext, getPrices, getFearGreed, getGlobalMarket, puntuarNoticia, getDistribucion24h, registrarPuntoMercado, getHistorialMercado } from "./coindesk.js";
 import { analizarSymbol, generarSenal, getVelas, calcEMA, getContextoDerivadosBTC } from "./signals.js";
 import { getEventosMacro, formatearAlertaMacro, formatearResumenSemana } from "./calendar.js";
 import { publicarThread, publicarTweetUnico, subirImagenX, getEscriturasXMes, detalleErrorX } from "./twitter-post.js";
@@ -14,7 +14,7 @@ import { enviarTelegram, enviarTelegramConFoto } from "./telegram.js";
 import { ejecutarResumenSemanal } from "./weekly.js";
 import { guardarPublicacionEnNotion } from "./notion.js";
 import { generarEstadisticasSemana } from "./tracker.js";
-import { aplicarLogo, fetchGraficoBuffer, generarBannerX, generarPortadaEditorial } from "./media.js";
+import { aplicarLogo, fetchGraficoBuffer, generarBannerX, generarPortadaEditorial, generarPanelMercado } from "./media.js";
 import { ejecutarBriefing, generarBriefing } from "./pipeline.js";
 import { getPortadaFija, setPortadaFija, clearPortadaFija } from "./portadas_fijas.js";
 import { cancelarEditorial } from "./editorial.js";
@@ -1091,6 +1091,39 @@ async function cmdBanner(chatId) {
   }
 }
 
+// /mercado — panel visual del mercado (F&G, dominancia, distribución 24h, capitalización)
+async function cmdMercado(chatId) {
+  await reply(chatId, "📊 Generando panel del mercado...");
+  try {
+    // registrarPuntoMercado devuelve los datos globales y de paso siembra el historial de la curva
+    const [fg, distribucion, global] = await Promise.all([
+      getFearGreed().catch(() => null),
+      getDistribucion24h().catch(() => null),
+      registrarPuntoMercado().catch(() => null),
+    ]);
+    const historial = getHistorialMercado();
+
+    if (!fg && !distribucion && !global) {
+      return reply(chatId, "❌ Ninguna fuente de datos respondió (CoinGecko/alternative.me). Inténtalo en unos minutos.");
+    }
+
+    const buffer = await generarPanelMercado({ fg, global, distribucion, historial });
+    if (!buffer) return reply(chatId, "❌ No pude generar el panel. Revisa los logs.");
+
+    const hora = new Date().toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit", timeZone: process.env.TIMEZONE || "Europe/Madrid" });
+    const form = new FormData();
+    form.append("chat_id", String(chatId));
+    form.append("photo", new Blob([buffer], { type: "image/png" }), "mercado.png");
+    form.append("caption", `📊 <b>Mercado ahora</b> · ${hora} Madrid`);
+    form.append("parse_mode", "HTML");
+    const res = await fetch(`${API()}/sendPhoto`, { method: "POST", body: form, signal: AbortSignal.timeout(25000) });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.description);
+  } catch (e) {
+    await reply(chatId, `❌ Error generando el panel: ${e.message.slice(0, 150)}`);
+  }
+}
+
 // /estado — estado del sistema
 const BOT_START_TS = Date.now();
 async function cmdEstado(chatId) {
@@ -1146,7 +1179,7 @@ async function cmdEstado(chatId) {
     `<i>🖼 Briefing: portada branded 1200x628 (Sharp)</i>\n` +
     `<i>🎨 gpt-image-1 (flash/hilo/opinion/quepasa/publicar): ${process.env.OPENAI_API_KEY ? "✅ activa" : "⚠️ sin OPENAI_API_KEY"}</i>\n\n` +
     `<b>Consulta privada:</b>\n` +
-    `<code>/precio</code> · <code>/quepasa</code> · <code>/senal</code> · <code>/calendario</code>\n` +
+    `<code>/precio</code> · <code>/quepasa</code> · <code>/mercado</code> · <code>/senal</code> · <code>/calendario</code>\n` +
     `<code>/stats</code> · <code>/historial</code>\n\n` +
     `<b>Alertas y programadas:</b>\n` +
     `<code>/alerta</code> · <code>/alertas</code> · <code>/borralalerta</code>\n` +
@@ -2259,6 +2292,19 @@ async function cmdAyuda(chatId, cmd) {
         "Genera automáticamente una <b>portada editorial gpt-image-1</b>. Muestra botones para publicar en canal o en X. Usa 🗑 <b>Sin portada</b> para descartarla o 📸 para usar la tuya.\n\n" +
         "📸 <b>Con portada propia:</b> manda una foto con <code>/quepasa</code> en el pie.",
     },
+    mercado: {
+      titulo: "📊 /mercado — Panel visual del mercado",
+      uso: "/mercado",
+      ejemplo: "/mercado",
+      detalle:
+        "Genera una imagen tipo dashboard con 4 paneles, al estilo de la pestaña Data de los exchanges:\n\n" +
+        "🌡 <b>Fear & Greed</b> — medidor de arco con la aguja en el valor actual y comparativa con ayer\n" +
+        "🟠 <b>Dominancia</b> — barra BTC / ETH / Others con porcentajes y market cap total\n" +
+        "📊 <b>Distribución 24h</b> — cuántas monedas del top 200 suben o bajan, por tramos de % (verde/rojo)\n" +
+        "📈 <b>Capitalización</b> — valor total del mercado con variación 24h y curva histórica\n\n" +
+        "La curva de capitalización se construye guardando un punto por hora en el servidor: los primeros días estará casi vacía e irá ganando forma con el tiempo (se conservan 7 días).\n\n" +
+        "Solo para ti, no publica nada. Datos: CoinGecko y alternative.me.",
+    },
     senal: {
       titulo: "🔒 /senal — Señal técnica privada",
       uso: "/senal <coin>",
@@ -2518,6 +2564,7 @@ async function cmdAyuda(chatId, cmd) {
     `<b>🔒 Solo para ti (privado)</b>\n` +
     `<code>/precio</code> &lt;coin&gt; — Precio actual con máx/mín\n` +
     `<code>/quepasa</code> — Resumen del mercado ahora mismo\n` +
+    `<code>/mercado</code> — Panel visual: F&amp;G, dominancia, distribución 24h\n` +
     `<code>/senal</code> &lt;coin&gt; — Señal técnica sin publicar\n` +
     `<code>/calendario</code> — Eventos macro de la semana\n` +
     `<code>/alerta</code> &lt;coin&gt; &lt;precio&gt; — Aviso al llegar al nivel\n` +
@@ -3220,6 +3267,11 @@ async function procesarMensaje(msg) {
       case "/publicar":   await cmdPublicar(chatId, argStr); break;
       case "/calendario": await cmdCalendario(chatId); break;
       case "/banner":     await cmdBanner(chatId); break;
+      case "/mercado": {
+        const cd = checkCooldown(chatId, "mercado", 30);
+        if (cd) { await reply(chatId, `⏳ Espera ${cd}s antes de pedir otro panel.`); break; }
+        await cmdMercado(chatId); break;
+      }
       case "/estado":     await cmdEstado(chatId); break;
       case "/pausa":      await cmdPausa(chatId); break;
       case "/activa":     await cmdActiva(chatId); break;
@@ -3434,6 +3486,7 @@ export async function iniciarBot() {
         { command: "opinion",    description: "Opinión sobre una noticia" },
         { command: "precio",     description: "Precio actual de una coin (privado)" },
         { command: "quepasa",    description: "Resumen del mercado ahora (privado)" },
+        { command: "mercado",    description: "Panel visual: F&G, dominancia, distribución 24h y capitalización" },
         { command: "senal",      description: "Señal técnica privada sin publicar" },
         { command: "calendario", description: "Próximos eventos macro" },
         { command: "estado",     description: "Estado del sistema" },

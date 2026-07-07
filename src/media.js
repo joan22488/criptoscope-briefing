@@ -338,6 +338,239 @@ export async function generarBannerX({ btc, eth, fg, dominancia, coins = [] }) {
   }
 }
 
+// ── Panel de mercado /mercado — F&G + dominancia + distribución + capitalización ──
+// datos: { fg, global, distribucion, historial }
+export async function generarPanelMercado({ fg, global, distribucion, historial = [] } = {}) {
+  const W = 1080, H = 1540;
+  const ORANGE = "#f97316";
+  const VERDE  = "#00C896";
+  const ROJO   = "#e5484d";
+  const CARD   = "#12121c";
+  const BORDE  = "rgba(255,255,255,0.06)";
+  const GRIS   = "rgba(255,255,255,0.42)";
+
+  const esc = (s) =>
+    (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+  const fmtT = (v) =>
+    v >= 1e12 ? `$${(v / 1e12).toFixed(2)}T` : v >= 1e9 ? `$${(v / 1e9).toFixed(0)}B` : `$${Math.round(v / 1e6)}M`;
+
+  const card = (x, y, w, h) =>
+    `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="18" fill="${CARD}" stroke="${BORDE}" stroke-width="1"/>`;
+
+  const titulo = (x, y, texto) =>
+    `<text x="${x}" y="${y}" font-family="Arial,sans-serif" font-size="12" font-weight="700" fill="${GRIS}" letter-spacing="1.8">${esc(texto)}</text>`;
+
+  const sinDatos = (cx, cy) =>
+    `<text x="${cx}" y="${cy}" text-anchor="middle" font-family="Arial,sans-serif" font-size="16" fill="rgba(255,255,255,0.25)">Sin datos disponibles</text>`;
+
+  // ── Card A: medidor Fear & Greed (arco) ──────────────────────
+  const GAUGE_COLORES = ["#e5484d", "#f0883e", "#f5d90a", "#7ee787", VERDE];
+  const clasifES = (v) => v < 25 ? "Miedo extremo" : v < 45 ? "Miedo" : v < 55 ? "Neutral" : v < 75 ? "Codicia" : "Codicia extrema";
+  const colorFG  = (v) => GAUGE_COLORES[Math.min(4, Math.floor(v / 20))];
+
+  let gaugeSvg = "";
+  {
+    const cx = 285, cy = 405, r = 128, grosor = 24;
+    const polar = (v) => {
+      const a = Math.PI * (1 - v / 100);
+      return [cx + r * Math.cos(a), cy - r * Math.sin(a)];
+    };
+    const arco = (v1, v2, color) => {
+      const [x1, y1] = polar(v1);
+      const [x2, y2] = polar(v2);
+      return `<path d="M ${x1.toFixed(1)} ${y1.toFixed(1)} A ${r} ${r} 0 0 1 ${x2.toFixed(1)} ${y2.toFixed(1)}" fill="none" stroke="${color}" stroke-width="${grosor}" stroke-linecap="round"/>`;
+    };
+    const segmentos = [0, 20, 40, 60, 80].map((ini, i) =>
+      arco(ini + (i === 0 ? 0 : 1.5), ini + 20 - (i === 4 ? 0 : 1.5), GAUGE_COLORES[i])
+    ).join("\n    ");
+
+    if (fg?.valor != null) {
+      const [nx, ny] = polar(fg.valor);
+      const col = colorFG(fg.valor);
+      gaugeSvg = `
+    ${segmentos}
+    <circle cx="${nx.toFixed(1)}" cy="${ny.toFixed(1)}" r="12" fill="#0a0a12" stroke="#ffffff" stroke-width="3"/>
+    <text x="${cx}" y="${cy - 14}" text-anchor="middle" font-family="Arial,sans-serif" font-size="76" font-weight="800" fill="#ffffff">${fg.valor}</text>
+    <text x="${cx}" y="${cy + 26}" text-anchor="middle" font-family="Arial,sans-serif" font-size="23" font-weight="700" fill="${col}">${esc(clasifES(fg.valor))}</text>
+    ${fg.ayer != null ? `<text x="${cx}" y="${cy + 56}" text-anchor="middle" font-family="Arial,sans-serif" font-size="14" fill="rgba(255,255,255,0.30)">ayer: ${fg.ayer} · ${esc(clasifES(fg.ayer))}</text>` : ""}`;
+    } else {
+      gaugeSvg = `${segmentos}\n    ${sinDatos(cx, cy)}`;
+    }
+  }
+
+  // ── Card B: dominancia BTC / ETH / Others ────────────────────
+  let domSvg = "";
+  {
+    const bx = 590, by = 258, bw = 410, bh = 26;
+    if (global?.dominancia_btc != null) {
+      const pBtc = global.dominancia_btc;
+      const pEth = global.dominancia_eth || 0;
+      const pOtros = Math.max(0, 100 - pBtc - pEth);
+      const wBtc = (pBtc / 100) * bw;
+      const wEth = (pEth / 100) * bw;
+      const cols = [
+        { label: "BTC",    pct: pBtc,   color: "#f7931a", x: 590 },
+        { label: "ETH",    pct: pEth,   color: "#627eea", x: 745 },
+        { label: "Others", pct: pOtros, color: "#8b949e", x: 900 },
+      ];
+      const leyenda = cols.map((c) => `
+    <circle cx="${c.x + 6}" cy="${by + 74}" r="6" fill="${c.color}"/>
+    <text x="${c.x + 20}" y="${by + 79}" font-family="Arial,sans-serif" font-size="14" fill="${GRIS}">${esc(c.label)}</text>
+    <text x="${c.x}" y="${by + 112}" font-family="Arial,sans-serif" font-size="24" font-weight="700" fill="#ffffff">${c.pct.toFixed(1)}%</text>`).join("");
+
+      domSvg = `
+    <clipPath id="domclip"><rect x="${bx}" y="${by}" width="${bw}" height="${bh}" rx="13"/></clipPath>
+    <g clip-path="url(#domclip)">
+      <rect x="${bx}" y="${by}" width="${bw}" height="${bh}" fill="#3d4451"/>
+      <rect x="${bx}" y="${by}" width="${(wBtc + wEth).toFixed(1)}" height="${bh}" fill="#627eea"/>
+      <rect x="${bx}" y="${by}" width="${wBtc.toFixed(1)}" height="${bh}" fill="#f7931a"/>
+    </g>
+    ${leyenda}
+    ${global.market_cap_total_usd ? `<text x="590" y="${by + 158}" font-family="Arial,sans-serif" font-size="13" fill="rgba(255,255,255,0.30)">Market cap total: ${fmtT(global.market_cap_total_usd)} · ${global.activos_activos?.toLocaleString("es-ES") || "?"} activos</text>` : ""}`;
+    } else {
+      domSvg = sinDatos(795, 320);
+    }
+  }
+
+  // ── Card C: distribución de ganancias y pérdidas ─────────────
+  let distSvg = "";
+  {
+    const baseY = 852, maxH = 205, plotX = 76, slotW = 85;
+    if (distribucion?.tramos?.length) {
+      const maxCount = Math.max(...distribucion.tramos.map((t) => t.count), 1);
+      const colorTramo = (tipo) => tipo === "sube" ? VERDE : tipo === "baja" ? ROJO : "#8b949e";
+      const barras = distribucion.tramos.map((t, i) => {
+        const h = Math.max(3, (t.count / maxCount) * maxH);
+        const x = plotX + i * slotW + 14;
+        const w = slotW - 28;
+        return `
+    <text x="${x + w / 2}" y="${(baseY - h - 10).toFixed(1)}" text-anchor="middle" font-family="Arial,sans-serif" font-size="14" fill="${GRIS}">${t.count}</text>
+    <rect x="${x}" y="${(baseY - h).toFixed(1)}" width="${w}" height="${h.toFixed(1)}" rx="4" fill="${colorTramo(t.tipo)}"/>
+    <text x="${x + w / 2}" y="${baseY + 22}" text-anchor="middle" font-family="Arial,sans-serif" font-size="12" fill="rgba(255,255,255,0.32)">${esc(t.label)}</text>`;
+      }).join("");
+
+      const totalSB = distribucion.subida + distribucion.bajada || 1;
+      const splitY = baseY + 46, splitW = 928, splitX = plotX;
+      const wSube = Math.max(8, (distribucion.subida / totalSB) * splitW - 3);
+      const wBaja = Math.max(8, splitW - wSube - 6);
+      distSvg = `
+    ${barras}
+    <rect x="${splitX}" y="${splitY}" width="${wSube.toFixed(1)}" height="10" rx="5" fill="${VERDE}"/>
+    <rect x="${(splitX + wSube + 6).toFixed(1)}" y="${splitY}" width="${wBaja.toFixed(1)}" height="10" rx="5" fill="${ROJO}"/>
+    <text x="${splitX}" y="${splitY + 34}" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="${VERDE}">Subida ${distribucion.subida}</text>
+    <text x="${splitX + splitW}" y="${splitY + 34}" text-anchor="end" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="${ROJO}">Bajada ${distribucion.bajada}</text>`;
+    } else {
+      distSvg = sinDatos(W / 2, 740);
+    }
+  }
+
+  // ── Card D: capitalización total (curva con historial) ───────
+  let capSvg = "";
+  {
+    const gx = 76, gw = 928, gy = 1168, gh = 240;
+    const cambio = global?.cambio_market_cap_24h;
+    const colCambio = cambio == null || cambio >= 0 ? VERDE : ROJO;
+    const chip = cambio != null ? `
+    <rect x="300" y="1076" width="120" height="34" rx="17" fill="${cambio >= 0 ? "rgba(0,200,150,0.14)" : "rgba(229,72,77,0.14)"}"/>
+    <text x="360" y="1099" text-anchor="middle" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="${colCambio}">${cambio >= 0 ? "▲" : "▼"} ${cambio >= 0 ? "+" : ""}${cambio.toFixed(2)}%</text>` : "";
+
+    const cabecera = global?.market_cap_total_usd ? `
+    <text x="${gx}" y="1106" font-family="Arial,sans-serif" font-size="50" font-weight="800" fill="#ffffff">${fmtT(global.market_cap_total_usd)}</text>
+    ${chip}
+    ${global.volumen_total_usd ? `<text x="${gx + gw}" y="1100" text-anchor="end" font-family="Arial,sans-serif" font-size="14" fill="rgba(255,255,255,0.30)">Vol 24h: ${fmtT(global.volumen_total_usd)}</text>` : ""}` : sinDatos(W / 2, 1100);
+
+    if (historial.length >= 2) {
+      const caps = historial.map((p) => p.cap);
+      let min = Math.min(...caps), max = Math.max(...caps);
+      const pad = Math.max((max - min) * 0.12, max * 0.002);
+      min -= pad; max += pad;
+      const t0 = historial[0].ts, t1 = historial[historial.length - 1].ts;
+      const px = (ts) => gx + ((ts - t0) / Math.max(1, t1 - t0)) * gw;
+      const py = (cap) => gy + gh - ((cap - min) / (max - min)) * gh;
+      const pts = historial.map((p) => `${px(p.ts).toFixed(1)},${py(p.cap).toFixed(1)}`);
+      const fechaCorta = (ts) => new Date(ts).toLocaleString("es-ES", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: process.env.TIMEZONE || "Europe/Madrid" });
+      const grid = [0.25, 0.5, 0.75].map((f) => {
+        const y = gy + gh * f;
+        const val = max - (max - min) * f;
+        return `<line x1="${gx}" y1="${y.toFixed(1)}" x2="${gx + gw}" y2="${y.toFixed(1)}" stroke="rgba(255,255,255,0.05)" stroke-width="1" stroke-dasharray="4 6"/>
+    <text x="${gx + gw}" y="${(y - 6).toFixed(1)}" text-anchor="end" font-family="Arial,sans-serif" font-size="12" fill="rgba(255,255,255,0.25)">${fmtT(val)}</text>`;
+      }).join("\n    ");
+
+      capSvg = `
+    ${cabecera}
+    ${grid}
+    <path d="M ${pts[0]} L ${pts.join(" L ")} L ${(gx + gw).toFixed(1)},${gy + gh} L ${gx},${gy + gh} Z" fill="url(#capgrad)"/>
+    <polyline points="${pts.join(" ")}" fill="none" stroke="${VERDE}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+    <text x="${gx}" y="${gy + gh + 26}" font-family="Arial,sans-serif" font-size="12" fill="rgba(255,255,255,0.28)">${esc(fechaCorta(t0))}</text>
+    <text x="${gx + gw}" y="${gy + gh + 26}" text-anchor="end" font-family="Arial,sans-serif" font-size="12" fill="rgba(255,255,255,0.28)">${esc(fechaCorta(t1))}</text>`;
+    } else {
+      capSvg = `
+    ${cabecera}
+    <text x="${W / 2}" y="${gy + gh / 2 - 12}" text-anchor="middle" font-family="Arial,sans-serif" font-size="17" fill="rgba(255,255,255,0.35)">Recopilando historial del mercado</text>
+    <text x="${W / 2}" y="${gy + gh / 2 + 16}" text-anchor="middle" font-family="Arial,sans-serif" font-size="13" fill="rgba(255,255,255,0.22)">Se guarda un punto cada hora. La curva aparecerá aquí en cuanto haya datos suficientes.</text>`;
+    }
+  }
+
+  const fechaStr = new Date().toLocaleString("es-ES", {
+    day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit",
+    timeZone: process.env.TIMEZONE || "Europe/Madrid",
+  });
+
+  const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
+  <defs>
+    <pattern id="grid" width="60" height="60" patternUnits="userSpaceOnUse">
+      <path d="M60 0 L0 0 0 60" fill="none" stroke="rgba(255,255,255,0.022)" stroke-width="0.5"/>
+    </pattern>
+    <linearGradient id="capgrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="${VERDE}" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="${VERDE}" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect width="${W}" height="${H}" fill="#0a0a12"/>
+  <rect width="${W}" height="${H}" fill="url(#grid)"/>
+  <!-- Header -->
+  <circle cx="78" cy="54" r="20" fill="${ORANGE}"/>
+  <text x="78" y="61" text-anchor="middle" font-family="Arial,sans-serif" font-size="18" font-weight="800" fill="#ffffff">C</text>
+  <text x="110" y="61" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="#ffffff" letter-spacing="2.5">CRIPTOSCOPE</text>
+  <rect x="${W - 240}" y="37" width="200" height="34" rx="17" fill="rgba(249,115,22,0.18)" stroke="rgba(249,115,22,0.35)" stroke-width="1"/>
+  <text x="${W - 140}" y="59" text-anchor="middle" font-family="Arial,sans-serif" font-size="11" font-weight="700" fill="${ORANGE}" letter-spacing="1.5">MERCADO AHORA</text>
+  <line x1="40" y1="104" x2="${W - 40}" y2="104" stroke="rgba(249,115,22,0.22)" stroke-width="1"/>
+
+  <!-- Card A: Fear & Greed -->
+  ${card(40, 134, 490, 372)}
+  ${titulo(70, 176, "ÍNDICE FEAR & GREED")}
+  ${gaugeSvg}
+
+  <!-- Card B: Dominancia -->
+  ${card(560, 134, 480, 372)}
+  ${titulo(590, 176, "DOMINANCIA DE BITCOIN")}
+  ${domSvg}
+
+  <!-- Card C: Distribución -->
+  ${card(40, 536, 1000, 424)}
+  ${titulo(70, 578, "DISTRIBUCIÓN DE GANANCIAS Y PÉRDIDAS · 24H · TOP 200")}
+  ${distSvg}
+
+  <!-- Card D: Capitalización -->
+  ${card(40, 990, 1000, 464)}
+  ${titulo(70, 1032, "CAPITALIZACIÓN TOTAL DEL MERCADO")}
+  ${capSvg}
+
+  <!-- Footer (la esquina derecha la ocupa el logo que composita aplicarLogo) -->
+  <text x="40" y="${H - 22}" font-family="Arial,sans-serif" font-size="12" fill="rgba(255,255,255,0.20)">${esc(fechaStr)} · Datos: CoinGecko · alternative.me</text>
+</svg>`;
+
+  try {
+    const buf = await sharp(Buffer.from(svg)).png().toBuffer();
+    return aplicarLogo(buf, 0.08);
+  } catch (e) {
+    console.warn("⚠️ Panel de mercado SVG falló:", e.message);
+    return null;
+  }
+}
+
 // ── Portada editorial gpt-image-1 (CriptoScope Visual Style v4.1: sala de trading institucional) ──
 // CRITICAL RULE reforzada al inicio Y al final: nunca cifras legibles (serían datos inventados) NI
 // frases/titulares en pantalla (gpt-image-1 destroza cualquier texto de más de 1-2 palabras: "LOE DATOS",

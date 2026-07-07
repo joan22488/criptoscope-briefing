@@ -142,6 +142,7 @@ Escríbele directamente al bot (chat privado):
 |---------|---------|-----------|
 | `/precio <coin>` | `/precio BTC` | Precio + máx/mín/vol 24h |
 | `/quepasa` | `/quepasa` | Resumen mercado ahora mismo |
+| `/mercado` | `/mercado` | Panel visual (imagen): medidor Fear & Greed, dominancia BTC/ETH, distribución de ganancias/pérdidas 24h del top 200 y curva de capitalización (historial horario, 7 días) |
 | `/senal <coin>` | `/senal ETH` | Señal técnica privada (no publica en canal) |
 | `/calendario` | `/calendario` | Eventos macro de la semana (EE.UU., Eurozona, UK, Japón, China, Australia) en formato tarjeta con hora exacta. Fuente solo cubre lun-vie: de sáb a dom puede avisar de que la semana siguiente aún no está publicada |
 | `/alerta <coin> <precio>` | `/alerta BTC 70000` · `/alerta ETH <1800` | Aviso cuando llegue al nivel |

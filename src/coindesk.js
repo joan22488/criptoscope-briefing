@@ -5,6 +5,7 @@
 // ============================================================
 
 import { cortarEnFrase } from "./text.js";
+import { loadJSON, saveJSON } from "./storage.js";
 
 async function apiFetch(url) {
   const headers = { Accept: "application/json" };
@@ -226,6 +227,7 @@ export async function getGlobalMarket() {
       dominancia_btc: parseFloat(g.market_cap_percentage.btc.toFixed(1)),
       dominancia_eth: parseFloat(g.market_cap_percentage.eth.toFixed(1)),
       market_cap_total_usd: g.total_market_cap.usd,
+      volumen_total_usd: g.total_volume?.usd || 0,
       cambio_market_cap_24h: parseFloat(g.market_cap_change_percentage_24h_usd.toFixed(2)),
       activos_activos: g.active_cryptocurrencies,
     };
@@ -234,6 +236,74 @@ export async function getGlobalMarket() {
     return null;
   }
 }
+
+/**
+ * 7b) DISTRIBUCIÓN DE CAMBIOS 24h - top 200 por market cap (CoinGecko)
+ * Cuenta cuántas monedas caen en cada tramo de variación, estilo panel
+ * "Distribución de Ganancias y Pérdidas" de los exchanges.
+ * Devuelve 11 tramos ordenados de mayor subida a mayor bajada.
+ */
+export async function getDistribucion24h() {
+  try {
+    const data = await apiFetch(
+      "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=200&page=1&sparkline=false&price_change_percentage=24h"
+    );
+    const cambios = data
+      .map((c) => c.price_change_percentage_24h)
+      .filter((v) => v != null);
+
+    const tramos = [
+      { label: ">10%",  tipo: "sube", count: 0 },
+      { label: "7-10%", tipo: "sube", count: 0 },
+      { label: "5-7%",  tipo: "sube", count: 0 },
+      { label: "3-5%",  tipo: "sube", count: 0 },
+      { label: "0-3%",  tipo: "sube", count: 0 },
+      { label: "0%",    tipo: "plano", count: 0 },
+      { label: "0-3%",  tipo: "baja", count: 0 },
+      { label: "3-5%",  tipo: "baja", count: 0 },
+      { label: "5-7%",  tipo: "baja", count: 0 },
+      { label: "7-10%", tipo: "baja", count: 0 },
+      { label: ">10%",  tipo: "baja", count: 0 },
+    ];
+
+    const indicePorMagnitud = (m) => (m >= 10 ? 0 : m >= 7 ? 1 : m >= 5 ? 2 : m >= 3 ? 3 : 4);
+    for (const v of cambios) {
+      const redondeado = Math.round(v * 10) / 10;
+      if (redondeado === 0) { tramos[5].count++; continue; }
+      const idx = indicePorMagnitud(Math.abs(v));
+      if (v > 0) tramos[idx].count++;
+      else tramos[10 - idx].count++;
+    }
+
+    const subida = tramos.filter((t) => t.tipo === "sube").reduce((a, t) => a + t.count, 0);
+    const bajada = tramos.filter((t) => t.tipo === "baja").reduce((a, t) => a + t.count, 0);
+    return { tramos, subida, bajada, total: cambios.length };
+  } catch (e) {
+    console.warn("⚠️  Distribución 24h no disponible:", e.message);
+    return null;
+  }
+}
+
+/**
+ * 7c) HISTORIAL DE CAPITALIZACIÓN - acumulado en disco (DATA_DIR)
+ * registrarPuntoMercado() guarda un punto {ts, cap, vol} como máximo cada
+ * 20 min (lo llama un cron horario en index.js y también /mercado al usarse).
+ * Se conservan 7 días. La curva del panel se dibuja con estos puntos.
+ */
+export async function registrarPuntoMercado() {
+  const g = await getGlobalMarket();
+  if (!g?.market_cap_total_usd) return null;
+  const hist = loadJSON("mercado_historial.json", []);
+  const ahora = Date.now();
+  if (hist.length && ahora - hist[hist.length - 1].ts < 20 * 60 * 1000) return g;
+  hist.push({ ts: ahora, cap: g.market_cap_total_usd, vol: g.volumen_total_usd || 0 });
+  const limite = ahora - 7 * 24 * 60 * 60 * 1000;
+  while (hist.length && hist[0].ts < limite) hist.shift();
+  saveJSON("mercado_historial.json", hist);
+  return g;
+}
+
+export const getHistorialMercado = () => loadJSON("mercado_historial.json", []);
 
 /**
  * 8) LIQUIDACIONES recientes - OKX API pública (sin key)
