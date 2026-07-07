@@ -159,7 +159,7 @@ Escríbele directamente al bot (chat privado):
 ### Fotos sin comando
 | Acción | Resultado |
 |--------|-----------|
-| Foto de noticia | Verificación de credibilidad (✅ VERIFICADA · 🟡 PROBABLE · ⚠️ DUDOSA · 🚫 FALSA) + análisis + botones para publicar. El verificador conoce la fecha actual y los precios live. Si dictamina FALSA, botón 🔎 Analizar igualmente para saltarte el veto bajo tu criterio |
+| Foto de noticia | Verificación de credibilidad (✅ VERIFICADA · 🟡 PROBABLE · ⚠️ DUDOSA · 🚫 FALSA) + análisis + botones para publicar. El verificador conoce la fecha actual y los precios live. La fuente detectada se cita siempre: en el análisis, en el pie del canal y en el tweet de X. Si dictamina FALSA, botón 🔎 Analizar igualmente para saltarte el veto bajo tu criterio |
 | Foto + pie `responde` | Genera 2 opciones de respuesta al comentario de la captura: A directa con datos, B conversacional con pregunta. Eliges con botones y pasa al flujo Publicar / Editar / Ignorar |
 
 ### Monitor automático de noticias

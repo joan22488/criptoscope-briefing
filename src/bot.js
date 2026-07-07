@@ -1330,28 +1330,29 @@ Devuelve SOLO este JSON sin markdown:
 
     await reply(chatId, "🧠 Generando análisis...");
 
-    // PASO 2: Claude genera opinión
+    // Fuente: usar la detectada por Claude en la verificación, o "desconocida"
+    const fuenteConocida = check.fuente && check.fuente.toLowerCase() !== "desconocida";
+
+    // PASO 2: Claude genera opinión — citando SIEMPRE la fuente si se conoce
     const respuesta = await client.messages.create({
       model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
       max_tokens: 900,
       system: `Eres CriptoScope. Analiza la noticia de la imagen con perspectiva de trader: qué significa para el mercado, cómo puede mover el precio, qué nivel vigilarías.
 
 REGLA DE APERTURA: Abre con la conclusión de la noticia de la imagen, no con el precio de BTC. El precio de mercado es contexto de fondo, no el gancho de apertura.
+REGLA DE FUENTE: si se te indica la fuente de la noticia, cítala de forma natural dentro del análisis (ej: "según Cointelegraph...", "el dato que publica CoinDesk..."). La atribución es parte de la credibilidad de CriptoScope. Nunca inventes una fuente que no se te haya indicado.
 Voz directa y fría. 2-3 párrafos. HTML Telegram (<b>, <i>). Distingue entre lo que dice la noticia y lo que podría implicar. Si hay incertidumbre, nómbrala.
 PROHIBIDO: guiones medios o largos (– o —) ni el símbolo ~, 🚀💎🙌, clickbait, consejos financieros directos.`,
       messages: [{
         role: "user",
         content: [
           { type: "image", source: { type: "base64", media_type: "image/jpeg", data: base64 } },
-          { type: "text", text: `Contexto mercado: ${ctxPrecio}${caption ? `\nNota: ${caption}` : ""}` },
+          { type: "text", text: `Contexto mercado: ${ctxPrecio}${fuenteConocida ? `\nFuente de la noticia: ${check.fuente}` : ""}${caption ? `\nNota: ${caption}` : ""}` },
         ],
       }],
     });
 
     const opinion = limpiarDashes(respuesta.content[0].text.trim());
-
-    // Fuente: usar la detectada por Claude, o "desconocida"
-    const fuenteConocida = check.fuente && check.fuente.toLowerCase() !== "desconocida";
     const lineaFuente = fuenteConocida
       ? `\n\n📌 <i>Fuente: ${check.fuente}</i>`
       : "";
@@ -1399,7 +1400,9 @@ async function cmdRespondeComentario(chatId, photo, caption) {
 A: DIRECTA. Responde al fondo del comentario con datos o argumento técnico. Educada pero firme. Si el comentario tiene razón en algo, reconócelo; si está equivocado, corrígelo con precisión.
 B: CONVERSACIONAL. Responde más breve y devuelve una pregunta concreta que invite a seguir la conversación. Genera engagement sin ser vacía.
 
-Ambas: máx 240 caracteres cada una, sin hype, sin insultos, sin emojis tribales, sin guiones largos, sin hashtags, sin links. Texto plano.
+FUENTE: si en la captura se ve de dónde sale la información (medio, informe, cuenta o autor) o tu corrección se apoya en un dato concreto, cita esa fuente de forma natural en la respuesta (ej: "según Bloomberg", "el propio informe de Ripple dice..."). La atribución da credibilidad. Nunca inventes una fuente ni cites una que no puedas identificar con certeza.
+
+Ambas: máx 240 caracteres cada una, sin hype, sin insultos, sin emojis tribales, sin guiones largos, sin el símbolo ~, sin hashtags, sin links. Texto plano.
 
 Devuelve SOLO este JSON sin markdown:
 {"a":"respuesta directa","b":"respuesta conversacional"}`,
@@ -1586,6 +1589,7 @@ Escribe UN tweet de 190-205 caracteres (el sistema añade hashtags automáticame
 
 1 emoji relevante al inicio (🚨⚠️🔴🟢💥🎯). Termina con una pregunta directa a la comunidad o una afirmación que invite al debate.
 
+Si el contenido indica una fuente (medio o autor de la noticia), cítala de forma breve y natural en el tweet (ej: "según Cointelegraph"). Nunca la omitas si está disponible. Nunca inventes una fuente.
 Sin HTML. Sin guiones largos (– o —). Sin links. Sin hashtags. Sin mencionar "canal de Telegram". X solo admite 1 cashtag por tuit: $ delante SOLO de la primera moneda que menciones, el resto en texto normal sin $.
 Devuelve SOLO el tweet. Sin comillas ni etiquetas.${ctxDerivados}`
       : `Eres el redactor de X/Twitter de CriptoScope, análisis cripto en español.
@@ -1599,6 +1603,7 @@ Estructura (todo en un bloque continuo con salto de línea en el medio):
 GANCHO (80-100 chars): el dato más impactante, la paradoja o el hecho que crea tensión. Para el scroll. NO empieces con "Hoy", "El mercado", el nombre de la coin ni "CriptoScope". 1 emoji si refuerza (🚨📊⚠️🔴🟢).
 DESARROLLO (110-125 chars): qué implica ese dato para el precio, nivel clave a vigilar. Datos concretos. Termina con pregunta corta o afirmación que invite a debatir.
 
+Si el contenido indica una fuente (ej: "Fuente: Cointelegraph" o "según CoinDesk"), cítala de forma breve y natural en el tweet. Nunca la omitas si está disponible. Nunca inventes una fuente.
 Sin HTML. Sin guiones largos (– o —). Sin links. Sin hashtags. Sin mencionar "canal de Telegram". X solo admite 1 cashtag por tuit: $ delante SOLO de la primera moneda que menciones, el resto en texto normal sin $.
 
 Devuelve SOLO el tweet. Sin comillas, sin etiquetas, sin explicaciones.${ctxDerivados}`;
@@ -2428,7 +2433,7 @@ async function cmdAyuda(chatId, cmd) {
       detalle:
         "Manda una captura de pantalla de una noticia al bot sin ningún comando. Claude hace dos cosas:\n\n" +
         "1. Verifica la credibilidad: analiza la fuente, el titular y el contenido. Te devuelve un veredicto: ✅ VERIFICADA · 🟡 PROBABLE · ⚠️ DUDOSA · 🚫 FALSA. Si es falsa, para ahí.\n\n" +
-        "2. Genera la opinión al estilo CriptoScope: qué significa para el mercado, cómo afectaría al precio, qué vigilarías. Añade la fuente si la detecta.\n\n" +
+        "2. Genera la opinión al estilo CriptoScope: qué significa para el mercado, cómo afectaría al precio, qué vigilarías. <b>La fuente detectada se cita siempre</b>: dentro del análisis ('según Cointelegraph...'), en la línea 📌 Fuente al pie del canal, y en el tweet cuando publiques en X. Si no se detecta fuente, te avisa para que la añadas con ✏️ Editar antes de publicar.\n\n" +
         "Te aparecen botones para publicar en canal, en X, en ambos, añadir portada o descartar. Si publicas con la propia foto como portada, se adjunta integrada en el mensaje del canal.\n\n" +
         "También puedes mandar una foto con pie de foto como comando: <code>/flash tema</code>, <code>/opinion tema</code>, etc. La foto se convierte automáticamente en portada.",
     },
